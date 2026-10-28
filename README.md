@@ -30,10 +30,10 @@ A tabletop robot system that learns a game from a plain-English explanation, the
 |---|---|---|
 | What | The Robo Diner CoreXY gantry | Small wheeled companion robot |
 | Job | All precise physical work: pick, place, flip, stack | The AI's body at the table: faces players, peeks, emotes, flips |
-| Brain host | Raspberry Pi 5 — also the hub for the whole table | Raspberry Pi 3B — self-contained, own API |
-| Motion | GRBL on Arduino + RAMPS, limit switches | Arduino (our firmware), 2× 28BYJ-48 + ULN2003 |
-| Sensing | Overhead Camera v2, VL6180X on the head | ov5647 camera, VL6180X edge sensor, (TF-Luna later) |
-| Gripper / extras | 12 mm 2-layer suction cup on a 12V peristaltic pump | Pan/tilt servos, tiny screen, optional flipper paddle |
+| Brain host | Raspberry Pi 5 — also the hub for the whole table | ESP32 (DevKit now, ESP32-S3 CAM next) — self-contained, own API over Wi-Fi |
+| Motion | GRBL on Arduino + RAMPS, limit switches | ESP32 (our firmware), 2× 28BYJ-48 + ULN2003 |
+| Sensing | Overhead Camera v2, VL6180X on the head | OV2640 camera (on the S3 board), VL6180X edge sensor, (TF-Luna later) |
+| Gripper / extras | 12 mm 2-layer suction cup on a 12V peristaltic pump | Pan/tilt servos (PCA9685), 0.96" OLED face, optional flipper paddle |
 
 ## Repository layout
 
@@ -46,8 +46,8 @@ the-magic-table/
 │   └── shared/            power, network, markers, printed parts common to both
 └── software/
     ├── mate/              ◀ step 1
-    │   ├── firmware/      Arduino: raw steppers, servos, edge reflex
-    │   ├── server/        Pi 3 web server: Mate's own API
+    │   ├── firmware/      ESP32: Mate's own API, raw steppers, servos, face, camera, edge reflex
+    │   ├── server/        retired (was the Pi 3 web server)
     │   └── ui/            human control panel for Mate
     ├── hub/               Pi 5: the table's body API, Frame driver, safety, Mate client
     ├── ghost/             simulated body: scene files, physics-lite, camera-like renders
@@ -56,7 +56,7 @@ the-magic-table/
 
 ## Where we are
 
-**Step 1 — Mate, driven by a human.** Mate runs standalone: Arduino firmware for raw motion, a small web server on its Pi 3, and a control page in the browser. See [`software/mate/README.md`](software/mate/README.md).
+**Step 1 — Mate, driven by a human.** Mate runs standalone: one ESP32 program serves its API over Wi-Fi, drives the motors, and serves a control page to the browser. See [`software/mate/README.md`](software/mate/README.md).
 
 Full sequence in [`docs/plan.md`](docs/plan.md). Open items in [`docs/open-questions.md`](docs/open-questions.md).
 

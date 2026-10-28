@@ -16,12 +16,12 @@ Options for blending in: tone-on-tone colours, a pixel-art border, a logo badge.
 
 ## Network
 
-- Pi 3 is **2.4 GHz only**. Use WPA2 or WPA2/WPA3 mixed.
+- Mate's ESP32 is **2.4 GHz only**. Use WPA2 or WPA2/WPA3 mixed.
 - Demo: a phone hotspot on 2.4 GHz WPA2 is the easiest. Reserve IPs where possible; `.local` names can occasionally fail on busy networks.
 
 ## Power
 
-- Every Pi needs a real supply: **5V 3A** with a short, thick cable. Computer USB ports and phone chargers cause under-voltage and throttling.
+- The Pi 5 needs a real supply: **5V 3A** with a short, thick cable. Computer USB ports and phone chargers cause under-voltage and throttling.
 - Shut down before unplugging (`sudo poweroff`) to avoid corrupting SD cards.
 
 ## Printed parts

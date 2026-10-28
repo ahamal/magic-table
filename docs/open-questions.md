@@ -1,14 +1,15 @@
 # Open questions
 
 ## Blocking step 1 (Mate)
-- [ ] Which Arduino on Mate: Nano, Uno, other?
-- [ ] Wheel diameter and wheel spacing (track width) — useful for sanity checks, even though the agent learns calibration
+- [x] Controller: ESP32 (DevKit now, Freenove ESP32-S3 CAM next) — no Pi, no Arduino
+- [x] Wheel diameter: 60 mm. Spacing: ~100 mm suggested, set when the chassis is designed
 - [ ] How many servos in v1: pan, pan + tilt, + flipper?
-- [ ] The screen: is it the 3.5" SPI touchscreen already configured on the Pi 3 (ads7846 overlay), or a different tiny screen?
-- [ ] Screen interface: named faces (`neutral`, `thinking`…) or raw image (the AI designs its own faces)?
-- [ ] Speaker: present now, or later?
-- [ ] Is Mate's chassis built, or still to design/print?
-- [ ] Mate's power: 3A two-port bank on hand? (Mate currently reports under-voltage.)
+- [x] Screen: 0.96" SSD1306 OLED, raw 128×64 images; the control page ships named faces
+- [x] Speaker: none on Mate; the hub speaks
+- [ ] Chassis: still to design/print (estimate ~14 × 11 × 12 cm)
+- [x] Power: power bank via cut USB cable, CanaKit on the bench
+- [ ] Can the OV2640 read a card corner at 10–15 cm? (Test as soon as the S3 board arrives.)
+- [ ] Freenove ESP32-S3 CAM pinout: confirm the free pins before wiring
 
 ## Frame
 - [ ] Gantry travel in X, Y, Z

@@ -27,18 +27,17 @@
 │  └─ Mate client ── HTTP ──┐                                      │
 └───────────────────────────┼──────────────────────────────────────┘
                             ▼
-┌───────────────────────────────────────────── Pi 3: Mate ────────┐
-│  Mate API (own web server) + human control page                  │
-│  ├─ Camera (ov5647), screen, speaker                             │
-│  └─ USB serial ──► Arduino (our firmware)                        │
-│                     ├─ 2× 28BYJ-48 via ULN2003 (raw steps)       │
-│                     ├─ servos (pan, tilt, flipper)               │
-│                     └─ VL6180X edge sensor (reflex)              │
+┌──────────────────────────────────────────── ESP32: Mate ────────┐
+│  Mate API (own web server, Wi-Fi) + human control page           │
+│  ├─ Camera (OV2640, on the S3 board)                             │
+│  ├─ 2× 28BYJ-48 via ULN2003 (raw steps, own core)                │
+│  └─ I2C: OLED face, PCA9685 servos (pan, tilt, flipper),         │
+│          VL6180X edge sensor (reflex)                            │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 **Rules:**
-- **Only the hub calls Mate** once the table is assembled. Agents never talk to Mate's Pi directly, so the hub can keep the gantry and Mate apart. (In step 1, Mate runs alone and its own page calls it directly.)
+- **Only the hub calls Mate** once the table is assembled. Agents never talk to Mate directly, so the hub can keep the gantry and Mate apart. (In step 1, Mate runs alone and its own page calls it directly.)
 - **The brain uses the web API even when it runs on the Pi 5** (via `localhost`). Muse Spark and SAM 3.1 run in Meta's cloud; the Pi only makes API calls.
 
 ## Body interface (table)
@@ -90,5 +89,5 @@ Mate is its own system with its own API. Raw by design: `step {s1, s2}`, `servo 
 
 ## Network
 
-- Pi 3 and Pi 5 Wi-Fi: Pi 3 is 2.4 GHz only. Use WPA2 (or mixed). A phone hotspot on 2.4 GHz is easiest for demos.
-- Hostnames: `mate.local` (Pi 3, IP fallback 192.168.1.197 on the home network). Pi 5 hostname TBD.
+- Mate's ESP32 is 2.4 GHz only. Use WPA2 (or mixed). A phone hotspot on 2.4 GHz is easiest for demos.
+- Hostnames: `mate.local` (ESP32, mDNS). Pi 5 hostname TBD.

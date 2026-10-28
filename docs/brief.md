@@ -120,7 +120,7 @@ A small wheeled robot on the table. Recommended role: the AI player's body — f
 | Option | Parts | Pros | Cons |
 |---|---|---|---|
 | ESP32 alone | ESP32, 2× 28BYJ-48 + ULN2003, servo | Light, ~10–12 h battery, instant boot | No Camera v2.1 support |
-| Pi + Arduino over USB *(chosen)* | Pi 3, Arduino, 2× 28BYJ-48 + ULN2003, servo, camera | Smooth AccelStepper motion, good camera | Heavier, ~4–5 h battery |
+| Pi + Arduino over USB *(first choice, since replaced by an ESP32-S3 — see decisions)* | Pi 3, Arduino, 2× 28BYJ-48 + ULN2003, servo, camera | Smooth AccelStepper motion, good camera | Heavier, ~4–5 h battery |
 | Pi driving ULN2003 directly | Pi, 2× 28BYJ-48 + ULN2003, servo | Fewest parts | Possible stutter |
 
 **Drive:** two 28BYJ-48 wheels, differential steering, ball caster or skid at the back. About 3–5 cm/s with 60 mm wheels. Half-step mode, AccelStepper ramps, coils off when idle.

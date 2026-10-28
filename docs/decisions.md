@@ -20,9 +20,13 @@ Running log. Newest at the bottom of each section.
 - **Gripper: 12 mm, 2-layer bellows suction cup.** *Why:* fits on a dime; 2 layers are enough because Z, the spring mount and the known stack height handle height; fewer layers grip faster and sway less.
 - **VL6180X #1 on the gantry head** (stack heights, picks, pick confirmation). Optional touch switch on GRBL's probe pin for exact contact.
 - **Overhead camera: Camera v2 (imx219)** on the Frame, about 50 cm up, on a long ribbon (≤ 1 m) with a 22→15-pin adapter for the Pi 5.
-- **Mate: Pi 3B + Arduino + 2× 28BYJ-48/ULN2003 + servos + ov5647 camera + tiny screen.**
-- **Peek camera is Mate's camera** (the cheaper ov5647). No third camera needed.
-- **VL6180X #2 on Mate**, front, pointing down, wired to the Arduino: table-edge reflex.
+- ~~**Mate: Pi 3B + Arduino + 2× 28BYJ-48/ULN2003 + servos + ov5647 camera + tiny screen.**~~ Replaced below.
+- **Peek camera is Mate's camera.** No third camera needed. (Now the S3 board's OV2640.)
+- **VL6180X #2 on Mate**, front, pointing down, on the ESP32's I2C bus: table-edge reflex.
+- **Mate runs on an ESP32, no Pi.** Freenove ESP32-S3-WROOM CAM (OV2640, 8 MB PSRAM, USB-C) as the target; a regular ESP32 DevKit until it arrives. *Why:* the Pi was bulky, slow to set up and kept under-volting; the ESP32 is lighter, boots instantly and gives ~2–3× the battery life. The heavy thinking is in the cloud and on the Pi 5 anyway. *Risk:* OV2640 reading card corners — test first.
+- **Face: 0.96" SSD1306 OLED (128×64) on the pan/tilt head, camera just below it.** *Why:* the face and the camera always look the same way; `/screen` takes raw images.
+- **Servos on a PCA9685** (required on the S3 for pins). **Speech moves to the hub.**
+- **Power: one 5V source split at a perfboard hub** (power bank via cut USB cable; CanaKit on the bench), JST-XH connectors, GND on pin 1.
 - **TF-Luna:** later, on Mate's pan mount, for finding players and obstacles at a distance. Not for Z (20 cm blind zone, ±6 cm).
 - **Markers should blend in:** head-marker calibration (removable), small markers on top of frame corners, Mate's marker designed into its look.
 
