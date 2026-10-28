@@ -9,3 +9,4 @@ captures/
 .pio/
 build/
 node_modules/
+secrets.h
