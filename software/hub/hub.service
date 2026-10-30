@@ -1,0 +1,14 @@
+[Unit]
+Description=Magic Table hub (GRBL server + jog page)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ash
+WorkingDirectory=/home/ash/hub
+ExecStart=/home/ash/hub/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

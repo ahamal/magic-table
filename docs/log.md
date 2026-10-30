@@ -54,6 +54,7 @@ What happened, when, and what we learned. Newest at the bottom. Times are ET and
   - **Max speed:** `$110`/`$111` went 7000 → **9000 mm/min (~150 mm/s)**, which ran clean. **12000 skipped steps**, so it went back to 9000. `$112` (Z) stays at 7000.
   - **Why it's capped:** the estimated ceiling at 12V is about 200 mm/s, set by coil inductance and back-EMF. 24V would roughly double it, but would need the 12V pump and valve on a separate supply. Not doing it.
 - **GRBL build checked** with `$I`: **GRBL 1.1h (2019-08-30), CoreXY enabled** (`[OPT:VCZ,15,128]`). Variable spindle, homing forces machine zero. So X/Y moves are already mixed for CoreXY by GRBL.
+- **Hub server + jog page** (`software/hub/`): FastAPI on the Pi at port 8000, one kept-open GRBL connection, live status over WebSocket. The page builds on the Robo Diner jog page (click a target on the XY table and Z rail) with hold-to-jog, keyboard, live position, zeroing, STOP and a console.
 - **Still open:**
   - Steps/mm (`$100`–`$102` = 50) hasn't been measured.
   - GRBL starts in alarm and needs `$H` or `$X`.

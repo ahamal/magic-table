@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame Jog</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --card: #fff; --ink: #1a1a1a; --muted: #6b6b6b; --line: #e3e3e0;
+    --accent: #2563eb; --accent-ink: #fff; --target: #ea580c; --ok: #16a34a; --warn: #ca8a04;
+    --bad: #dc2626; --chip: #f0f0ee; --grid: #ececea; --table: #fbfbfa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121212; --card: #1c1c1c; --ink: #ececec; --muted: #9a9a9a; --line: #2e2e2e;
+      --accent: #3b82f6; --target: #fb923c; --chip: #262626; --grid: #262626; --table: #181818;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  button { font: inherit; color: var(--ink); background: var(--chip); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 12px; cursor: pointer; touch-action: manipulation; user-select: none; }
+  button:hover { border-color: var(--muted); }
+  button:active, button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  input { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 16px; margin: 0 6px 0 0; }
+  .pill { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    background: var(--chip); color: var(--muted); }
+  .pill.Idle { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .pill.Run, .pill.Jog, .pill.Home { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .pill.Hold, .pill.Door { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+  .pill.Alarm, .pill.Disconnected { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+  .spacer { flex: 1; }
+  #stop { background: var(--bad); color: #fff; border-color: var(--bad); font-weight: 700; padding: 8px 18px; }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; padding: 16px;
+    max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  .banner { padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; font-size: 13px;
+    background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--ink); }
+  .banner[hidden] { display: none; }
+
+  /* table map + Z rail */
+  .map { display: flex; gap: 12px; align-items: stretch; }
+  .map svg { flex: 1; min-width: 0; max-height: 64vh; cursor: crosshair; touch-action: none; }
+  .map #zrail { flex: none; width: 44px; cursor: ns-resize; touch-action: none; }
+  .target-row { margin-top: 10px; }
+  .target-row input { width: 84px; }
+  .target-row label { color: var(--muted); font-size: 12px; display: flex; gap: 4px; align-items: center; }
+
+  /* readout */
+  .dro { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: baseline; }
+  .dro .ax { font-weight: 700; color: var(--muted); }
+  .dro .val { font-size: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+  .dro .mpos { grid-column: 2; text-align: right; color: var(--muted); font-size: 11px; margin-top: -6px; }
+  .dro button { padding: 4px 8px; font-size: 12px; }
+
+  /* jog */
+  .steps button { padding: 6px 10px; }
+  .pad { display: grid; grid-template-columns: repeat(3, 56px) 16px 56px; grid-template-rows: repeat(3, 56px);
+    gap: 6px; justify-content: center; margin: 12px 0; }
+  .pad button { padding: 0; font-size: 18px; }
+  .pad .z { grid-column: 5; }
+  .pad .home-xy { font-size: 11px; color: var(--muted); }
+  .feed { display: flex; align-items: center; gap: 10px; }
+  .feed input[type=range] { flex: 1; padding: 0; border: 0; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  kbd { font: 11px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 4px; padding: 0 4px; background: var(--chip); }
+
+  /* console */
+  #log { height: 180px; overflow: auto; font-size: 12px; background: var(--table); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px; white-space: pre-wrap; word-break: break-all; }
+  #log .out { color: var(--accent); }
+  #log .in { color: var(--ink); }
+  #log .err { color: var(--bad); }
+  #log .sys { color: var(--muted); }
+  .console-in { display: flex; gap: 8px; margin-top: 8px; }
+  .console-in input { flex: 1; min-width: 0; }
+  .quick button { padding: 4px 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Frame</h1>
+  <span id="state" class="pill">…</span>
+  <span id="homed" class="pill">not homed</span>
+  <span class="spacer"></span>
+  <button id="stop" title="Feed hold, then reset (Esc)">STOP</button>
+</header>
+
+<main>
+  <div class="col">
+    <section class="card">
+      <h2>Table</h2>
+      <div id="unhomed" class="banner">Not homed: positions are relative to where the gantry was at power-on. Home first for real table coordinates.</div>
+      <div class="map">
+        <svg id="xy" role="img" aria-label="XY table: click to set a target"></svg>
+        <svg id="zrail" role="img" aria-label="Z rail: click to set a target height"></svg>
+      </div>
+      <div class="row target-row">
+        <label>X <input id="tx" class="mono" type="number" step="0.1"></label>
+        <label>Y <input id="ty" class="mono" type="number" step="0.1"></label>
+        <label>Z <input id="tz" class="mono" type="number" step="0.1"></label>
+        <button id="go" class="on">Go to target</button>
+        <button id="here">Target = here</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Console</h2>
+      <div id="log" class="mono"></div>
+      <form class="console-in" id="cmdform">
+        <input id="cmd" class="mono" list="cmds" placeholder="G-code or $ command" autocomplete="off">
+        <button>Send</button>
+      </form>
+      <datalist id="cmds"></datalist>
+      <div class="row quick" style="margin-top:8px">
+        <button data-cmd="$$">$$ settings</button>
+        <button data-cmd="$#">$# offsets</button>
+        <button data-cmd="$I">$I build</button>
+        <button data-cmd="$G">$G modes</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <h2>Position (work)</h2>
+      <div class="dro mono">
+        <span class="ax">X</span><span class="val" id="wx">–</span><button data-zero="X">zero</button>
+        <span class="mpos" id="mx"></span>
+        <span class="ax">Y</span><span class="val" id="wy">–</span><button data-zero="Y">zero</button>
+        <span class="mpos" id="my"></span>
+        <span class="ax">Z</span><span class="val" id="wz">–</span><button data-zero="Z">zero</button>
+        <span class="mpos" id="mz"></span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button data-zero="XYZ">Zero all</button>
+        <button id="gozero">Go to 0,0</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Jog</h2>
+      <div class="row steps" id="steps"></div>
+      <div class="pad">
+        <button data-jog="-1,1,0">↖</button><button data-jog="0,1,0">↑</button><button data-jog="1,1,0">↗</button>
+        <button class="z" data-jog="0,0,1">Z↑</button>
+        <button data-jog="-1,0,0">←</button><button class="home-xy" id="padzero">0,0</button><button data-jog="1,0,0">→</button>
+        <span></span><span></span>
+        <button data-jog="-1,-1,0">↙</button><button data-jog="0,-1,0">↓</button><button data-jog="1,-1,0">↘</button>
+        <button class="z" data-jog="0,0,-1">Z↓</button>
+      </div>
+      <div class="feed">
+        <span>Speed</span>
+        <input id="feed" type="range" min="200" max="9000" step="100" value="3000">
+        <span id="feedv" class="mono" style="width:9ch;text-align:right"></span>
+      </div>
+      <div class="hint">Tap = one step. Hold = keep moving until released.
+        Keys: <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> XY, <kbd>PgUp</kbd><kbd>PgDn</kbd> Z,
+        <kbd>1</kbd>–<kbd>5</kbd> step, <kbd>Esc</kbd> stop.</div>
+    </section>
+
+    <section class="card">
+      <h2>Machine</h2>
+      <div class="row">
+        <button id="home">Home ($H)</button>
+        <button id="unlock">Unlock ($X)</button>
+        <button id="hold">Pause</button>
+        <button id="resume">Resume</button>
+        <button id="reset">Reset</button>
+      </div>
+      <div class="hint">Travel from GRBL: <span id="travel" class="mono">…</span></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const SVGNS = 'http://www.w3.org/2000/svg';
+const STEPS = [0.1, 1, 10, 50, 100];
+const HOLD_MS = 250;      // press longer than this = continuous jog
+const HOLD_REACH = 300;   // continuous jog target distance, cancelled on release
+
+let st = { state: 'Disconnected' };
+let travel = { X: 350, Y: 580, Z: 300 };
+let step = 10;
+let target = null;        // {x, y, z} in work coords
+
+// ---- API ----
+const api = (path, body) => fetch('/api/' + path, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: body ? JSON.stringify(body) : undefined,
+}).then(r => r.json()).catch(e => ({ reply: 'error:' + e.message }));
+const send = line => api('send', { line });
+const rt = name => api('realtime/' + name);
+const feed = () => +$('feed').value;
+
+// ---- log ----
+function log(text, cls) {
+  const el = $('log'), atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+  const d = document.createElement('div');
+  d.className = cls; d.textContent = text;
+  el.append(d);
+  while (el.childElementCount > 400) el.firstChild.remove();
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+// ---- live link ----
+function connect() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'status') render(ev);
+    else if (ev.type === 'settings') applySettings(ev.settings);
+    else if (ev.type === 'log') log((ev.dir === 'out' ? '> ' : '') + ev.text,
+      ev.text.startsWith('error') || ev.text.startsWith('ALARM') ? 'err' : ev.dir);
+  };
+  ws.onclose = () => { render({ state: 'Disconnected' }); setTimeout(connect, 1500); };
+  setInterval(() => ws.readyState === 1 && ws.send('ping'), 10000);
+}
+
+function applySettings(s) {
+  if (s['$130']) travel = { X: s['$130'], Y: s['$131'], Z: s['$132'] };
+  if (s['$110']) $('feed').max = Math.max(s['$110'], s['$111']);
+  $('travel').textContent = `X ${travel.X} · Y ${travel.Y} · Z ${travel.Z} mm`;
+  drawMap();
+}
+
+function render(s) {
+  st = s;
+  const state = (s.state || '').split(':')[0];
+  $('state').textContent = s.state; $('state').className = 'pill ' + state;
+  $('homed').textContent = s.homed ? 'homed' : 'not homed';
+  $('homed').className = 'pill ' + (s.homed ? 'Idle' : '');
+  $('unhomed').hidden = !!s.homed;
+  const w = s.WPos || [NaN, NaN, NaN], m = s.MPos || [NaN, NaN, NaN];
+  ['x', 'y', 'z'].forEach((a, i) => {
+    $('w' + a).textContent = isNaN(w[i]) ? '–' : w[i].toFixed(2);
+    $('m' + a).textContent = isNaN(m[i]) ? '' : 'machine ' + m[i].toFixed(2);
+  });
+  const busy = state !== 'Idle';
+  $('go').disabled = busy || !target;
+  updateHead();
+}
+
+// ---- map ----
+// Work coordinates, X right, Y up (like the Robo Diner jog page). Z: up is up.
+const PAD = 12;
+let xyGeom = null;
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent && parent.append(e);
+  return e;
+}
+
+function drawMap() {
+  const xy = $('xy'), zr = $('zrail');
+  xy.innerHTML = zr.innerHTML = '';
+  const W = travel.X, H = travel.Y;
+  xy.setAttribute('viewBox', `${-PAD} ${-PAD} ${W + 2 * PAD} ${H + 2 * PAD}`);
+  xy.style.aspectRatio = `${W + 2 * PAD} / ${H + 2 * PAD}`;
+  el('rect', { x: 0, y: 0, width: W, height: H, rx: 6, fill: 'var(--table)', stroke: 'var(--line)' }, xy);
+  for (let x = 50; x < W; x += 50) el('line', { x1: x, y1: 0, x2: x, y2: H, stroke: 'var(--grid)' }, xy);
+  for (let y = 50; y < H; y += 50) el('line', { x1: 0, y1: H - y, x2: W, y2: H - y, stroke: 'var(--grid)' }, xy);
+  el('text', { x: 4, y: H - 4, 'font-size': 11, fill: 'var(--muted)' }, xy).textContent = '0,0';
+  el('line', { id: 'path', stroke: 'var(--target)', 'stroke-dasharray': '4 4', 'stroke-width': 1.5 }, xy);
+  const t = el('g', { id: 'tmark', visibility: 'hidden' }, xy);
+  el('circle', { r: 9, fill: 'none', stroke: 'var(--target)', 'stroke-width': 2 }, t);
+  el('line', { x1: -14, x2: 14, stroke: 'var(--target)', 'stroke-width': 1.5 }, t);
+  el('line', { y1: -14, y2: 14, stroke: 'var(--target)', 'stroke-width': 1.5 }, t);
+  const h = el('g', { id: 'head' }, xy);
+  el('circle', { r: 8, fill: 'var(--accent)' }, h);
+  el('circle', { r: 3, fill: 'var(--card)' }, h);
+
+  zr.setAttribute('viewBox', `-22 ${-PAD} 44 ${travel.Z + 2 * PAD}`);
+  zr.setAttribute('preserveAspectRatio', 'none');
+  el('rect', { x: -6, y: 0, width: 12, height: travel.Z, rx: 6, fill: 'var(--table)', stroke: 'var(--line)' }, zr);
+  el('rect', { id: 'ztarget', x: -18, width: 36, height: 3, fill: 'var(--target)', visibility: 'hidden' }, zr);
+  el('rect', { id: 'zhead', x: -14, width: 28, height: 6, rx: 3, fill: 'var(--accent)' }, zr);
+  updateHead(); updateTarget();
+}
+
+const clampXY = (v, max) => Math.min(Math.max(v, 0), max);
+
+function updateHead() {
+  if (!$('head')) return;
+  const w = st.WPos;
+  $('head').setAttribute('visibility', w ? 'visible' : 'hidden');
+  $('zhead').setAttribute('visibility', w ? 'visible' : 'hidden');
+  if (!w) return updatePath();
+  $('head').setAttribute('transform', `translate(${clampXY(w[0], travel.X)} ${travel.Y - clampXY(w[1], travel.Y)})`);
+  $('zhead').setAttribute('y', travel.Z - clampXY(w[2], travel.Z) - 3);
+  updatePath();
+}
+
+function updateTarget() {
+  const show = !!target;
+  if (!$('tmark')) return;
+  $('tmark').setAttribute('visibility', show ? 'visible' : 'hidden');
+  $('ztarget').setAttribute('visibility', show ? 'visible' : 'hidden');
+  if (show) {
+    $('tmark').setAttribute('transform', `translate(${target.x} ${travel.Y - target.y})`);
+    $('ztarget').setAttribute('y', travel.Z - target.z - 1.5);
+    $('tx').value = target.x.toFixed(1); $('ty').value = target.y.toFixed(1); $('tz').value = target.z.toFixed(1);
+  }
+  $('go').disabled = !show || (st.state || '') !== 'Idle';
+  updatePath();
+}
+
+function updatePath() {
+  const p = $('path'), w = st.WPos; if (!p) return;
+  if (!target || !w) { p.setAttribute('visibility', 'hidden'); return; }
+  p.setAttribute('visibility', 'visible');
+  p.setAttribute('x1', clampXY(w[0], travel.X)); p.setAttribute('y1', travel.Y - clampXY(w[1], travel.Y));
+  p.setAttribute('x2', target.x); p.setAttribute('y2', travel.Y - target.y);
+}
+
+function svgPoint(svg, e) {
+  const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+function currentOr0() { const w = st.WPos || [0, 0, 0]; return { x: w[0], y: w[1], z: w[2] }; }
+
+$('xy').addEventListener('pointerdown', e => {
+  const p = svgPoint($('xy'), e);
+  target = { ...(target || currentOr0()),
+    x: +clampXY(p.x, travel.X).toFixed(1), y: +clampXY(travel.Y - p.y, travel.Y).toFixed(1) };
+  updateTarget();
+});
+$('zrail').addEventListener('pointerdown', e => {
+  const p = svgPoint($('zrail'), e);
+  target = { ...(target || currentOr0()), z: +clampXY(travel.Z - p.y, travel.Z).toFixed(1) };
+  updateTarget();
+});
+['tx', 'ty', 'tz'].forEach(id => $(id).addEventListener('change', () => {
+  target = { x: +$('tx').value || 0, y: +$('ty').value || 0, z: +$('tz').value || 0 };
+  updateTarget();
+}));
+$('here').onclick = () => { target = currentOr0(); updateTarget(); };
+$('go').onclick = () => target && api('move', { ...target, feed: feed() });
+$('gozero').onclick = $('padzero').onclick = () => api('move', { x: 0, y: 0, feed: feed() });
+
+// ---- jog ----
+STEPS.forEach((s, i) => {
+  const b = document.createElement('button');
+  b.textContent = s + ' mm'; b.dataset.step = s;
+  b.onclick = () => setStep(s);
+  $('steps').append(b);
+});
+function setStep(s) {
+  step = s;
+  document.querySelectorAll('[data-step]').forEach(b => b.classList.toggle('on', +b.dataset.step === s));
+}
+setStep(step);
+
+const zFeed = () => Math.min(feed(), 3000);
+function jog(dir, dist) {
+  const [dx, dy, dz] = dir;
+  return api('jog', { x: dx * dist, y: dy * dist, z: dz * dist, feed: dz ? zFeed() : feed() });
+}
+
+// press: after HOLD_MS switch to a long jog that is cancelled on release
+function holdable(btn, dir) {
+  let timer = null, holding = false;
+  const start = e => {
+    e.preventDefault();
+    if (timer || holding) return;
+    btn.classList.add('on');
+    timer = setTimeout(() => { timer = null; holding = true; jog(dir, HOLD_REACH); }, HOLD_MS);
+  };
+  const end = () => {
+    btn.classList.remove('on');
+    if (timer) { clearTimeout(timer); timer = null; jog(dir, step); }
+    else if (holding) { holding = false; rt('jog_cancel'); }
+  };
+  return { start, end };
+}
+
+document.querySelectorAll('[data-jog]').forEach(btn => {
+  const h = holdable(btn, btn.dataset.jog.split(',').map(Number));
+  btn.addEventListener('pointerdown', h.start);
+  btn.addEventListener('pointerup', h.end);
+  btn.addEventListener('pointerleave', e => e.buttons && h.end());
+  btn.addEventListener('pointercancel', h.end);
+});
+
+const KEYS = { ArrowLeft: '-1,0,0', ArrowRight: '1,0,0', ArrowUp: '0,1,0', ArrowDown: '0,-1,0',
+  PageUp: '0,0,1', PageDown: '0,0,-1' };
+const keyHolds = {};
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'Escape') { stop(); return; }
+  if (/^[1-5]$/.test(e.key)) { setStep(STEPS[+e.key - 1]); return; }
+  const j = KEYS[e.key]; if (!j) return;
+  e.preventDefault();
+  if (e.repeat || keyHolds[e.key]) return;
+  const btn = document.querySelector(`[data-jog="${j}"]`);
+  keyHolds[e.key] = holdable(btn, j.split(',').map(Number));
+  keyHolds[e.key].start(e);
+});
+addEventListener('keyup', e => { const h = keyHolds[e.key]; if (h) { delete keyHolds[e.key]; h.end(); } });
+addEventListener('blur', () => { for (const k in keyHolds) { keyHolds[k].end(); delete keyHolds[k]; } });
+
+$('feed').oninput = () => $('feedv').textContent = feed() + ' mm/min';
+$('feed').oninput();
+
+// ---- zero, machine ----
+document.querySelectorAll('[data-zero]').forEach(b => b.onclick = () =>
+  send('G10 L20 P1 ' + [...b.dataset.zero].map(a => a + '0').join(' ')));
+
+function stop() { rt('hold'); setTimeout(() => rt('reset'), 150); }
+$('stop').onclick = stop;
+$('home').onclick = () => api('home');
+$('unlock').onclick = () => send('$X');
+$('hold').onclick = () => rt('hold');
+$('resume').onclick = () => rt('resume');
+$('reset').onclick = () => rt('reset');
+
+// ---- console ----
+const COMMANDS = [
+  ['$$', 'View all GRBL settings'], ['$#', 'View G-code parameters'], ['$G', 'View parser state'],
+  ['$I', 'View build info'], ['$N', 'View startup blocks'], ['$C', 'Check G-code mode'],
+  ['$X', 'Kill alarm lock'], ['$H', 'Run homing cycle'], ['$J=G91 X10 F1000', 'Jog'],
+  ['$SLP', 'Sleep mode'], ['G21', 'Units: millimetres'], ['G90', 'Absolute positioning'],
+  ['G91', 'Relative positioning'], ['G0 X0 Y0', 'Rapid to work 0,0'],
+  ['G10 L20 P1 X0 Y0 Z0', 'Set current position as work zero'],
+];
+COMMANDS.forEach(([c, d]) => { const o = document.createElement('option'); o.value = c; o.label = d; $('cmds').append(o); });
+const history = []; let hi = 0;
+$('cmdform').onsubmit = e => {
+  e.preventDefault();
+  const line = $('cmd').value.trim(); if (!line) return;
+  history.push(line); hi = history.length; $('cmd').value = '';
+  if (line === '?') rt('status'); else if (line === '!') rt('hold');
+  else if (line === '~') rt('resume'); else send(line);
+};
+$('cmd').addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' && hi > 0) { $('cmd').value = history[--hi]; e.preventDefault(); }
+  if (e.key === 'ArrowDown') { hi = Math.min(hi + 1, history.length); $('cmd').value = history[hi] || ''; }
+});
+document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => send(b.dataset.cmd));
+
+drawMap();
+connect();
+</script>
+</body>
+</html>
