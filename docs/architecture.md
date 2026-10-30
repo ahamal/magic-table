@@ -20,10 +20,10 @@
 │  Body API (one web server for the whole table)                   │
 │  Safety layer: soft limits, Z only lowers when clear,            │
 │                Mate no-go zone, e-stop                           │
-│  ├─ Frame driver ── USB serial ──► Arduino + RAMPS (GRBL)        │
+│  ├─ Frame driver ── USB serial ──► Uno + CNC Shield (GRBL)       │
 │  ├─ Overhead camera (Camera v2)                                  │
 │  ├─ VL6180X on the gantry head (I2C)                             │
-│  ├─ Pump ── GPIO ──► H-bridge ──► 12V peristaltic pump           │
+│  ├─ Gripper ── USB serial ──► Nano ──► 12V pump + vent valve     │
 │  └─ Mate client ── HTTP ──┐                                      │
 └───────────────────────────┼──────────────────────────────────────┘
                             ▼
@@ -90,4 +90,4 @@ Mate is its own system with its own API. Raw by design: `step {s1, s2}`, `servo 
 ## Network
 
 - Mate's ESP32 is 2.4 GHz only. Use WPA2 (or mixed). A phone hotspot on 2.4 GHz is easiest for demos.
-- Hostnames: `mate.local` (ESP32, mDNS). Pi 5 hostname TBD.
+- Hostnames: `mate.local` (ESP32, mDNS). Pi 5: `raspberrypi.local`.

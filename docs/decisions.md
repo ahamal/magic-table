@@ -14,9 +14,9 @@ Running log. Newest at the bottom of each section.
 
 ## Hardware
 
-- **The Frame is the Robo Diner gantry** (CoreXY, GRBL, Arduino + RAMPS, limit switches).
+- **The Frame is the Robo Diner gantry** (CoreXY, GRBL, limit switches). The board turned out to be an **Uno + CNC Shield V3**, not RAMPS.
 - **Pi 5 is the table hub** — body API, Frame driver, overhead camera, VL6180X, pump, Mate client. The brain probably runs there too.
-- **Pump: H-bridge driven from Pi 5 GPIO** on the RAMPS 12V supply (recommended, pending pump type). *Why:* RAMPS MOSFETs only switch on/off; the peristaltic pump must reverse to release.
+- ~~**Pump: H-bridge driven from Pi 5 GPIO** on the RAMPS 12V supply.~~ Replaced below.
 - **Gripper: 12 mm, 2-layer bellows suction cup.** *Why:* fits on a dime; 2 layers are enough because Z, the spring mount and the known stack height handle height; fewer layers grip faster and sway less.
 - **VL6180X #1 on the gantry head** (stack heights, picks, pick confirmation). Optional touch switch on GRBL's probe pin for exact contact.
 - **Overhead camera: Camera v2 (imx219)** on the Frame, about 50 cm up, on a long ribbon (≤ 1 m) with a 22→15-pin adapter for the Pi 5.
@@ -29,6 +29,9 @@ Running log. Newest at the bottom of each section.
 - **Power: one 5V source split at a perfboard hub** (power bank via cut USB cable; CanaKit on the bench), JST-XH connectors, GND on pin 1.
 - **TF-Luna:** later, on Mate's pan mount, for finding players and obstacles at a distance. Not for Z (20 cm blind zone, ±6 cm).
 - **Markers should blend in:** head-marker calibration (removable), small markers on top of frame corners, Mate's marker designed into its look.
+- **Suction: 12V diaphragm pump + normally-closed solenoid vent valve** (AIRZOE 2V025-08, direct-acting). Pump on to grip and hold; pump off and valve pulsed ~0.3 s to drop. *Why:* the peristaltic pump was too weak; a diaphragm pump can't reverse, so a valve does the release, as on uArm/Dobot arms and vending pickers. A pilot-operated valve (4V210) won't work on vacuum.
+- **Gripper driver: a Nano over USB from the Pi 5**, two 30N06L logic-level MOSFET modules, a 1N4007 across each load. No H-bridge. *Why:* the Pi 5 never touches the 12V side; a mistake costs a Nano, not the hub.
+- **Frame speed at 12V: X/Y 9000 mm/min, acceleration 500 mm/s².** *Why:* 12000 skipped steps; 24V would be faster but needs a second supply for the 12V pump and valve. Not worth it before the deadline.
 
 ## Mate
 

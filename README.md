@@ -31,9 +31,9 @@ A tabletop robot system that learns a game from a plain-English explanation, the
 | What | The Robo Diner CoreXY gantry | Small wheeled companion robot |
 | Job | All precise physical work: pick, place, flip, stack | The AI's body at the table: faces players, peeks, emotes, flips |
 | Brain host | Raspberry Pi 5 — also the hub for the whole table | ESP32 (DevKit now, ESP32-S3 CAM next) — self-contained, own API over Wi-Fi |
-| Motion | GRBL on Arduino + RAMPS, limit switches | ESP32 (our firmware), 2× 28BYJ-48 + ULN2003 |
+| Motion | GRBL on Uno + CNC Shield, limit switches | ESP32 (our firmware), 2× 28BYJ-48 + ULN2003 |
 | Sensing | Overhead Camera v2, VL6180X on the head | OV2640 camera (on the S3 board), VL6180X edge sensor, (TF-Luna later) |
-| Gripper / extras | 12 mm 2-layer suction cup on a 12V peristaltic pump | Pan/tilt servos (PCA9685), 0.96" OLED face, optional flipper paddle |
+| Gripper / extras | 12 mm 2-layer suction cup, 12V diaphragm pump + vent valve | Pan/tilt servos (PCA9685), 0.96" OLED face, optional flipper paddle |
 
 ## Repository layout
 
@@ -65,5 +65,6 @@ Full sequence in [`docs/plan.md`](docs/plan.md). Open items in [`docs/open-quest
 - [`docs/brief.md`](docs/brief.md) — the original project brief (hackathon, concept, games, hardware notes, risks)
 - [`docs/architecture.md`](docs/architecture.md) — layers, body interface, ghost vs real, network
 - [`docs/decisions.md`](docs/decisions.md) — what's been decided and why
+- [`docs/log.md`](docs/log.md) — dated build log: what happened and what we learned
 - [`docs/plan.md`](docs/plan.md) — build steps and timeline
 - [`docs/open-questions.md`](docs/open-questions.md) — what's still unknown

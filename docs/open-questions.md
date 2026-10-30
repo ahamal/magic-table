@@ -13,10 +13,11 @@
 
 ## Frame
 - [ ] Gantry travel in X, Y, Z
-- [ ] Arduino board under the RAMPS (RAMPS is a Mega shield) and GRBL build
-- [ ] Pump: DC or stepper? Current draw? (Decides H-bridge vs extra GRBL axis.)
+- [x] Controller: Uno + CNC Shield V3 running GRBL 1.1h with CoreXY (not RAMPS)
+- [x] Pump: 12V diaphragm pump + NC solenoid vent valve, switched by a Nano (peristaltic was too weak)
+- [ ] Steps/mm: `$100`–`$102` are 50, unmeasured. Send a 100 mm move and measure
 - [ ] Does the Robo Diner hand (tilt/grab servos via PCA9685) stay, or is it replaced by the suction head?
-- [ ] Pi 5 hostname
+- [x] Pi 5 hostname: `raspberrypi.local` (user `ash`)
 - [ ] 22→15-pin camera adapter cable for the Pi 5 — on hand?
 - [ ] Emergency stop button wired to GRBL reset / feed hold
 

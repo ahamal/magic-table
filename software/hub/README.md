@@ -6,7 +6,7 @@ The body API for the whole table. Step 2.
 
 - **One web server** (FastAPI): the table body API (see [`docs/architecture.md`](../../docs/architecture.md#body-interface-table)) plus the human table page. WebSocket for events (`wait_for`) and the optional live view.
 - **Frame driver:** GRBL over USB serial — homing, soft limits, `move_to`, probe (`G38.2`).
-- **Gripper:** pump forward / stop / reverse via H-bridge on GPIO.
+- **Gripper:** a Nano over USB serial switches the 12V pump and vent valve (`G` grip, `D` drop, `S` stop). The Pi never touches the 12V side.
 - **Sensors:** VL6180X (`sense_z`), touch switch (`probe`).
 - **Overhead camera:** `capture("overhead")`.
 - **Mate client:** the only caller of Mate's API once the table is assembled; `capture("mate")` and `mate.*` pass through.
