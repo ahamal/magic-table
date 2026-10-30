@@ -1,7 +1,7 @@
 """Mate drive wheel for the 28BYJ-48 shaft, plus a bore fit test.
 
 Usage: python wheel.py   (needs: pip install manifold3d numpy)
-Writes wheel.stl and fit-test.stl next to this file. All sizes in mm.
+Writes wheel-70.stl and fit-test.stl next to this file. All sizes in mm.
 """
 
 from pathlib import Path
@@ -15,7 +15,7 @@ SHAFT_FLATS = 3.0
 CLEARANCE = 0.5  # added to both; this printer prints holes tight (fit test: 0.5 best)
 
 # ---- Wheel ----
-WHEEL_D = 60.0     # 30 mm radius: ~3.7 cm/s at 800 half-steps/s
+WHEEL_D = 70.0     # 35 mm radius: ~4.3 cm/s at 800 half-steps/s
 WIDTH = 8.0
 RIM = 4.0          # radial thickness of the rim
 WEB = 3.0          # thickness of the disc between hub and rim
@@ -92,7 +92,7 @@ def write_stl(manifold, path):
 
 if __name__ == "__main__":
     here = Path(__file__).parent
-    for name, part in [("wheel", wheel()), ("fit-test", fit_test())]:
+    for name, part in [("wheel-70", wheel()), ("fit-test", fit_test())]:
         write_stl(part, here / f"{name}.stl")
         lo, hi = part.bounding_box()[:3], part.bounding_box()[3:]
         size = " x ".join(f"{h - l:.1f}" for l, h in zip(lo, hi))
