@@ -21,63 +21,192 @@ software/mate/
 
 ## API
 
-Base URL: `http://mate.local` (mDNS from the ESP32, port 80). Parameters go in the query string; replies are JSON unless noted.
+Everything Mate can do goes through this HTTP API. The control page uses it, and so will the hub and the AI brain. Every reply below was captured from the robot.
 
-| Method | Path | Params | Returns |
-|---|---|---|---|
-| GET | `/` | — | Control page: camera, screen editor, arrow pad + arrow keys, speed/accel, raw steps, STOP, flipper slider |
-| GET | `/info` | — | Firmware, IP, limits, `oled` found, screen size and limits, `camera` sensor name, `stream` URL, flip settings |
-| GET | `/status` | — | `busy`, step counters `p1`/`p2`, last move `{result, d1, d2, ms}`, flipper `servo` angle, `screen` frames and fps, uptime, `reset_reason` and `boots` (restarts since power-up), RSSI |
-| POST | `/step` | `s1, s2, speed?, accel?` (half-steps) | `{ok}` at once; poll `/status` until `busy` is false for the result |
-| POST | `/stop` | — | Stops immediately, releases coils. Always works, even mid-move. |
-| POST | `/servo` | `angle` (0–180) | `{ok}` — the flipper |
-| POST | `/screen` | Body: N × 1024 bytes; header `X-FPS` (1–30, default 10) | `{frames, fps}` — a picture or a looping animation on the OLED; empty body = status screen |
-| GET | `/capture` | — | **JPEG**, 640×480, a fresh frame. About 0.9 s |
-| POST | `/camera` | `vflip?`, `hmirror?` (0/1) | Flip the image. Both start on (180°), because the camera is mounted upside down |
-| GET | `:81/stream` | — | **MJPEG** live video, about 2 fps. Open in a browser or `<img>`; for watching and debugging |
-| GET | `/scan` | — | I2C addresses on the bus |
+### Conventions
 
-Speech is not on Mate: the hub speaks for it.
+- **Base URL:** `http://mate.local` (port 80). Use the IP from `/info` if mDNS is slow. The live video is on port 81.
+- **Parameters** go in the query string, e.g. `POST /step?s1=400&s2=-400`. POST requests have no body, except `/screen`.
+- **Numbers are whole numbers.** A value that isn't a number is read as `0`, not rejected, so check what you send.
+- **Replies** are JSON, except `/capture` (JPEG), `/stream` (MJPEG) and `/` (HTML).
+- **Errors** are an HTTP status code plus `{"error": "<message>"}`:
 
-### Getting pictures
+  | Status | `error` | When |
+  |---|---|---|
+  | 400 | `need s1 and s2` | `/step` without both wheels |
+  | 400 | `limit` | `/step` steps, speed or accel out of range |
+  | 400 | `range` | `/servo` angle missing or outside 0–180 |
+  | 400 | `body must be 0–64 frames of 1024 bytes` | `/screen` body the wrong size |
+  | 400 | `X-FPS 1–30` | `/screen` frame rate out of range |
+  | 400 | `X-Repeat 0–1000` | `/screen` repeat count out of range |
+  | 409 | `busy` | `/step` while a move is still running |
+  | 500 | `capture failed` | the camera gave no frame; try again |
+  | 503 | `no camera` | `/capture` or `/camera` with no camera found |
+  | 404 | *(plain text `Not found: /path`)* | unknown path, or the wrong method (e.g. `GET /step`) |
 
-- **Snapshot (what the agent uses):** `curl -o mate.jpg http://mate.local/capture`. Each call wakes the camera, drops the stale frame, takes a new one, encodes it and puts the camera back to sleep.
-- **Live video:** `http://mate.local:81/stream` in a browser, or the **Live** button on the control page. It runs on its own server, so the API on port 80 stays responsive while someone watches. Close it when done — while it runs the camera is on and Wi-Fi is slower.
-- **Speed limits:** the bundled GC0308 has no JPEG encoder, so the ESP32 encodes each frame in software (~370 ms). An OV2640 on the same connector would make snapshots and video several times faster; the firmware picks hardware JPEG automatically when the sensor has it.
+### Endpoints at a glance
 
-### Results
-
-`/status` → `last.result`:
-
-- `ok` — finished normally.
-- `stopped` — `/stop` interrupted the move.
-
-Errors use HTTP status codes with `{error}`: `400 limit` for steps or speed above the maximum, `409 busy`, `503 no camera`.
-
-### Limits (in the firmware)
-
-| Limit | Value | Why |
+| Method | Path | What it does |
 |---|---|---|
-| Max steps per command | 4096 half-steps (one wheel turn, ~22 cm) | A typo can't drive Mate off the table |
-| Max speed | 800 half-steps/s | 28BYJ-48 skips steps above this |
-| Max acceleration | 1000 half-steps/s² | Same |
+| GET | `/info` | What Mate is: limits, screen size, camera, stream URL |
+| GET | `/status` | What Mate is doing: moving or not, last move, servo, screen, health |
+| POST | `/step` | Move both wheels (starts the move and returns at once) |
+| POST | `/stop` | Stop the wheels now |
+| POST | `/servo` | Set the flipper angle |
+| POST | `/screen` | Show a picture or a looping animation on the face |
+| GET | `/capture` | Take a photo (JPEG) |
+| POST | `/camera` | Read or set the image flip |
+| GET | `:81/stream` | Live video (MJPEG), for people watching |
+| GET | `/scan` | List I2C devices (debugging) |
+| GET | `/` | The control page, for people |
 
-### Screen
+### `GET /info`
 
-`/screen` takes raw 128×64 pictures, so the AI (or a person) can show any face, text or drawing.
+Static facts about the robot. Read it once at start-up.
 
-- **Format:** 1 bit per pixel, rows top to bottom, 16 bytes per row, the most significant bit is the leftmost pixel; 1 = lit. One frame is 1024 bytes. Send it as `Content-Type: application/octet-stream`.
-- **Animations are preloaded:** send up to 64 frames back to back in one request with `X-FPS`, and Mate loops them by itself. Smooth, and nothing more goes over Wi-Fi. A new `/screen` replaces it. Streaming frames one request at a time also works (~50 ms per frame) but stutters whenever Wi-Fi does.
-- **Status screen:** shown at boot, whenever Wi-Fi is down ("not connected"), and when nothing has been sent (name, `mate.local`, IP). An empty `/screen` goes back to it.
-- **Ready-made faces:** [`faces/`](faces/) has animations to send as they are (eyes, chicken), drawn in code so they're easy to change.
-- **Control page:** click or drag on the screen preview to draw, Erase to remove, and type in the text box to render text (auto-sized, wrapped) under the drawing. It sends as you go, or with Send.
+```json
+{"fw":"mate-s3","ip":"192.168.1.201","max_steps":4096,"max_speed":800,"max_accel":1000,"oled":true,
+ "screen":{"width":128,"height":64,"frame_bytes":1024,"max_frames":64,"max_fps":30,"max_repeat":1000},
+ "camera":"GC0308","stream":"http://192.168.1.201:81/stream","vflip":1,"hmirror":1}
+```
+
+| Field | Meaning |
+|---|---|
+| `max_steps` | Most half-steps per wheel in one `/step` (4096 = one wheel turn) |
+| `max_speed` | Highest `speed` for `/step`, half-steps/s |
+| `max_accel` | Highest `accel` for `/step`, half-steps/s² |
+| `oled` | `true` if the face screen was found |
+| `screen` | Face size and `/screen` limits |
+| `camera` | Sensor name, or `none` |
+| `stream`, `vflip`, `hmirror` | Only present when there is a camera |
+
+### `GET /status`
+
+The live state. Poll it after `/step` (every 100–200 ms) to know when a move ends.
+
+```json
+{"busy":false,"p1":0,"p2":0,"last":{"result":"none","d1":0,"d2":0,"ms":0},"servo":-1,
+ "screen":{"frames":56,"fps":12,"repeat":0,"done":false},"uptime_ms":12666,"reset_reason":"power_on","boots":1,"rssi":-38}
+```
+
+| Field | Meaning |
+|---|---|
+| `busy` | `true` while a wheel move is running |
+| `p1`, `p2` | Step counters for wheel 1 and 2 since boot (not a position on the table) |
+| `last.result` | The last move: `ok` (finished), `stopped` (cut short by `/stop`), or `none` (no move since boot) |
+| `last.d1`, `last.d2` | Half-steps each wheel actually moved in that move |
+| `last.ms` | How long it took |
+| `servo` | Last flipper angle set, or `-1` if never set since boot |
+| `screen.frames`, `screen.fps`, `screen.repeat` | What the face is showing: `0` frames = the status screen; `repeat` as sent (`0` = forever) |
+| `screen.done` | `true` once an animation has played its `X-Repeat` times and is holding its last frame. Always `true` for a still picture or the status screen; never for a forever loop |
+| `uptime_ms` | Time since the last restart |
+| `reset_reason` | Why it last restarted: `power_on`, `brownout`, `crash`, `watchdog`, `software`, `usb`, `other` |
+| `boots` | Restarts since power was connected. If this goes up, Mate restarted: check `reset_reason` |
+| `rssi` | Wi-Fi signal in dBm (−30 great, −70 weak) |
+
+### `POST /step?s1=&s2=[&speed=][&accel=]`
+
+Moves both wheels at once. Both wheels start and finish together, so different values make Mate curve.
+
+| Param | Required | Range | Default | Meaning |
+|---|---|---|---|---|
+| `s1` | yes | −4096…4096 | — | Half-steps for wheel 1 (4096 = one wheel turn) |
+| `s2` | yes | −4096…4096 | — | Half-steps for wheel 2 |
+| `speed` | no | 1…800 | 500 | Top speed in half-steps/s, for the wheel going further; the other wheel is scaled to finish at the same time |
+| `accel` | no | 1…1000 | 400 | Ramp up and down, half-steps/s² |
+
+- **Returns at once:** `{"ok":true}`. The move runs on its own; poll `/status` until `busy` is `false`, then read `last`.
+- **One move at a time:** a second `/step` while moving gets `409 busy`. Send `/stop` first to change course.
+- `s1=0&s2=0` finishes immediately with `ok`.
+- The motor coils switch off after every move, so the wheels can be turned by hand while idle.
 
 ```bash
-# one frame
-curl -X POST -H 'Content-Type: application/octet-stream' --data-binary @face.bin http://mate.local/screen
-# a 4-frame animation at 8 fps
-cat f1.bin f2.bin f3.bin f4.bin | curl -X POST -H 'Content-Type: application/octet-stream' -H 'X-FPS: 8' --data-binary @- http://mate.local/screen
+curl -X POST "http://mate.local/step?s1=-1024&s2=1024&speed=600&accel=800"   # → {"ok":true}
 ```
+
+### `POST /stop`
+
+Stops the wheels immediately and switches the coils off. Works at any time, even mid-move or when idle. Returns `{"ok":true}`; the interrupted move shows `last.result = "stopped"` with how far each wheel actually got.
+
+### `POST /servo?angle=`
+
+Sets the flipper (MG996R) to `angle`, 0–180. Returns `{"ok":true}` as soon as the command is sent; the servo takes up to ~1 s to get there. It then holds that angle. There is no feedback of the real position. Avoid the very ends (0 and 180) if the flipper hits something there: holding against a stop draws ~2.5 A.
+
+### `POST /screen`
+
+Shows a picture or a looping animation on the face (the OLED).
+
+- **Body:** 0–64 frames back to back, each **1024 bytes**: 128×64 pixels, 1 bit per pixel, rows top to bottom, 16 bytes per row, most significant bit = leftmost pixel, `1` = lit.
+- **Headers:** `Content-Type: application/octet-stream`, plus optional:
+  - `X-FPS: 1–30` (default 10): playback speed.
+  - `X-Repeat: 0–1000` (default 0): how many times to play the animation. `0` loops forever; `1` plays once; then it **stays on the last frame**.
+
+  These are headers, not `?fps=`, because Mate's web server ignores query args on requests with a binary body.
+- **Returns** `{"frames":N,"fps":F,"repeat":R}`.
+- **1 frame** = a still picture. **2–64 frames** = Mate plays them by itself at `X-FPS`, `X-Repeat` times, until replaced. **Empty body** = back to the status screen.
+- **Knowing when it's finished:** `/status` → `screen.done` turns `true` when a counted animation ends. Play-once reactions (a blink, a surprised face) then hold their last frame until you send the next thing.
+- **The status screen** is what Mate shows by itself: at boot, whenever nothing has been sent ("Mate", `mate.local`, its IP and camera), and whenever Wi-Fi is down ("not connected" and the network name).
+- Not kept across restarts. If Wi-Fi drops, the status screen ("not connected") shows until it's back, then the animation resumes.
+
+```bash
+# loop forever
+curl -X POST -H 'Content-Type: application/octet-stream' -H 'X-FPS: 12' \
+  --data-binary @software/mate/faces/eyes.bin http://mate.local/screen   # → {"frames":56,"fps":12,"repeat":0}
+# play once, then hold the last frame
+curl -X POST -H 'Content-Type: application/octet-stream' -H 'X-FPS: 4' -H 'X-Repeat: 1' \
+  --data-binary @software/mate/faces/chicken.bin http://mate.local/screen # → {"frames":4,"fps":4,"repeat":1}
+```
+
+Ready-made faces (eyes, chicken, a portrait) are in [`faces/`](faces/); `faces/make.py` shows how to draw frames with Pillow (`Image.new("1", (128, 64)).tobytes()` is already in Mate's format).
+
+### `GET /capture`
+
+Returns a fresh photo: `image/jpeg`, 640×480, about 25–35 KB, in about 1 s. Each call wakes the camera, throws away the stale frame, takes a new one, and puts the camera back to sleep (a running camera slows Mate's Wi-Fi). The image is already turned the right way up.
+
+### `POST /camera[?vflip=0|1][&hmirror=0|1]`
+
+Reads or sets the image flip. With no params it just returns the current setting: `{"vflip":1,"hmirror":1}`. Both start at `1` (a 180° turn, because the camera is mounted upside down) after every restart.
+
+### `GET :81/stream`
+
+Live MJPEG video (`http://mate.local:81/stream`), about 2 fps, for people to watch in a browser. The camera stays on while anyone watches, which slows Wi-Fi, so the AI should use `/capture` instead.
+
+### `GET /scan`
+
+The I2C addresses that answer, e.g. `{"i2c":["0x3c"]}` (`0x3c` is the face screen). For debugging wiring.
+
+### Driving: what's known about the body
+
+Calibration is the agent's job, but these were checked on the bench (Oct 31):
+
+| Command | What Mate does |
+|---|---|
+| `s1` −, `s2` + (e.g. `-1024, 1024`) | Drives **forward** |
+| `s1` +, `s2` − | Drives backward |
+| `s1` +, `s2` + | Turns **left** (anticlockwise, seen from above) |
+| `s1` −, `s2` − | Turns right |
+
+- One wheel turn is 4096 half-steps. The wheels are 70 mm across, so one turn rolls about **220 mm** (≈ 0.054 mm per half-step) if nothing slips. Not yet measured on the table.
+- Top speed: 800 half-steps/s ≈ **4.3 cm/s**.
+- Mate doesn't know where it is. Use the overhead camera (later) or `/capture` to see where it went.
+- **No edge sensor:** nothing on Mate stops it at the table edge. The 4096-step limit per move (~22 cm) is the only guard.
+
+### A typical agent loop
+
+1. `GET /info` once.
+2. `POST /step?...` → `{"ok":true}`.
+3. Poll `GET /status` every ~150 ms until `busy` is `false`. Read `last.result` and `last.d1`/`last.d2`.
+4. `GET /capture` to see the result.
+5. Check `boots` now and then: if it went up, Mate restarted, the face screen is reset, and the step counters are back at 0.
+
+### Getting pictures: notes
+
+- The bundled GC0308 camera has no JPEG encoder, so the ESP32 encodes each frame in software (~370 ms). An OV2640 on the same connector would make snapshots several times faster; the firmware switches to hardware JPEG automatically.
+- The stream runs on its own server (port 81), so the API on port 80 stays responsive while someone watches.
+
+### Control page
+
+`http://mate.local/` is for people: camera (snapshot, live, download), a screen editor (draw with clicks, type text, send), an arrow pad with keyboard arrows (Space or Esc stops), speed and accel sliders, raw `s1`/`s2`, STOP, and a flipper slider. It uses only the API above.
 
 ## Step 1 checklist
 

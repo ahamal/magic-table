@@ -74,14 +74,18 @@ const char *camName = "none";
 int servoAngle = -1;
 
 // ---- Screen: 128×64, 1 bit per pixel, rows top to bottom, 16 bytes per row, MSB = leftmost ----
-// POST /screen with N frames back to back plays them in a loop; no frames = the status screen.
+// POST /screen with N frames back to back plays them X-Repeat times (0 = forever), then holds
+// the last frame; no frames = the status screen.
 const size_t FRAME_BYTES = 128 * 64 / 8;
 const uint16_t MAX_FRAMES = 64;
 const uint8_t MAX_FPS = 30;
+const uint16_t MAX_REPEAT = 1000;
 uint8_t *frames = nullptr, *upload = nullptr;  // PSRAM, MAX_FRAMES each; swapped when an upload completes
 size_t uploadLen = 0;
 uint16_t frameCount = 0, frameIdx = 0;
 uint8_t fps = 10;
+uint16_t repeatTotal = 0, loopsDone = 0;  // repeatTotal 0 = loop forever
+bool screenDone = true;                   // finished playing (always true for a still or the status screen)
 bool screenDirty = true, shownOnline = false;
 unsigned long lastOled = 0;
 
@@ -335,9 +339,15 @@ void updateOled() {
     }
     return;
   }
-  bool due = frameCount > 1 && now - lastOled >= 1000 / fps;
+  bool due = frameCount > 1 && !screenDone && now - lastOled >= 1000 / fps;
   if (!screenDirty && !due) return;
-  if (!screenDirty) frameIdx = (frameIdx + 1) % frameCount;
+  if (!screenDirty) {
+    if (frameIdx + 1 == frameCount && repeatTotal && ++loopsDone >= repeatTotal) {
+      screenDone = true;  // played X-Repeat times: stay on the last frame
+      return;
+    }
+    frameIdx = (frameIdx + 1) % frameCount;
+  }
   drawFrame(frames + frameIdx * FRAME_BYTES);
   lastOled = now;
   screenDirty = false;
@@ -505,7 +515,8 @@ void handleStatus() {
   j += ",\"last\":{\"result\":\"" + String(lastResult) + "\",\"d1\":" + String(lastD1) +
        ",\"d2\":" + String(lastD2) + ",\"ms\":" + String(lastMs) + "}";
   j += ",\"servo\":" + String(servoAngle);
-  j += ",\"screen\":{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) + "}";
+  j += ",\"screen\":{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) +
+       ",\"repeat\":" + String(repeatTotal) + ",\"done\":" + String(screenDone ? "true" : "false") + "}";
   j += ",\"uptime_ms\":" + String(millis());
   j += ",\"reset_reason\":\"" + String(resetReason) + "\",\"boots\":" + String(bootCount);
   j += ",\"rssi\":" + String(WiFi.RSSI()) + "}";
@@ -514,11 +525,12 @@ void handleStatus() {
 
 void handleInfo() {
   String j = "{\"fw\":\"mate-s3\",\"ip\":\"" + WiFi.localIP().toString() + "\"";
-  j += ",\"maxsteps\":" + String(MAX_STEPS) + ",\"maxspeed\":" + String(MAX_SPEED) +
-       ",\"maxaccel\":" + String(MAX_ACCEL);
+  j += ",\"max_steps\":" + String(MAX_STEPS) + ",\"max_speed\":" + String(MAX_SPEED) +
+       ",\"max_accel\":" + String(MAX_ACCEL);
   j += ",\"oled\":" + String(hasOled ? "true" : "false");
   j += ",\"screen\":{\"width\":128,\"height\":64,\"frame_bytes\":" + String(FRAME_BYTES) +
-       ",\"max_frames\":" + String(MAX_FRAMES) + ",\"max_fps\":" + String(MAX_FPS) + "}";
+       ",\"max_frames\":" + String(MAX_FRAMES) + ",\"max_fps\":" + String(MAX_FPS) +
+       ",\"max_repeat\":" + String(MAX_REPEAT) + "}";
   j += ",\"camera\":\"" + String(camName) + "\"";
   if (hasCam) {
     j +=",\"stream\":\"http://" + WiFi.localIP().toString() + ":81/stream\"";
@@ -562,9 +574,10 @@ void handleStop() {
   sendJson("{\"ok\":true}");
 }
 
-// POST /screen, body = N × 1024 bytes (application/octet-stream), optional header X-FPS (1–30).
-// One frame is a still picture, several loop at X-FPS. An empty body goes back to the status
-// screen. (The frame rate is a header because WebServer skips query args on raw bodies.)
+// POST /screen, body = N × 1024 bytes (application/octet-stream), optional headers X-FPS (1–30)
+// and X-Repeat (0 = forever, the default, or how many times to play). One frame is a still
+// picture; several play at X-FPS. An empty body goes back to the status screen. (Headers, not
+// query args, because WebServer skips query args on raw bodies.)
 void handleScreenBody() {
   HTTPRaw &raw = server.raw();
   if (raw.status == RAW_START) {
@@ -583,12 +596,17 @@ void handleScreen() {
   }
   long f = server.hasHeader("X-FPS") ? server.header("X-FPS").toInt() : 10;
   if (f < 1 || f > MAX_FPS) return sendJson("{\"error\":\"X-FPS 1–" + String(MAX_FPS) + "\"}", 400);
+  long r = server.hasHeader("X-Repeat") ? server.header("X-Repeat").toInt() : 0;
+  if (r < 0 || r > MAX_REPEAT) return sendJson("{\"error\":\"X-Repeat 0–" + String(MAX_REPEAT) + "\"}", 400);
   std::swap(frames, upload);
   frameCount = len / FRAME_BYTES;
   frameIdx = 0;
   fps = f;
+  repeatTotal = r;
+  loopsDone = 0;
+  screenDone = frameCount <= 1;
   screenDirty = true;
-  sendJson("{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) + "}");
+  sendJson("{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) + ",\"repeat\":" + String(repeatTotal) + "}");
 }
 
 void handleServo() {
@@ -663,8 +681,8 @@ void netTask(void *) {
   server.on("/step", HTTP_POST, handleStep);
   server.on("/stop", HTTP_POST, handleStop);
   server.on("/screen", HTTP_POST, handleScreen, handleScreenBody);
-  const char *headers[] = {"X-FPS"};
-  server.collectHeaders(headers, 1);
+  const char *headers[] = {"X-FPS", "X-Repeat"};
+  server.collectHeaders(headers, 2);
   server.on("/servo", HTTP_POST, handleServo);
   server.on("/capture", HTTP_GET, handleCapture);
   server.on("/camera", HTTP_POST, handleCamera);

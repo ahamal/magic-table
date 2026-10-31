@@ -1,6 +1,6 @@
 # Mate faces
 
-Ready-made animations for Mate's 128×64 OLED. Each is a `.bin` file of frames in the [`/screen` format](../README.md#screen) (1024 bytes per frame), with a `.png` preview.
+Ready-made animations for Mate's 128×64 OLED. Each is a `.bin` file of frames in the [`/screen` format](../README.md#post-screen) (1024 bytes per frame), with a `.png` preview.
 
 | Face | Frames | Send at | What it does | Preview |
 |---|---|---|---|---|
@@ -15,7 +15,7 @@ curl -X POST -H 'Content-Type: application/octet-stream' -H 'X-FPS: 12' \
   --data-binary @software/mate/faces/eyes.bin http://mate.local/screen
 ```
 
-Use the face's frame rate in `X-FPS`. To go back to the status screen, send an empty body (or press **Status screen** on the control page).
+Use the face's frame rate in `X-FPS`. Add `-H 'X-Repeat: 1'` to play it once and stop on the last frame (`0`, the default, loops forever). To go back to the status screen, send an empty body (or press **Status screen** on the control page).
 
 ## Make or change one
 
