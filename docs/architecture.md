@@ -7,7 +7,7 @@
 3. **No abstraction in the body.** Raw stepper steps, raw servo angles, raw sensor readings. Turning "go forward 10 cm" into steps is calibration, and calibration is the agent's job.
 4. **Everything clever lives in the agent.** Image understanding (labeler), rules, strategy, memory, body model, macros (deal = many picks), self-checking, token budget.
 5. **The agent can be an AI or a human.** Same API. Humans use a web page; the AI uses MCP tools that wrap the same endpoints.
-6. **Safety is the exception to "no abstraction".** Limits, the Mate no-go zone, the edge reflex and stop live in the body, below the agent, and can't be bypassed.
+6. **Safety is the exception to "no abstraction".** Limits, the Mate no-go zone and stop live in the body, below the agent, and can't be bypassed.
 
 ## Layers
 
@@ -27,12 +27,12 @@
 │  └─ Mate client ── HTTP ──┐                                      │
 └───────────────────────────┼──────────────────────────────────────┘
                             ▼
-┌──────────────────────────────────────────── ESP32: Mate ────────┐
+┌───────────────────────────────────────── ESP32-S3: Mate ────────┐
 │  Mate API (own web server, Wi-Fi) + human control page           │
-│  ├─ Camera (OV2640, on the S3 board)                             │
+│  ├─ Camera (GC0308 on the board): /capture JPEG, :81/stream      │
 │  ├─ 2× 28BYJ-48 via ULN2003 (raw steps, own core)                │
-│  └─ I2C: OLED face, PCA9685 servos (pan, tilt, flipper),         │
-│          VL6180X edge sensor (reflex)                            │
+│  ├─ Servos straight from the ESP32 PWM (pan, tilt, flipper)      │
+│  └─ I2C: OLED face                                               │
 └──────────────────────────────────────────────────────────────────┘
 ```
 

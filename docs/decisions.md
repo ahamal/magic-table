@@ -8,7 +8,7 @@ Running log. Newest at the bottom of each section.
 - **Ghost and real share identical I/O,** including images. *Why:* develop the agent without hardware, test the whole perception pipeline in simulation, demo fallback.
 - **Images out, raw actions in.** The labeler (SAM + ArUco) is agent-side. *Why:* the body stays dumb and uniform; the agent decides when to spend tokens on labeling.
 - **No abstraction in the body.** Raw steps and angles; the agent learns calibration. *Why:* the robot learning its own body is the core of the brain and a strong "push the frontier" story.
-- **Safety stays in the body.** Limits, Mate no-go zone, edge reflex, stop. *Why:* falling off the table or crashing the gantry is not something to learn by trying.
+- **Safety stays in the body.** Limits, Mate no-go zone, stop. *Why:* falling off the table or crashing the gantry is not something to learn by trying.
 - **The agent can be human.** Same API through a web page. *Why:* hardware testing without AI, demo fallback, human-vs-AI on the same interface.
 - **Not built on Xenote relays.** Plain web endpoints instead. Xenote stays an option for docs/publishing.
 
@@ -21,11 +21,11 @@ Running log. Newest at the bottom of each section.
 - **VL6180X #1 on the gantry head** (stack heights, picks, pick confirmation). Optional touch switch on GRBL's probe pin for exact contact.
 - **Overhead camera: Camera v2 (imx219)** on the Frame, about 50 cm up, on a long ribbon (≤ 1 m) with a 22→15-pin adapter for the Pi 5.
 - ~~**Mate: Pi 3B + Arduino + 2× 28BYJ-48/ULN2003 + servos + ov5647 camera + tiny screen.**~~ Replaced below.
-- **Peek camera is Mate's camera.** No third camera needed. (Now the S3 board's OV2640.)
-- **VL6180X #2 on Mate**, front, pointing down, on the ESP32's I2C bus: table-edge reflex.
-- **Mate runs on an ESP32, no Pi.** Freenove ESP32-S3-WROOM CAM (OV2640, 8 MB PSRAM, USB-C) as the target; a regular ESP32 DevKit until it arrives. *Why:* the Pi was bulky, slow to set up and kept under-volting; the ESP32 is lighter, boots instantly and gives ~2–3× the battery life. The heavy thinking is in the cloud and on the Pi 5 anyway. *Risk:* OV2640 reading card corners — test first.
+- **Peek camera is Mate's camera.** No third camera needed. (Now the S3 board's GC0308; an OV2640 fits the same connector if it can't read cards.)
+- ~~**VL6180X #2 on Mate**, front, pointing down: table-edge reflex.~~ Dropped Oct 31 with the move to the S3. *Why:* frees I2C and space; the hub's no-go zone (overhead camera) and the per-command step limit keep Mate on the table instead.
+- **Mate runs on an ESP32, no Pi.** Freenove ESP32-S3-WROOM CAM (8 MB PSRAM, USB-C, bundled GC0308 camera) since Oct 31; a regular ESP32 DevKit before that. *Why:* the Pi was bulky, slow to set up and kept under-volting; the ESP32 is lighter, boots instantly and gives ~2–3× the battery life. The heavy thinking is in the cloud and on the Pi 5 anyway. *Risk:* the 640×480 GC0308 reading card corners — test first.
 - **Face: 0.96" SSD1306 OLED (128×64) on the pan/tilt head, camera just below it.** *Why:* the face and the camera always look the same way; `/screen` takes raw images.
-- **Servos on a PCA9685** (required on the S3 for pins). **Speech moves to the hub.**
+- ~~**Servos on a PCA9685.**~~ **Servos straight from the ESP32-S3's PWM** (GPIO 38–40) since Oct 31. *Why:* the PCA9685 took too much space, and without the edge sensor the S3 has the pins. Servo power stays on the 5V side. **Speech moves to the hub.**
 - **Power: one 5V source split at a perfboard hub** (power bank via cut USB cable; CanaKit on the bench), JST-XH connectors, GND on pin 1.
 - **TF-Luna:** later, on Mate's pan mount, for finding players and obstacles at a distance. Not for Z (20 cm blind zone, ±6 cm).
 - **Markers should blend in:** head-marker calibration (removable), small markers on top of frame corners, Mate's marker designed into its look.
@@ -37,7 +37,7 @@ Running log. Newest at the bottom of each section.
 
 - **Mate is self-contained:** own API, own control page, own safety. The hub later becomes a client.
 - **Raw drive:** `step {s1, s2}` moves both steppers simultaneously and they finish together. No turn/drive abstraction.
-- **Firmware keeps physics and safety only:** acceleration ramps, max speed, max steps per command, stop, coils off when idle, edge reflex.
+- **Firmware keeps physics and safety only:** acceleration ramps, max speed, max steps per command, stop, coils off when idle.
 - **Mate doesn't track its own position.** The overhead camera (and in step 1, the human) is the feedback.
 
 ## Build order

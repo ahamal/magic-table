@@ -6,10 +6,10 @@ Hackathon: Oct 26 – Nov 4, 2026. **Submissions due Nov 4, 9:00 PM ET.**
 
 ### Step 1 — Mate + human ◀ now
 Mate runs standalone; a person drives it from a browser.
-- [ ] Mate hardware assembled: chassis, 2× 28BYJ-48 + ULN2003, ESP32, PCA9685 + servos, OLED, edge sensor
+- [ ] Mate hardware assembled: chassis, 2× 28BYJ-48 + ULN2003, ESP32-S3 CAM, servos, OLED
 - [x] Hub board: 5V and I2C buses, JST-XH connectors (I2C side tested)
 - [ ] Power: power bank into the hub, one 5V source split there, shared ground
-- [ ] ESP32 firmware: Wi-Fi API, both steppers together, servos, OLED, edge reflex, stop ([`software/mate/firmware`](../software/mate/firmware))
+- [x] ESP32-S3 firmware: Wi-Fi API, both steppers together, servos, OLED, camera snapshot + stream, stop ([`software/mate/firmware`](../software/mate/firmware))
 - [ ] ESP32-S3 CAM: swap boards, `/capture`, card-corner test
 - [ ] Control page ([`software/mate/ui`](../software/mate/ui))
 - [ ] A human can drive, look, flip, change faces, capture photos and stop

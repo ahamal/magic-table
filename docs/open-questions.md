@@ -1,15 +1,15 @@
 # Open questions
 
 ## Blocking step 1 (Mate)
-- [x] Controller: ESP32 (DevKit now, Freenove ESP32-S3 CAM next) — no Pi, no Arduino
-- [x] Wheel diameter: 60 mm. Spacing: ~100 mm suggested, set when the chassis is designed
+- [x] Controller: Freenove ESP32-S3 CAM (since Oct 31) — no Pi, no Arduino, no PCA9685, no edge sensor
+- [x] Wheel diameter: 70 mm. Spacing: ~100 mm suggested, set when the chassis is designed
 - [ ] How many servos in v1: pan, pan + tilt, + flipper?
 - [x] Screen: 0.96" SSD1306 OLED, raw 128×64 images; the control page ships named faces
 - [x] Speaker: none on Mate; the hub speaks
 - [ ] Chassis: still to design/print (estimate ~14 × 11 × 12 cm)
 - [x] Power: power bank via cut USB cable, CanaKit on the bench
-- [ ] Can the OV2640 read a card corner at 10–15 cm? (Test as soon as the S3 board arrives.)
-- [ ] Freenove ESP32-S3 CAM pinout: confirm the free pins before wiring
+- [ ] Can the bundled GC0308 (640×480) read a card corner at 10–15 cm? If not: OV2640 module on the same connector, or peek with the overhead camera.
+- [x] Freenove ESP32-S3 CAM pins: see [`hardware/mate`](../hardware/mate/README.md#pins-freenove-esp32-s3-wroom-cam) (camera pins confirmed on the board)
 
 ## Frame
 - [ ] Gantry travel in X, Y, Z

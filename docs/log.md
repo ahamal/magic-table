@@ -55,6 +55,15 @@ What happened, when, and what we learned. Newest at the bottom. Times are ET and
   - **Why it's capped:** the estimated ceiling at 12V is about 200 mm/s, set by coil inductance and back-EMF. 24V would roughly double it, but would need the 12V pump and valve on a separate supply. Not doing it.
 - **GRBL build checked** with `$I`: **GRBL 1.1h (2019-08-30), CoreXY enabled** (`[OPT:VCZ,15,128]`). Variable spindle, homing forces machine zero. So X/Y moves are already mixed for CoreXY by GRBL.
 - **Hub server + jog page** (`software/hub/`): FastAPI on the Pi at port 8000, one kept-open GRBL connection, live status over WebSocket. The page builds on the Robo Diner jog page (click a target on the XY table and Z rail) with hold-to-jog, keyboard, live position, zeroing, STOP and a console.
+- **Gripper Nano + server** (`software/gripper/`): Nano flashed from the Pi with avrdude (old bootloader, 57600). Separate FastAPI service on port 8001 with pump and valve switches. Both services came back on their own after a power outage.
 - **Still open:**
   - Steps/mm (`$100`–`$102` = 50) hasn't been measured.
   - GRBL starts in alarm and needs `$H` or `$X`.
+
+## Oct 31 (day 6)
+
+- **Mate moves to the Freenove ESP32-S3-WROOM CAM** (ESP32-S3 rev v0.2, 8 MB flash, 8 MB PSRAM, CH343 USB at `/dev/cu.usbmodem5C930529801`, MAC `44:b1:76:c7:cd:74`). At first macOS didn't see it at all; a replug fixed it.
+- **Dropped from Mate:** the VL6180X edge sensor and the PCA9685. Servos run from the S3's PWM on GPIO 38–40; the OLED is the only I2C device (SDA 41, SCL 42). Wheels on 1, 2, 14, 21 and 3, 45, 46, 47. Nothing on Mate stops it at the table edge now; that's the hub's job.
+- **The bundled camera is a GC0308** (640×480), not an OV2640. It has no JPEG encoder, so the firmware encodes in software (~370 ms per frame).
+- **The running camera wrecked the Wi-Fi:** pings went from ~5 ms to 170–300 ms and a 25 KB snapshot took 1–17 s. Camera off: normal. A 10 MHz clock helped only partly. Fix: the camera clock runs only during a capture or stream. Result: idle ping ~11 ms, snapshot ~0.9 s, MJPEG stream ~2 fps, `/status` still ~20–40 ms while streaming.
+- **New firmware** `software/mate/firmware/`: API, wheels, servos, OLED, `GET /capture` (JPEG), `:81/stream` (MJPEG), `POST /camera` (flip). Wheels, servo and capture tested over Wi-Fi with nothing wired yet.

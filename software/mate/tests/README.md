@@ -1,5 +1,7 @@
 # Mate bring-up tests (ESP32)
 
+> **History.** This is the classic-DevKit test, with the VL6180X and PCA9685 that Mate no longer uses. Mate now runs [`../firmware`](../firmware) on the ESP32-S3.
+
 [`web_i2c/`](web_i2c/) is the bench test for the ESP32 Mate: I2C devices, web server and both steppers. It passed all three rounds:
 
 1. **I2C:** VL6180X (0x29), SSD1306 OLED (0x3C, mounted upside down), PCA9685 (0x40).
