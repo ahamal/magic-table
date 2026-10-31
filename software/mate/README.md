@@ -26,7 +26,7 @@ Base URL: `http://mate.local` (mDNS from the ESP32, port 80). Parameters go in t
 |---|---|---|---|
 | GET | `/` | — | Control page: camera, screen editor, arrow pad + arrow keys, speed/accel, raw steps, STOP, flipper slider |
 | GET | `/info` | — | Firmware, IP, limits, `oled` found, screen size and limits, `camera` sensor name, `stream` URL, flip settings |
-| GET | `/status` | — | `busy`, step counters `p1`/`p2`, last move `{result, d1, d2, ms}`, flipper `servo` angle, `screen` frames and fps, uptime, RSSI |
+| GET | `/status` | — | `busy`, step counters `p1`/`p2`, last move `{result, d1, d2, ms}`, flipper `servo` angle, `screen` frames and fps, uptime, `reset_reason` and `boots` (restarts since power-up), RSSI |
 | POST | `/step` | `s1, s2, speed?, accel?` (half-steps) | `{ok}` at once; poll `/status` until `busy` is false for the result |
 | POST | `/stop` | — | Stops immediately, releases coils. Always works, even mid-move. |
 | POST | `/servo` | `angle` (0–180) | `{ok}` — the flipper |

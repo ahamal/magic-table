@@ -9,7 +9,7 @@ A small wheeled robot on the table — the AI player's body. Self-contained: its
 | Controller | Freenove ESP32-S3-WROOM CAM: ESP32-S3 (rev v0.2), 8 MB flash, 8 MB PSRAM, CH343 USB-serial, camera connector. Runs everything: Wi-Fi API, steppers, flipper servo, face, camera | Working — firmware in [`software/mate/firmware`](../../software/mate/firmware) |
 | Camera | The board's bundled **GC0308**, 640×480, no hardware JPEG (the firmware encodes in software). Fixed on Mate's head, mounted upside down (the firmware rotates it 180°) — also the peek camera. An OV2640/OV3660 module fits the same connector | Working |
 | Wheels | 2× 28BYJ-48 + ULN2003, differential drive, 70 mm printed wheels ([`wheels/`](wheels/)), ball caster or skid at the back | Have motors, wheels designed |
-| Servo | Flipper (MG90S), driven straight from the ESP32's PWM. No pan or tilt servos | Have |
+| Servo | Flipper: **MG996R** (big: ~0.5–0.9 A moving, ~2.5 A stalled), driven straight from the ESP32's PWM. No pan or tilt servos | Working |
 | Face | 0.96" SSD1306 OLED, 128×64, I2C 0x3C, on the head with the camera just below it. The only I2C device. Shows bitmaps sent over Wi-Fi, or a status screen | Working on the S3 |
 | Range sensor | TF-Luna on the head (I2C mode, 0x10, 5V power) | Later |
 | Speech | Done by the hub (the Pi 5 speaks for Mate) | — |
@@ -78,7 +78,7 @@ OLED VCC goes to **3V3**, the top pin of the left header. The left header is oth
 | ESP32-S3 + Wi-Fi | 80 mA | 120 mA | ~500 mA (Wi-Fi bursts) |
 | Camera (GC0308) | ~0 (clock stopped) | ~50 mA | ~60 mA |
 | 2× 28BYJ-48 | 0 (coils off) | 400 mA | 480 mA |
-| Flipper servo | ~10 mA | 150–250 mA | 650–1,000 mA stalled |
+| Flipper servo (MG996R) | ~10 mA | 500–900 mA | ~2,500 mA stalled |
 | OLED | ~10 mA | ~20 mA | ~25 mA |
 | TF-Luna (later) | — | 70 mA | 100 mA |
 

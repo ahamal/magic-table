@@ -16,6 +16,8 @@
 #include "esp_camera.h"
 #include "img_converters.h"
 #include "esp_http_server.h"
+#include "esp_system.h"
+#include "esp_private/brownout.h"
 #include "secrets.h"  // WIFI_SSID, WIFI_PASS (copy secrets.example.h)
 
 const char *HOSTNAME = "mate";
@@ -46,6 +48,26 @@ httpd_handle_t streamServer = nullptr;
 
 // One camera frame as JPEG, from grabJpeg(); free with freeJpeg().
 struct Jpeg { uint8_t *buf; size_t len; camera_fb_t *fb; };
+
+// Why the chip last restarted, and how many restarts since power was first applied
+// (RTC memory keeps the count through every reset except a full power loss).
+RTC_NOINIT_ATTR uint32_t bootCount;
+const char *resetReason = "?";
+
+const char *reasonName(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON: return "power_on";      // power was gone completely
+    case ESP_RST_BROWNOUT: return "brownout";     // supply sagged too low
+    case ESP_RST_EXT: return "reset_pin";         // EN pin pulled low
+    case ESP_RST_SW: return "software";
+    case ESP_RST_PANIC: return "crash";
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT: return "watchdog";
+    case ESP_RST_USB: return "usb";
+    default: return "other";
+  }
+}
 
 bool hasOled = false, hasCam = false;
 const char *camName = "none";
@@ -485,6 +507,7 @@ void handleStatus() {
   j += ",\"servo\":" + String(servoAngle);
   j += ",\"screen\":{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) + "}";
   j += ",\"uptime_ms\":" + String(millis());
+  j += ",\"reset_reason\":\"" + String(resetReason) + "\",\"boots\":" + String(bootCount);
   j += ",\"rssi\":" + String(WiFi.RSSI()) + "}";
   sendJson(j);
 }
@@ -620,6 +643,7 @@ void netTask(void *) {
   WiFi.enableIPv6();  // without an IPv6 address, macOS waits 5 s on every mate.local lookup
   WiFi.setSleep(false);  // power save adds 100 ms+ latency spikes
   WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);  // smaller current spikes on battery; plenty for a table
   Serial.print("WiFi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(250);
@@ -659,7 +683,16 @@ void netTask(void *) {
 // ---------------------------------------------------------------- main
 
 void setup() {
+  // On the power bank the MG996R's current sags the 5V enough to trip the brownout reset. The
+  // dips are short and the chip rides through them, so the reset is off. Mate never writes
+  // flash while running, so a dip can't corrupt anything. (Writing 0 to the brownout register
+  // directly, the usual ESP32 trick, boot-loops the S3.)
+  esp_brownout_disable();
   Serial.begin(115200);
+  esp_reset_reason_t r = esp_reset_reason();
+  resetReason = reasonName(r);
+  if (r == ESP_RST_POWERON) bootCount = 0;
+  bootCount++;
   s1.disableOutputs();
   s2.disableOutputs();
   xTaskCreatePinnedToCore(netTask, "net", 16384, nullptr, 1, nullptr, 0);
