@@ -4,6 +4,7 @@ Mate is a self-contained system: one ESP32-S3 program serves its own API over Wi
 
 ```
 software/mate/
+├── faces/      ready-made screen animations (eyes, chicken) and the script that draws them
 ├── firmware/   ESP32-S3: Wi-Fi API, raw steppers, flipper servo, face, camera, control page
 ├── server/     (retired — was the Pi 3 web server; the ESP32 serves the API now)
 ├── tests/      bring-up test from the classic ESP32 DevKit
@@ -68,6 +69,7 @@ Errors use HTTP status codes with `{error}`: `400 limit` for steps or speed abov
 - **Format:** 1 bit per pixel, rows top to bottom, 16 bytes per row, the most significant bit is the leftmost pixel; 1 = lit. One frame is 1024 bytes. Send it as `Content-Type: application/octet-stream`.
 - **Animations are preloaded:** send up to 64 frames back to back in one request with `X-FPS`, and Mate loops them by itself. Smooth, and nothing more goes over Wi-Fi. A new `/screen` replaces it. Streaming frames one request at a time also works (~50 ms per frame) but stutters whenever Wi-Fi does.
 - **Status screen:** shown at boot, whenever Wi-Fi is down ("not connected"), and when nothing has been sent (name, `mate.local`, IP). An empty `/screen` goes back to it.
+- **Ready-made faces:** [`faces/`](faces/) has animations to send as they are (eyes, chicken), drawn in code so they're easy to change.
 - **Control page:** click or drag on the screen preview to draw, Erase to remove, and type in the text box to render text (auto-sized, wrapped) under the drawing. It sends as you go, or with Send.
 
 ```bash
