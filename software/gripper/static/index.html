@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gripper</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --panel: #fff; --ink: #161616; --muted: #74746f; --line: #dcdcd8; --hover: #ececea;
+    --accent: #1d4ed8; --accent-ink: #fff; --ok: #15803d; --bad: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e0e0e; --panel: #161616; --ink: #e8e8e6; --muted: #8a8a86; --line: #2c2c2a; --hover: #222220;
+      --accent: #3b82f6; --ok: #4ade80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif; }
+
+  button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 0; padding: 0 12px; height: 44px; cursor: pointer; user-select: none; touch-action: manipulation; }
+  button:hover { background: var(--hover); }
+  button:active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+  header { display: flex; align-items: center; gap: 14px; height: 40px; padding: 0 12px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  header b { font-size: 13px; letter-spacing: .08em; }
+  .tag { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--bad); }
+  .tag::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; background: currentColor; }
+  .tag.on { color: var(--ok); }
+
+  main { max-width: 420px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  h2 { margin: 0 0 8px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+  /* one switch per load: the whole row is the button */
+  .switch { display: flex; align-items: center; width: 100%; height: 72px; gap: 14px; text-align: left; }
+  .switch .name { flex: 1; font-size: 18px; font-weight: 600; }
+  .switch .name small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+  .switch .state { width: 5ch; text-align: right; font-size: 13px; font-weight: 700; letter-spacing: .06em; color: var(--muted); }
+  .track { width: 52px; height: 28px; border: 1px solid var(--line); background: var(--bg); position: relative; flex: none; }
+  .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; background: var(--muted);
+    transition: left .12s; }
+  .switch.on { border-color: var(--accent); }
+  .switch.on .track { background: var(--accent); border-color: var(--accent); }
+  .switch.on .track::after { left: 27px; background: var(--accent-ink); }
+  .switch.on .state { color: var(--accent); }
+  .switch:active { background: var(--hover); color: var(--ink); }
+  .stack > * + * { margin-top: -1px; }
+
+  .seg { display: flex; }
+  .seg > * { flex: 1; }
+  .seg > * + * { margin-left: -1px; }
+  #stop { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 700; letter-spacing: .06em; }
+  .hint { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <b>GRIPPER</b>
+  <span class="tag" id="conn">Disconnected</span>
+</header>
+<main>
+  <section>
+    <h2>Switches</h2>
+    <div class="stack">
+      <button class="switch" id="pump" data-on="pump_on" data-off="pump_off" disabled>
+        <span class="name">Pump<small>12V diaphragm pump · D2</small></span>
+        <span class="state">OFF</span><span class="track"></span>
+      </button>
+      <button class="switch" id="valve" data-on="valve_on" data-off="valve_off" disabled>
+        <span class="name">Valve<small>Vent solenoid · D3 · auto-off after 10 s</small></span>
+        <span class="state">OFF</span><span class="track"></span>
+      </button>
+    </div>
+  </section>
+  <section>
+    <h2>Sequences</h2>
+    <div class="seg">
+      <button data-cmd="grip" disabled>Grip</button>
+      <button data-cmd="drop" disabled>Drop</button>
+      <button data-cmd="stop" id="stop" disabled>STOP</button>
+    </div>
+    <p class="hint">Grip: valve shut, pump on. Drop: pump off, valve open 0.3 s.</p>
+  </section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let state = { connected: false, pump: false, valve: false };
+
+  function render() {
+    $("conn").textContent = state.connected ? "Connected" : "Disconnected";
+    $("conn").classList.toggle("on", state.connected);
+    for (const id of ["pump", "valve"]) {
+      $(id).classList.toggle("on", state[id]);
+      $(id).querySelector(".state").textContent = state[id] ? "ON" : "OFF";
+    }
+    document.querySelectorAll("button").forEach((b) => (b.disabled = !state.connected));
+  }
+
+  async function send(name) {
+    try {
+      const r = await fetch(`/api/${name}`, { method: "POST" });
+      if (r.ok) { state = await r.json(); render(); }
+    } catch {}
+  }
+
+  for (const id of ["pump", "valve"]) {
+    $(id).onclick = () => send(state[id] ? $(id).dataset.off : $(id).dataset.on);
+  }
+  document.querySelectorAll("[data-cmd]").forEach((b) => (b.onclick = () => send(b.dataset.cmd)));
+  addEventListener("keydown", (e) => { if (e.key === "Escape") send("stop"); });
+
+  function connect() {
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onmessage = (e) => { state = JSON.parse(e.data); render(); };
+    ws.onclose = () => { state = { ...state, connected: false }; render(); setTimeout(connect, 1000); };
+  }
+  connect();
+  render();
+</script>
+</body>
+</html>

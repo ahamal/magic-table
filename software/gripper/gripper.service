@@ -1,0 +1,14 @@
+[Unit]
+Description=Magic Table gripper (pump + valve server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ash
+WorkingDirectory=/home/ash/gripper
+ExecStart=/home/ash/gripper/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
