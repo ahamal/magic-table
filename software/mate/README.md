@@ -4,7 +4,7 @@ Mate is a self-contained system: one ESP32-S3 program serves its own API over Wi
 
 ```
 software/mate/
-├── firmware/   ESP32-S3: Wi-Fi API, raw steppers, servos, face, camera, control page
+├── firmware/   ESP32-S3: Wi-Fi API, raw steppers, flipper servo, face, camera, control page
 ├── server/     (retired — was the Pi 3 web server; the ESP32 serves the API now)
 ├── tests/      bring-up test from the classic ESP32 DevKit
 └── ui/         notes on the control page (the page itself is built into the firmware)
@@ -24,15 +24,15 @@ Base URL: `http://mate.local` (mDNS from the ESP32, port 80). Parameters go in t
 
 | Method | Path | Params | Returns |
 |---|---|---|---|
-| GET | `/` | — | Control page: camera, wheels, STOP, OLED text, servo sliders |
-| GET | `/info` | — | Firmware, IP, limits, servo count, `oled` found, `camera` sensor name, `stream` URL, flip settings |
-| GET | `/status` | — | `busy`, step counters `p1`/`p2`, last move `{result, d1, d2, ms}`, servo angles, uptime, RSSI |
+| GET | `/` | — | Control page: camera, screen editor, wheels, STOP, flipper slider |
+| GET | `/info` | — | Firmware, IP, limits, `oled` found, screen size and limits, `camera` sensor name, `stream` URL, flip settings |
+| GET | `/status` | — | `busy`, step counters `p1`/`p2`, last move `{result, d1, d2, ms}`, flipper `servo` angle, `screen` frames and fps, uptime, RSSI |
 | POST | `/step` | `s1, s2, speed?, accel?` (half-steps) | `{ok}` at once; poll `/status` until `busy` is false for the result |
 | POST | `/stop` | — | Stops immediately, releases coils. Always works, even mid-move. |
-| POST | `/servo` | `id` (0 pan, 1 tilt, 2 flipper), `angle` (0–180) | `{ok}` |
-| POST | `/screen` | `text` | `{ok}` — text on the OLED |
+| POST | `/servo` | `angle` (0–180) | `{ok}` — the flipper |
+| POST | `/screen` | Body: N × 1024 bytes; header `X-FPS` (1–30, default 10) | `{frames, fps}` — a picture or a looping animation on the OLED; empty body = status screen |
 | GET | `/capture` | — | **JPEG**, 640×480, a fresh frame. About 0.9 s |
-| POST | `/camera` | `vflip?`, `hmirror?` (0/1) | Flip the image to match how the camera is mounted |
+| POST | `/camera` | `vflip?`, `hmirror?` (0/1) | Flip the image. Both start on (180°), because the camera is mounted upside down |
 | GET | `:81/stream` | — | **MJPEG** live video, about 2 fps. Open in a browser or `<img>`; for watching and debugging |
 | GET | `/scan` | — | I2C addresses on the bus |
 
@@ -63,12 +63,25 @@ Errors use HTTP status codes with `{error}`: `400 limit` for steps or speed abov
 
 ### Screen
 
-`/screen` takes text for now. The plan is a raw 128×64 image, so the AI (or a person) can design any expression, with ready-made faces (`neutral`, `blink`, `thinking`, `happy`, `surprised`) on the control page.
+`/screen` takes raw 128×64 pictures, so the AI (or a person) can show any face, text or drawing.
+
+- **Format:** 1 bit per pixel, rows top to bottom, 16 bytes per row, the most significant bit is the leftmost pixel; 1 = lit. One frame is 1024 bytes. Send it as `Content-Type: application/octet-stream`.
+- **Animations are preloaded:** send up to 64 frames back to back in one request with `X-FPS`, and Mate loops them by itself. Smooth, and nothing more goes over Wi-Fi. A new `/screen` replaces it. Streaming frames one request at a time also works (~50 ms per frame) but stutters whenever Wi-Fi does.
+- **Status screen:** shown at boot, whenever Wi-Fi is down ("not connected"), and when nothing has been sent (name, `mate.local`, IP). An empty `/screen` goes back to it.
+- **Control page:** click or drag on the screen preview to draw, Erase to remove, and type in the text box to render text (auto-sized, wrapped) under the drawing. It sends as you go, or with Send.
+
+```bash
+# one frame
+curl -X POST -H 'Content-Type: application/octet-stream' --data-binary @face.bin http://mate.local/screen
+# a 4-frame animation at 8 fps
+cat f1.bin f2.bin f3.bin f4.bin | curl -X POST -H 'Content-Type: application/octet-stream' -H 'X-FPS: 8' --data-binary @- http://mate.local/screen
+```
 
 ## Step 1 checklist
 
-- [x] Firmware on the ESP32-S3: API, both steppers, servos (direct PWM), OLED, camera snapshot + stream
-- [ ] Wire the S3 into Mate (new pins) and test wheels, servos and OLED on it
-- [ ] UI: image faces, calibration notes
+- [x] Firmware on the ESP32-S3: API, both steppers, flipper servo (direct PWM), OLED bitmaps + animations, camera snapshot + stream
+- [x] OLED on the S3
+- [ ] Wheels and the flipper servo tested wired to the S3
+- [ ] UI: ready-made faces, calibration notes
 - [ ] Card-corner test at 10–15 cm with the GC0308
 - [ ] Human-calibrated notes: steps per mm, steps per degree, sign conventions (record in this file)

@@ -33,7 +33,7 @@ A tabletop robot system that learns a game from a plain-English explanation, the
 | Brain host | Raspberry Pi 5 — also the hub for the whole table | Freenove ESP32-S3 CAM — self-contained, own API over Wi-Fi |
 | Motion | GRBL on Uno + CNC Shield, limit switches | ESP32 (our firmware), 2× 28BYJ-48 + ULN2003 |
 | Sensing | Overhead Camera v2, VL6180X on the head | GC0308 camera on the S3 board (snapshot + live stream), (TF-Luna later) |
-| Gripper / extras | 12 mm 2-layer suction cup, 12V diaphragm pump + vent valve | Pan/tilt servos (direct from the ESP32), 0.96" OLED face, optional flipper paddle |
+| Gripper / extras | 12 mm 2-layer suction cup, 12V diaphragm pump + vent valve | 0.96" OLED face (bitmaps and animations), flipper paddle servo (direct from the ESP32) |
 
 ## Repository layout
 
@@ -46,7 +46,7 @@ the-magic-table/
 │   └── shared/            power, network, markers, printed parts common to both
 └── software/
     ├── mate/              ◀ step 1
-    │   ├── firmware/      ESP32-S3: Mate's own API, raw steppers, servos, face, camera
+    │   ├── firmware/      ESP32-S3: Mate's own API, raw steppers, flipper servo, face, camera
     │   ├── server/        retired (was the Pi 3 web server)
     │   └── ui/            human control panel for Mate
     ├── hub/               Pi 5: the table's body API, Frame driver, safety, Mate client

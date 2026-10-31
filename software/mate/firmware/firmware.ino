@@ -1,5 +1,5 @@
 // Mate firmware for the Freenove ESP32-S3-WROOM CAM.
-// Both wheels, three servos straight from the ESP32, the OLED face and the camera, all over Wi-Fi.
+// Both wheels, the flipper servo, the OLED face and the camera, all over Wi-Fi.
 // Open http://mate.local/ (or the IP shown on the OLED).
 //
 // Cores: loop() on core 1 only runs the steppers, so Wi-Fi and the camera can't make them
@@ -19,20 +19,20 @@
 #include "secrets.h"  // WIFI_SSID, WIFI_PASS (copy secrets.example.h)
 
 const char *HOSTNAME = "mate";
-const uint16_t OLED_PERIOD_MS = 150;
+const uint16_t STATUS_PERIOD_MS = 500;  // how often the status screen redraws
 
-// ---- Pins. The camera takes 4–13, 15–18; PSRAM takes 35–37; 19/20 are the second USB port ----
-const uint8_t SDA_PIN = 41, SCL_PIN = 42;
-const uint8_t NUM_SERVOS = 3;
-const uint8_t SERVO_PIN[NUM_SERVOS] = {38, 39, 40};  // pan, tilt, flipper (shared with the unused SD slot)
-const uint8_t RGB_PIN = 48;                          // on-board WS2812, the mood light
+// ---- Pins, all on the right-hand header. The camera takes 4–18 (bar 14); PSRAM takes 35–37 ----
+const uint8_t SDA_PIN = 20, SCL_PIN = 19;  // the second USB port's pins; that port is unused
+const uint8_t SERVO_PIN = 40;  // flipper (shared with the unused SD slot)
 const uint16_t SERVO_MIN_US = 500, SERVO_MAX_US = 2500;
 const uint8_t SERVO_BITS = 14;  // 20 ms period / 16384 ≈ 1.2 µs per count
 
 // ---- Steppers: 28BYJ-48 + ULN2003, HALF4WIRE needs IN1, IN3, IN2, IN4 ----
-// Wheel 2 sits on strapping pins 3, 45, 46: fine, because the ULN2003 inputs pull them low at boot.
-AccelStepper s1(AccelStepper::HALF4WIRE, 1, 14, 2, 21);
-AccelStepper s2(AccelStepper::HALF4WIRE, 3, 46, 45, 47);
+// Each wheel is four header pins in a row: wheel 1 on 1, 2, 42, 41 and wheel 2 on 45, 48, 47, 21.
+// 45 is a strapping pin that must be low at boot, which the ULN2003 input guarantees.
+// 48 also drives the on-board RGB LED, so it flickers while wheel 2 turns.
+AccelStepper s1(AccelStepper::HALF4WIRE, 1, 42, 2, 41);
+AccelStepper s2(AccelStepper::HALF4WIRE, 45, 47, 48, 21);
 
 const long MAX_STEPS = 4096;
 const long MAX_SPEED = 800;
@@ -49,8 +49,18 @@ struct Jpeg { uint8_t *buf; size_t len; camera_fb_t *fb; };
 
 bool hasOled = false, hasCam = false;
 const char *camName = "none";
-int servoAngle[NUM_SERVOS] = {-1, -1, -1};
-String screenText = "";
+int servoAngle = -1;
+
+// ---- Screen: 128×64, 1 bit per pixel, rows top to bottom, 16 bytes per row, MSB = leftmost ----
+// POST /screen with N frames back to back plays them in a loop; no frames = the status screen.
+const size_t FRAME_BYTES = 128 * 64 / 8;
+const uint16_t MAX_FRAMES = 64;
+const uint8_t MAX_FPS = 30;
+uint8_t *frames = nullptr, *upload = nullptr;  // PSRAM, MAX_FRAMES each; swapped when an upload completes
+size_t uploadLen = 0;
+uint16_t frameCount = 0, frameIdx = 0;
+uint8_t fps = 10;
+bool screenDirty = true, shownOnline = false;
 unsigned long lastOled = 0;
 
 // ---- Motion state, shared between cores ----
@@ -109,6 +119,29 @@ void finish(const char *result) {
 // Freenove ESP32-S3-WROOM CAM pinout. The bundled GC0308 (640×480) has no JPEG encoder,
 // so frames come out as RGB565 and are JPEG-encoded in software; an OV2640/OV3660 on the
 // same connector is used in JPEG mode directly.
+// The camera is mounted upside down: both flips = rotate 180°. JPEG sensors flip in hardware;
+// the GC0308's driver ignores vflip, so raw frames are flipped in software before encoding.
+bool flipV = true, flipH = true;
+
+void applyFlips() {
+  sensor_t *s = esp_camera_sensor_get();
+  bool hw = s->pixformat == PIXFORMAT_JPEG;
+  s->set_vflip(s, hw && flipV);
+  s->set_hmirror(s, hw && flipH);
+}
+
+void flipFrame(camera_fb_t *fb) {
+  uint16_t *p = (uint16_t *)fb->buf;
+  size_t w = fb->width, h = fb->height;
+  if (flipV && flipH) {
+    std::reverse(p, p + w * h);
+  } else if (flipH) {
+    for (size_t y = 0; y < h; y++) std::reverse(p + y * w, p + (y + 1) * w);
+  } else if (flipV) {
+    for (size_t y = 0; y < h / 2; y++) std::swap_ranges(p + y * w, p + (y + 1) * w, p + (h - 1 - y) * w);
+  }
+}
+
 bool initCamera() {
   camera_config_t c = {};
   c.pin_pwdn = -1; c.pin_reset = -1; c.pin_xclk = 15;
@@ -136,6 +169,7 @@ bool initCamera() {
   camera_sensor_info_t *info = esp_camera_sensor_get_info(&s->id);
   if (info) camName = info->name;
   if (s->pixformat == PIXFORMAT_JPEG) s->set_framesize(s, FRAMESIZE_VGA);
+  applyFlips();
   ledc_timer_pause(LEDC_LOW_SPEED_MODE, LEDC_TIMER_3);  // asleep until someone wants a picture
   return true;
 }
@@ -179,6 +213,7 @@ bool grabJpeg(Jpeg &j) {
   if (ok && fb->format == PIXFORMAT_JPEG) {
     j = {fb->buf, fb->len, fb};
   } else if (ok) {
+    flipFrame(fb);
     ok = frame2jpg(fb, JPEG_QUALITY, &j.buf, &j.len);
     esp_camera_fb_return(fb);
     j.fb = nullptr;
@@ -223,25 +258,67 @@ void startStreamServer() {
 
 // ---------------------------------------------------------------- devices (core 0)
 
-void setServo(uint8_t id, int angle) {
+void setServo(int angle) {
   uint32_t us = map(angle, 0, 180, SERVO_MIN_US, SERVO_MAX_US);
-  ledcWrite(SERVO_PIN[id], us * ((1 << SERVO_BITS) - 1) / 20000);
-  servoAngle[id] = angle;
+  ledcWrite(SERVO_PIN, us * ((1 << SERVO_BITS) - 1) / 20000);
+  servoAngle = angle;
 }
 
-void drawOled() {
-  if (!hasOled) return;
+// Shown while offline, or online with nothing sent yet.
+void drawStatus(bool online) {
   oled.clearDisplay();
-  oled.setTextSize(1);
+  oled.setTextSize(2);
   oled.setCursor(0, 0);
-  if (WiFi.status() == WL_CONNECTED) oled.print(WiFi.localIP()); else oled.print("WiFi connecting...");
-  if (state != IDLE) oled.print(" MOVE");
-  oled.setCursor(0, 12);
-  oled.print("cam: ");
-  oled.print(camName);
-  oled.setCursor(0, 44);
-  oled.print(screenText.substring(0, 42));  // two lines of text from /screen
+  oled.print("Mate");
+  oled.setTextSize(1);
+  oled.setCursor(0, 24);
+  if (online) {
+    oled.print("mate.local");
+    oled.setCursor(0, 36);
+    oled.print(WiFi.localIP());
+    oled.setCursor(0, 52);
+    oled.print("cam ");
+    oled.print(camName);
+  } else {
+    oled.print("not connected");
+    oled.setCursor(0, 36);
+    oled.print("WiFi: ");
+    oled.print(WIFI_SSID);
+    oled.setCursor(0, 52);
+    oled.print("retrying...");
+  }
   oled.display();
+}
+
+void drawFrame(const uint8_t *f) {
+  oled.clearDisplay();
+  oled.drawBitmap(0, 0, f, 128, 64, SSD1306_WHITE);
+  oled.display();
+}
+
+// Called often from netTask. Redraws only when something changed or the next frame is due.
+void updateOled() {
+  if (!hasOled) return;
+  unsigned long now = millis();
+  bool online = WiFi.status() == WL_CONNECTED;
+  if (online != shownOnline) {
+    shownOnline = online;
+    screenDirty = true;
+  }
+  if (!online || frameCount == 0) {
+    if (screenDirty || now - lastOled >= STATUS_PERIOD_MS) {
+      drawStatus(online);
+      lastOled = now;
+      screenDirty = false;
+    }
+    return;
+  }
+  bool due = frameCount > 1 && now - lastOled >= 1000 / fps;
+  if (!screenDirty && !due) return;
+  if (!screenDirty) frameIdx = (frameIdx + 1) % frameCount;
+  drawFrame(frames + frameIdx * FRAME_BYTES);
+  lastOled = now;
+  screenDirty = false;
 }
 
 // ---------------------------------------------------------------- web (core 0)
@@ -253,12 +330,16 @@ body{font-family:system-ui,sans-serif;max-width:420px;margin:16px auto;padding:0
 h1{font-size:18px;color:#aaa;font-weight:500}
 h2{font-size:14px;color:#aaa;font-weight:500;margin:22px 0 6px}
 #cam{width:100%;aspect-ratio:4/3;background:#222;display:block}
+#scr{width:100%;aspect-ratio:2/1;image-rendering:pixelated;background:#000;border:1px solid #444;
+ display:block;touch-action:none;cursor:crosshair}
 .row{margin:10px 0}
-label{display:block;color:#aaa;font-size:13px;margin-bottom:4px}
+label{color:#aaa;font-size:13px}
 input[type=range]{width:100%}
 input[type=text],input[type=number]{padding:6px;background:#222;color:#eee;border:1px solid #444}
+input[type=text]{width:100%;box-sizing:border-box}
 input[type=number]{width:70px}
 button{padding:8px 12px;margin:2px}
+button.on{background:#ddd;color:#111}
 #stop{background:#c33;color:#fff;border:0;font-weight:700;width:100%;padding:12px}
 small,#res{color:#888}
 </style></head><body>
@@ -270,6 +351,19 @@ small,#res{color:#888}
  <a id=dl href="/capture" download="mate.jpg"><button>Download</button></a>
  <small>latency <span id=lat>-</span> ms</small>
 </div>
+
+<h2>Screen (128&times;64) &mdash; click or drag to draw</h2>
+<canvas id=scr width=128 height=64></canvas>
+<div class=row><input id=t type=text placeholder="type to put text on the screen"></div>
+<div class=row>
+ <button id=pen class=on onclick="tool(1)">Draw</button>
+ <button id=era onclick="tool(-1)">Erase</button>
+ <button onclick="clearAll()">Clear</button>
+ <button onclick="sendScreen()">Send</button>
+ <button onclick="statusScreen()">Status screen</button>
+ <label><input id=auto type=checkbox checked> send as I draw</label>
+</div>
+<small id=scrmsg>-</small>
 
 <h2>Wheels (half-steps, 4096 = one turn)</h2>
 <div class=row>
@@ -287,23 +381,64 @@ small,#res{color:#888}
 <button id=stop onclick="fetch('/stop',{method:'POST'})">STOP</button>
 <div class=row id=res>-</div>
 
-<h2>OLED text</h2>
-<div class=row><input id=t type=text maxlength=42> <button onclick="send()">Show</button></div>
-<h2>Servos</h2>
-<div id=servos></div>
+<h2>Flipper servo: <span id=sv>-</span>&deg;</h2>
+<input type=range min=0 max=180 value=90 oninput="servo(this.value)">
 <script>
 const $=id=>document.getElementById(id);
 const streamUrl=`http://${location.hostname}:81/stream`;
 function live(){$('cam').src=streamUrl}
 function snap(){$('cam').src='/capture?t='+Date.now()}
-['pan','tilt','flipper'].forEach((n,i)=>{$('servos').insertAdjacentHTML('beforeend',
- `<div class=row><label>servo ${i} (${n}): <span id=v${i}>-</span>&deg;</label>
-  <input type=range min=0 max=180 value=90 oninput="servo(${i},this.value)"></div>`)});
-let pending={};
-function servo(i,a){$('v'+i).textContent=a;
- if(pending[i])return; pending[i]=1;
- fetch(`/servo?id=${i}&angle=${a}`,{method:'POST'}).finally(()=>pending[i]=0)}
-function send(){fetch('/screen?text='+encodeURIComponent($('t').value),{method:'POST'})}
+
+// ---- screen: text layer + a drawing layer on top (1 = drawn, -1 = erased, 0 = show text) ----
+const W=128,H=64,cv=$('scr'),cx=cv.getContext('2d');
+let text=new Uint8Array(W*H),ink=new Int8Array(W*H),pen=1,down=false,last=null,timer=null;
+function px(i){return ink[i]?ink[i]>0:text[i]}
+function render(){
+ const img=cx.createImageData(W,H);
+ for(let i=0;i<W*H;i++){const v=px(i)?255:0;img.data.set([v,v,v,255],i*4)}
+ cx.putImageData(img,0,0)}
+function renderText(s){
+ text.fill(0); if(!s.trim())return;
+ const o=document.createElement('canvas');o.width=W;o.height=H;const g=o.getContext('2d');
+ let size=48,lines;
+ for(;size>=8;size--){                       // biggest font where the wrapped text fits
+  g.font=`bold ${size}px system-ui,sans-serif`;lines=[];let cur='';
+  for(const w of s.split(/\s+/)){const t=cur?cur+' '+w:w;
+   if(g.measureText(t).width<=W-2||!cur)cur=t;else{lines.push(cur);cur=w}}
+  lines.push(cur);
+  if(lines.length*size*1.05<=H&&lines.every(l=>g.measureText(l).width<=W))break}
+ g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';
+ const lh=size*1.05,y0=H/2-(lines.length-1)*lh/2;
+ lines.forEach((l,i)=>g.fillText(l,W/2,y0+i*lh));
+ const d=g.getImageData(0,0,W,H).data;
+ for(let i=0;i<W*H;i++)text[i]=d[i*4]>110?1:0}
+function plot(x,y){if(x>=0&&x<W&&y>=0&&y<H)ink[y*W+x]=pen}
+function line(a,b){let dx=Math.abs(b.x-a.x),dy=-Math.abs(b.y-a.y),sx=a.x<b.x?1:-1,sy=a.y<b.y?1:-1,e=dx+dy,x=a.x,y=a.y;
+ for(;;){plot(x,y);if(x==b.x&&y==b.y)break;const e2=2*e;if(e2>=dy){e+=dy;x+=sx}if(e2<=dx){e+=dx;y+=sy}}}
+function at(ev){const r=cv.getBoundingClientRect();
+ return{x:Math.floor((ev.clientX-r.left)*W/r.width),y:Math.floor((ev.clientY-r.top)*H/r.height)}}
+cv.onpointerdown=ev=>{down=true;cv.setPointerCapture(ev.pointerId);last=at(ev);plot(last.x,last.y);render()};
+cv.onpointermove=ev=>{if(!down)return;const p=at(ev);line(last,p);last=p;render()};
+cv.onpointerup=cv.onpointercancel=()=>{if(!down)return;down=false;autoSend()};
+$('t').oninput=()=>{renderText($('t').value);render();autoSend()};
+function tool(t){pen=t;$('pen').className=t>0?'on':'';$('era').className=t<0?'on':''}
+function clearAll(){ink.fill(0);text.fill(0);$('t').value='';render();autoSend()}
+function autoSend(){if(!$('auto').checked)return;clearTimeout(timer);timer=setTimeout(sendScreen,120)}
+function bytes(){const b=new Uint8Array(W*H/8);
+ for(let i=0;i<W*H;i++)if(px(i))b[i>>3]|=0x80>>(i&7);return b}
+async function postScreen(body){
+ const t0=performance.now();
+ try{const r=await (await fetch('/screen',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body})).json();
+  $('scrmsg').textContent=r.error?'error: '+r.error:(r.frames?`sent in ${(performance.now()-t0).toFixed(0)} ms`:'showing status screen')}
+ catch(e){$('scrmsg').textContent='offline'}}
+function sendScreen(){postScreen(bytes())}
+function statusScreen(){postScreen(new Uint8Array(0))}
+render();
+
+let busyServo=0;
+function servo(a){$('sv').textContent=a;
+ if(busyServo)return;busyServo=1;
+ fetch(`/servo?angle=${a}`,{method:'POST'}).finally(()=>busyServo=0)}
 function preset(a,b){$('s1').value=a;$('s2').value=b;go()}
 async function go(){
  const q=`s1=${$('s1').value}&s2=${$('s2').value}&speed=${$('sp').value}`;
@@ -330,9 +465,9 @@ void handleStatus() {
   j += ",\"p1\":" + String(pos1) + ",\"p2\":" + String(pos2);
   j += ",\"last\":{\"result\":\"" + String(lastResult) + "\",\"d1\":" + String(lastD1) +
        ",\"d2\":" + String(lastD2) + ",\"ms\":" + String(lastMs) + "}";
-  j += ",\"servos\":[";
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) { if (i) j += ','; j += servoAngle[i]; }
-  j += "],\"uptime_ms\":" + String(millis());
+  j += ",\"servo\":" + String(servoAngle);
+  j += ",\"screen\":{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) + "}";
+  j += ",\"uptime_ms\":" + String(millis());
   j += ",\"rssi\":" + String(WiFi.RSSI()) + "}";
   sendJson(j);
 }
@@ -341,13 +476,13 @@ void handleInfo() {
   String j = "{\"fw\":\"mate-s3\",\"ip\":\"" + WiFi.localIP().toString() + "\"";
   j += ",\"maxsteps\":" + String(MAX_STEPS) + ",\"maxspeed\":" + String(MAX_SPEED) +
        ",\"maxaccel\":" + String(MAX_ACCEL);
-  j += ",\"servos\":" + String(NUM_SERVOS);
   j += ",\"oled\":" + String(hasOled ? "true" : "false");
+  j += ",\"screen\":{\"width\":128,\"height\":64,\"frame_bytes\":" + String(FRAME_BYTES) +
+       ",\"max_frames\":" + String(MAX_FRAMES) + ",\"max_fps\":" + String(MAX_FPS) + "}";
   j += ",\"camera\":\"" + String(camName) + "\"";
   if (hasCam) {
-    sensor_t *s = esp_camera_sensor_get();
-    j += ",\"stream\":\"http://" + WiFi.localIP().toString() + ":81/stream\"";
-    j += ",\"vflip\":" + String(s->status.vflip) + ",\"hmirror\":" + String(s->status.hmirror);
+    j +=",\"stream\":\"http://" + WiFi.localIP().toString() + ":81/stream\"";
+    j += ",\"vflip\":" + String(flipV) + ",\"hmirror\":" + String(flipH);
   }
   sendJson(j + "}");
 }
@@ -387,17 +522,39 @@ void handleStop() {
   sendJson("{\"ok\":true}");
 }
 
+// POST /screen, body = N × 1024 bytes (application/octet-stream), optional header X-FPS (1–30).
+// One frame is a still picture, several loop at X-FPS. An empty body goes back to the status
+// screen. (The frame rate is a header because WebServer skips query args on raw bodies.)
+void handleScreenBody() {
+  HTTPRaw &raw = server.raw();
+  if (raw.status == RAW_START) {
+    uploadLen = 0;
+  } else if (raw.status == RAW_WRITE && uploadLen + raw.currentSize <= MAX_FRAMES * FRAME_BYTES) {
+    memcpy(upload + uploadLen, raw.buf, raw.currentSize);
+    uploadLen += raw.currentSize;
+  }
+}
+
 void handleScreen() {
-  screenText = server.arg("text");
-  sendJson("{\"ok\":true}");
+  long len = server.clientContentLength();
+  if (len == 0) uploadLen = 0;  // an empty body may never reach handleScreenBody
+  if (len < 0 || len % FRAME_BYTES || len > (long)(MAX_FRAMES * FRAME_BYTES) || (size_t)len != uploadLen) {
+    return sendJson("{\"error\":\"body must be 0–" + String(MAX_FRAMES) + " frames of " + String(FRAME_BYTES) + " bytes\"}", 400);
+  }
+  long f = server.hasHeader("X-FPS") ? server.header("X-FPS").toInt() : 10;
+  if (f < 1 || f > MAX_FPS) return sendJson("{\"error\":\"X-FPS 1–" + String(MAX_FPS) + "\"}", 400);
+  std::swap(frames, upload);
+  frameCount = len / FRAME_BYTES;
+  frameIdx = 0;
+  fps = f;
+  screenDirty = true;
+  sendJson("{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) + "}");
 }
 
 void handleServo() {
-  long id = server.arg("id").toInt(), angle = server.arg("angle").toInt();
-  if (!server.hasArg("id") || !server.hasArg("angle") || id < 0 || id >= NUM_SERVOS || angle < 0 || angle > 180) {
-    return sendJson("{\"error\":\"range\"}", 400);
-  }
-  setServo(id, angle);
+  long angle = server.arg("angle").toInt();
+  if (!server.hasArg("angle") || angle < 0 || angle > 180) return sendJson("{\"error\":\"range\"}", 400);
+  setServo(angle);
   sendJson("{\"ok\":true}");
 }
 
@@ -418,10 +575,10 @@ void handleCapture() {
 // /camera?vflip=0|1&hmirror=0|1 — flip the image to match how the camera is mounted.
 void handleCamera() {
   if (!hasCam) return sendJson("{\"error\":\"no camera\"}", 503);
-  sensor_t *s = esp_camera_sensor_get();
-  if (server.hasArg("vflip")) s->set_vflip(s, server.arg("vflip").toInt());
-  if (server.hasArg("hmirror")) s->set_hmirror(s, server.arg("hmirror").toInt());
-  sendJson("{\"vflip\":" + String(s->status.vflip) + ",\"hmirror\":" + String(s->status.hmirror) + "}");
+  if (server.hasArg("vflip")) flipV = server.arg("vflip").toInt();
+  if (server.hasArg("hmirror")) flipH = server.arg("hmirror").toInt();
+  applyFlips();
+  sendJson("{\"vflip\":" + String(flipV) + ",\"hmirror\":" + String(flipH) + "}");
 }
 
 void netTask(void *) {
@@ -431,14 +588,15 @@ void netTask(void *) {
   hasOled = present(0x3C) && oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   if (hasOled) {
     oled.setTextColor(SSD1306_WHITE);
-    oled.setRotation(2);  // mounted upside down
   }
+  frames = (uint8_t *)ps_malloc(MAX_FRAMES * FRAME_BYTES);
+  upload = (uint8_t *)ps_malloc(MAX_FRAMES * FRAME_BYTES);
 
   camLock = xSemaphoreCreateMutex();
   hasCam = initCamera();
   // Servos after the camera, so the LEDC allocator sees its timer is taken.
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) ledcAttachChannel(SERVO_PIN[i], 50, SERVO_BITS, i);
-  drawOled();
+  ledcAttachChannel(SERVO_PIN, 50, SERVO_BITS, 0);
+  updateOled();
 
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);
@@ -449,7 +607,7 @@ void netTask(void *) {
   while (WiFi.status() != WL_CONNECTED) {
     delay(250);
     Serial.print('.');
-    drawOled();
+    updateOled();
   }
   WiFi.setSleep(false);  // again: on the S3 the setting doesn't stick until connected
   Serial.print(" ip=");
@@ -463,23 +621,20 @@ void netTask(void *) {
   server.on("/scan", HTTP_GET, handleScan);
   server.on("/step", HTTP_POST, handleStep);
   server.on("/stop", HTTP_POST, handleStop);
-  server.on("/screen", HTTP_POST, handleScreen);
+  server.on("/screen", HTTP_POST, handleScreen, handleScreenBody);
+  const char *headers[] = {"X-FPS"};
+  server.collectHeaders(headers, 1);
   server.on("/servo", HTTP_POST, handleServo);
   server.on("/capture", HTTP_GET, handleCapture);
   server.on("/camera", HTTP_POST, handleCamera);
   server.begin();
   if (hasCam) startStreamServer();
 
-  rgbLedWrite(RGB_PIN, 0, 8, 0);  // dim green: ready
   Serial.printf("READY oled=%d cam=%s\n", hasOled, camName);
 
   for (;;) {
     server.handleClient();
-    unsigned long now = millis();
-    if (now - lastOled >= OLED_PERIOD_MS) {
-      lastOled = now;
-      drawOled();
-    }
+    updateOled();
     delay(1);
   }
 }

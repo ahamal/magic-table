@@ -6,12 +6,12 @@ A small wheeled robot on the table — the AI player's body. Self-contained: its
 
 | Part | Detail | Status |
 |---|---|---|
-| Controller | Freenove ESP32-S3-WROOM CAM: ESP32-S3 (rev v0.2), 8 MB flash, 8 MB PSRAM, CH343 USB-serial, camera connector. Runs everything: Wi-Fi API, steppers, servos, face, camera | Working — firmware in [`software/mate/firmware`](../../software/mate/firmware) |
-| Camera | The board's bundled **GC0308**, 640×480, no hardware JPEG (the firmware encodes in software). On the pan/tilt head — also the peek camera. An OV2640/OV3660 module fits the same connector | Working |
+| Controller | Freenove ESP32-S3-WROOM CAM: ESP32-S3 (rev v0.2), 8 MB flash, 8 MB PSRAM, CH343 USB-serial, camera connector. Runs everything: Wi-Fi API, steppers, flipper servo, face, camera | Working — firmware in [`software/mate/firmware`](../../software/mate/firmware) |
+| Camera | The board's bundled **GC0308**, 640×480, no hardware JPEG (the firmware encodes in software). Fixed on Mate's head, mounted upside down (the firmware rotates it 180°) — also the peek camera. An OV2640/OV3660 module fits the same connector | Working |
 | Wheels | 2× 28BYJ-48 + ULN2003, differential drive, 70 mm printed wheels ([`wheels/`](wheels/)), ball caster or skid at the back | Have motors, wheels designed |
-| Servos | Pan (SG90/MG90S), tilt, optional flipper (MG90S), driven straight from the ESP32's PWM | Have |
-| Face | 0.96" SSD1306 OLED, 128×64, I2C 0x3C, on the pan/tilt head with the camera just below it. The only I2C device | Working on the DevKit; not yet rewired to the S3 |
-| Range sensor | TF-Luna on the pan mount (I2C mode, 0x10, 5V power) | Later |
+| Servo | Flipper (MG90S), driven straight from the ESP32's PWM. No pan or tilt servos | Have |
+| Face | 0.96" SSD1306 OLED, 128×64, I2C 0x3C, on the head with the camera just below it. The only I2C device. Shows bitmaps sent over Wi-Fi, or a status screen | Working on the S3 |
+| Range sensor | TF-Luna on the head (I2C mode, 0x10, 5V power) | Later |
 | Speech | Done by the hub (the Pi 5 speaks for Mate) | — |
 | Marker | ArUco on the roof, designed into Mate's look | To make |
 | Hub board | ~5 × 7 cm perfboard: 5V and I2C buses with JST-XH connectors (below) | Built — needs the S3 rewiring |
@@ -28,29 +28,37 @@ Spares: Raspberry Pi 3B, Arduino Nano, ov5647 camera, the classic ESP32 DevKit (
  CanaKit / bank ─┤ PWR IN (XH-2)                  I2C-1 (XH-4) ──├─► OLED
                  │  + 1000µF                                      │
  ESP32-S3 ──────►┤ LINK (XH-4): GND,3V3,SDA,SCL                   │
- ESP32-S3 GPIO ─►┤ SERVO SIG (XH-3): 38,39,40     SV0 SV1 SV2 ───├─► servos
+ ESP32-S3 GPIO ─►┤ SERVO SIG: 40                  SV0 ───────────├─► flipper servo
                  │                                MOT-1 (XH-2) ──├─► ULN2003 #1 power
                  │ ESP PWR (XH-2, battery only)   MOT-2 (XH-2) ──├─► ULN2003 #2 power
                  └────────────────────────────────────────────────┘
- ESP32-S3 GPIO 1,2,14,21  ─ 4-wire dupont ──► ULN2003 #1 IN1–IN4  (direct, not via hub)
- ESP32-S3 GPIO 3,45,46,47 ─ 4-wire dupont ──► ULN2003 #2 IN1–IN4  (direct, not via hub)
+ ESP32-S3 GPIO 1,2,42,41  ─ 4-wire dupont ──► ULN2003 #1 IN1–IN4  (direct, not via hub)
+ ESP32-S3 GPIO 45,48,47,21 ─ 4-wire dupont ─► ULN2003 #2 IN1–IN4  (direct, not via hub)
 ```
 
 ### Pins (Freenove ESP32-S3-WROOM CAM)
 
-| Function | GPIO |
-|---|---|
-| Wheel 1 (ULN2003 #1) IN1–IN4 | 1, 2, 14, 21 |
-| Wheel 2 (ULN2003 #2) IN1–IN4 | 3, 45, 46, 47 |
-| I2C SDA, SCL (OLED) | 41, 42 |
-| Servos: pan, tilt, flipper | 38, 39, 40 |
-| RGB LED (on board, mood light) | 48 |
+Everything is on the **right-hand header** (antenna end up, top to bottom), so each wheel is one 4-pin row:
 
-- **Taken, don't use:** 4–13 and 15–18 (camera), 35–37 (PSRAM), 19/20 (the second USB-C port), 43/44 (USB serial), 0 (BOOT button).
-- **Leave the SD card slot empty:** it shares 38–40 with the servos.
-- **Wheel 2 is on strapping pins** (3, 45, 46). That's safe because the ULN2003 inputs pull them low at boot, which is what the chip wants. Don't move servos or anything with a pull-up there.
+| Header | GPIO | Goes to |
+|---|---|---|
+| 1–2 | TX, RX | — (USB serial) |
+| 3–6 | 1, 2, 42, 41 | Wheel 1 (ULN2003 #1) IN1–IN4 |
+| 7 | 40 | Flipper servo signal |
+| 8–9 | 39, 38 | Free |
+| 10–13 | 37, 36, 35, 0 | Don't use (PSRAM, BOOT) |
+| 14–17 | 45, 48, 47, 21 | Wheel 2 (ULN2003 #2) IN1–IN4 |
+| 18–19 | 20, 19 | OLED SDA, SCL |
+| 20 | GND | OLED GND |
+
+OLED VCC goes to **3V3**, the top pin of the left header. The left header is otherwise camera pins, except 3, 46 and 14, which are free.
+
+- **Leave the SD card slot empty:** it shares 38–40 with the servo.
+- **The second USB-C port is out of use:** its pins (19/20) are the I2C bus. Program through the CH343 port (`/dev/cu.usbmodem…`).
+- **GPIO 45 is a strapping pin** that must be low at boot. The ULN2003 input holds it low, so it's safe for a wheel; never put anything with a pull-up (like I2C) on 45 or 46.
+- **GPIO 48 also drives the on-board RGB LED,** so the LED flickers while wheel 2 turns. There's no mood light.
 - **Wire ULN2003 IN1→IN1 and so on;** the firmware handles the 28BYJ-48 coil order (IN1, IN3, IN2, IN4).
-- **3.3V signals are fine** for the ULN2003 boards, the servos and the OLED.
+- **3.3V signals are fine** for the ULN2003 boards, the servo and the OLED.
 - **Servo power from the 5V side** (hub SV headers), never from the 3V3 pin. Only the signal wire goes to the ESP32; grounds join at the hub.
 
 ### Hub board
@@ -70,7 +78,7 @@ Spares: Raspberry Pi 3B, Arduino Nano, ov5647 camera, the classic ESP32 DevKit (
 | ESP32-S3 + Wi-Fi | 80 mA | 120 mA | ~500 mA (Wi-Fi bursts) |
 | Camera (GC0308) | ~0 (clock stopped) | ~50 mA | ~60 mA |
 | 2× 28BYJ-48 | 0 (coils off) | 400 mA | 480 mA |
-| Servo (each) | ~10 mA | 150–250 mA | 650–1,000 mA stalled |
+| Flipper servo | ~10 mA | 150–250 mA | 650–1,000 mA stalled |
 | OLED | ~10 mA | ~20 mA | ~25 mA |
 | TF-Luna (later) | — | 70 mA | 100 mA |
 
@@ -92,7 +100,7 @@ About **14 × 11 × 12 cm, 350–450 g**.
 | Overall width | ~110 mm | Spacing plus the 8 mm wheels |
 | Length | ~130–150 mm | Power bank behind the axle (a ~70 mm-wide bank doesn't fit between the motors) |
 | Deck height | ~50–60 mm | Axle at 35 mm, ULN2003 boards on edge |
-| Head top | ~110–130 mm | Pan/tilt bracket with the OLED and camera |
+| Head top | ~90–110 mm | Fixed head with the OLED and camera |
 
 The head has to fit under the gantry head while it holds a card over the camera for a peek — check against the Frame's Z travel.
 
@@ -103,8 +111,7 @@ The head has to fit under the gantry head while it holds a card over the camera 
 - **Speed:** 28BYJ-48 tops out around 500–800 half-steps/s; about 4.3 cm/s with 70 mm wheels.
 - **Motors on their own core:** stepping runs on core 1; Wi-Fi, the camera and the OLED on core 0, so motion stays smooth.
 - **Peek:** the gantry hovers a card over Mate's camera (tilted up), or drops it on a clear flipper paddle above the camera. The GC0308 is only 640×480 — **test whether it can read a card corner at 10–15 cm.** If it can't, swap in an OV2640/OV3660 module (same connector, the firmware detects it), or let the overhead camera handle peeking.
-- **Mood light:** the board's RGB LED (GPIO 48). Dim green means the firmware is ready.
 
 ## Open
 
-See [`docs/open-questions.md`](../../docs/open-questions.md#blocking-step-1-mate): servo count, chassis, whether the GC0308 can read cards.
+See [`docs/open-questions.md`](../../docs/open-questions.md#blocking-step-1-mate): chassis, whether the GC0308 can read cards.

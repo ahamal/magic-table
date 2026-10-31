@@ -1,6 +1,6 @@
 # Mate firmware (ESP32-S3)
 
-[`firmware.ino`](firmware.ino) runs Mate on the Freenove ESP32-S3-WROOM CAM: Wi-Fi API, both wheels, three servos straight from the ESP32's PWM, the OLED face, the camera and the control page at `http://mate.local/`. Endpoints and how to get pictures: [`../README.md`](../README.md#api). Pins: [`hardware/mate`](../../../hardware/mate/README.md#pins-freenove-esp32-s3-wroom-cam).
+[`firmware.ino`](firmware.ino) runs Mate on the Freenove ESP32-S3-WROOM CAM: Wi-Fi API, both wheels, the flipper servo straight from the ESP32's PWM, the OLED face (bitmaps and animations), the camera and the control page at `http://mate.local/`. Endpoints and how to get pictures: [`../README.md`](../README.md#api). Pins: [`hardware/mate`](../../../hardware/mate/README.md#pins-freenove-esp32-s3-wroom-cam).
 
 ## Build
 
@@ -22,6 +22,8 @@ Serial (115200) prints the IP and `READY oled=… cam=…` once it's up.
 - **Camera:** tries hardware JPEG first (OV2640/OV3660); the bundled GC0308 can't, so it falls back to RGB565 at 640×480 and encodes with `frame2jpg`.
 - **Camera sleeps between pictures.** On this board a running camera wrecks Wi-Fi (pings 100–300 ms, multi-second stalls even at 10 MHz). The camera clock (LEDC timer 3) is paused unless a capture or stream is in progress, and a snapshot is sent after the camera goes back to sleep. Measured: idle ping ~11 ms, snapshot ~0.9 s, stream ~2 fps.
 - **IPv6 is on** only so `mate.local` resolves at once on a Mac; without it every lookup waits 5 s for an IPv6 answer.
-- **Servos:** LEDC channels 0–2 at 50 Hz, 14-bit, attached after the camera so they share timer 0 and stay off the camera's timer 3.
+- **Servo:** LEDC channel 0 at 50 Hz, 14-bit, attached after the camera so it takes timer 0 and stays off the camera's timer 3.
+- **Orientation:** the camera is mounted upside down, so it starts with `vflip` and `hmirror` on (180°). The GC0308 driver ignores `vflip`, so for raw sensors both flips are done in software on the frame before encoding (a 180° turn is just reversing the pixel buffer); JPEG sensors flip in hardware. The OLED uses rotation 0.
+- **Screen frames** live in PSRAM: two 64-frame buffers, swapped when an upload completes, so a half-received upload never shows. The frame rate is an `X-FPS` header because `WebServer` doesn't parse query args when it hands over a raw body.
 
 The earlier Arduino Nano firmware (USB serial protocol) was removed; it's in git history if ever needed. The classic-DevKit bench test is in [`../tests/web_i2c/`](../tests/web_i2c/).

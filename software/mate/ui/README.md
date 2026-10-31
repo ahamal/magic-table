@@ -5,8 +5,8 @@ The human agent's interface to Mate. Built into the firmware ([`../firmware/firm
 ## Controls
 
 - **Wheels:** two raw inputs (s1, s2 half-steps) plus speed and accel, and a few quick buttons (e.g. `+400/+400`, `+400/−400`) — the human works out what they do.
-- **Servos:** a slider per servo (raw angle).
-- **Screen:** face buttons (ready-made 128×64 images) plus image upload.
+- **Flipper servo:** a slider (raw angle).
+- **Screen:** a 128×64 preview to draw on with clicks, plus a text box whose text renders into the preview; sent to Mate as a bitmap as you go. Later: ready-made faces.
 - **Camera:** snapshot (`/capture`), live video (`:81/stream`) and download.
 - **Status:** busy, step counters, last move result, request latency.
 - **STOP:** large, always visible.

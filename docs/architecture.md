@@ -31,7 +31,7 @@
 │  Mate API (own web server, Wi-Fi) + human control page           │
 │  ├─ Camera (GC0308 on the board): /capture JPEG, :81/stream      │
 │  ├─ 2× 28BYJ-48 via ULN2003 (raw steps, own core)                │
-│  ├─ Servos straight from the ESP32 PWM (pan, tilt, flipper)      │
+│  ├─ Flipper servo straight from the ESP32 PWM                    │
 │  └─ I2C: OLED face                                               │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -61,7 +61,7 @@ Every action returns the same shape: `{ ok, error?, took_ms, ... }`. Errors are 
 
 ## Mate interface
 
-Mate is its own system with its own API. Raw by design: `step {s1, s2}`, `servo {id, angle}`, `screen`, `capture`, `stop`. Full spec: [`software/mate/README.md`](../software/mate/README.md).
+Mate is its own system with its own API. Raw by design: `step {s1, s2}`, `servo {angle}`, `screen` (raw 128×64 bitmaps, looping animations), `capture`, `stop`. Full spec: [`software/mate/README.md`](../software/mate/README.md).
 
 ## Ghost (simulation)
 

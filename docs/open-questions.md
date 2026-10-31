@@ -3,8 +3,8 @@
 ## Blocking step 1 (Mate)
 - [x] Controller: Freenove ESP32-S3 CAM (since Oct 31) — no Pi, no Arduino, no PCA9685, no edge sensor
 - [x] Wheel diameter: 70 mm. Spacing: ~100 mm suggested, set when the chassis is designed
-- [ ] How many servos in v1: pan, pan + tilt, + flipper?
-- [x] Screen: 0.96" SSD1306 OLED, raw 128×64 images; the control page ships named faces
+- [x] Servos in v1: just the flipper; no pan or tilt
+- [x] Screen: 0.96" SSD1306 OLED, raw 128×64 bitmaps and preloaded animations over `/screen`
 - [x] Speaker: none on Mate; the hub speaks
 - [ ] Chassis: still to design/print (estimate ~14 × 11 × 12 cm)
 - [x] Power: power bank via cut USB cable, CanaKit on the bench
