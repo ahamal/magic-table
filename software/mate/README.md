@@ -36,6 +36,7 @@ Everything Mate can do goes through this HTTP API. The control page uses it, and
   | 400 | `need s1 and s2` | `/step` without both wheels |
   | 400 | `limit` | `/step` steps, speed or accel out of range |
   | 400 | `range` | `/servo` angle missing or outside 0–180 |
+  | 400 | `speed 0–600` | `/servo` speed out of range |
   | 400 | `body must be 0–64 frames of 1024 bytes` | `/screen` body the wrong size |
   | 400 | `X-FPS 1–30` | `/screen` frame rate out of range |
   | 400 | `X-Repeat 0–1000` | `/screen` repeat count out of range |
@@ -65,7 +66,7 @@ Everything Mate can do goes through this HTTP API. The control page uses it, and
 Static facts about the robot. Read it once at start-up.
 
 ```json
-{"fw":"mate-s3","ip":"192.168.1.201","max_steps":4096,"max_speed":800,"max_accel":1000,"oled":true,
+{"fw":"mate-s3","ip":"192.168.1.201","max_steps":4096,"max_speed":800,"max_accel":1000,"max_servo_speed":600,"oled":true,
  "screen":{"width":128,"height":64,"frame_bytes":1024,"max_frames":64,"max_fps":30,"max_repeat":1000},
  "camera":"GC0308","stream":"http://192.168.1.201:81/stream","vflip":1,"hmirror":1}
 ```
@@ -75,6 +76,7 @@ Static facts about the robot. Read it once at start-up.
 | `max_steps` | Most half-steps per wheel in one `/step` (4096 = one wheel turn) |
 | `max_speed` | Highest `speed` for `/step`, half-steps/s |
 | `max_accel` | Highest `accel` for `/step`, half-steps/s² |
+| `max_servo_speed` | Highest `speed` for `/servo`, degrees/s |
 | `oled` | `true` if the face screen was found |
 | `screen` | Face size and `/screen` limits |
 | `camera` | Sensor name, or `none` |
@@ -85,7 +87,7 @@ Static facts about the robot. Read it once at start-up.
 The live state. Poll it after `/step` (every 100–200 ms) to know when a move ends.
 
 ```json
-{"busy":false,"p1":0,"p2":0,"last":{"result":"none","d1":0,"d2":0,"ms":0},"servo":-1,
+{"busy":false,"p1":0,"p2":0,"last":{"result":"none","d1":0,"d2":0,"ms":0},"servo":-1,"servo_now":-1,"servo_moving":false,
  "screen":{"frames":56,"fps":12,"repeat":0,"done":false},"uptime_ms":12666,"reset_reason":"power_on","boots":1,"rssi":-38}
 ```
 
@@ -96,7 +98,9 @@ The live state. Poll it after `/step` (every 100–200 ms) to know when a move e
 | `last.result` | The last move: `ok` (finished), `stopped` (cut short by `/stop`), or `none` (no move since boot) |
 | `last.d1`, `last.d2` | Half-steps each wheel actually moved in that move |
 | `last.ms` | How long it took |
-| `servo` | Last flipper angle set, or `-1` if never set since boot |
+| `servo` | Flipper target angle (the last one sent), or `-1` if never set since boot |
+| `servo_now` | Where the flipper is being driven right now; differs from `servo` during a timed sweep |
+| `servo_moving` | `true` while a timed sweep (`/servo` with `speed`) is still on its way |
 | `screen.frames`, `screen.fps`, `screen.repeat` | What the face is showing: `0` frames = the status screen; `repeat` as sent (`0` = forever) |
 | `screen.done` | `true` once an animation has played its `X-Repeat` times and is holding its last frame. Always `true` for a still picture or the status screen; never for a forever loop |
 | `uptime_ms` | Time since the last restart |
@@ -128,9 +132,25 @@ curl -X POST "http://mate.local/step?s1=-1024&s2=1024&speed=600&accel=800"   # �
 
 Stops the wheels immediately and switches the coils off. Works at any time, even mid-move or when idle. Returns `{"ok":true}`; the interrupted move shows `last.result = "stopped"` with how far each wheel actually got.
 
-### `POST /servo?angle=`
+### `POST /servo?angle=[&speed=]`
 
-Sets the flipper (MG996R) to `angle`, 0–180. Returns `{"ok":true}` as soon as the command is sent; the servo takes up to ~1 s to get there. It then holds that angle. There is no feedback of the real position. Avoid the very ends (0 and 180) if the flipper hits something there: holding against a stop draws ~2.5 A.
+Moves the flipper (MG996R).
+
+| Param | Required | Range | Default | Meaning |
+|---|---|---|---|---|
+| `angle` | yes | 0…180 | — | Target angle in degrees |
+| `speed` | no | 0…600 | 0 | Sweep speed in degrees/s. `0` or left out = jump: the servo goes there as fast as it can (~0.2 s per 60°) |
+
+- **Returns at once:** `{"ok":true}`. With a `speed`, Mate sweeps the flipper there in small steps on its own; `/status` shows `servo_moving: true` until it arrives (e.g. 30° at `speed=30` takes ~1 s).
+- **A new `/servo` replaces the current one**, even mid-sweep: it continues from where the flipper is now.
+- **The first move after a restart always jumps,** because Mate doesn't know where the flipper is until it has put it somewhere.
+- It then holds that angle. There is no feedback of the real position, only where Mate is driving it.
+
+```bash
+curl -X POST "http://mate.local/servo?angle=120&speed=60"   # sweep to 120° at 60°/s → {"ok":true}
+```
+
+ **Avoid the very ends** (0 and 180) if the flipper hits something there: holding against a stop draws ~2.5 A.
 
 ### `POST /screen`
 
@@ -206,7 +226,7 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 
 ### Control page
 
-`http://mate.local/` is for people: camera (snapshot, live, download), a screen editor (draw with clicks, type text, send), a **Faces** grid of 19 ready-made animations with a loop/once switch, an arrow pad with keyboard arrows (Space or Esc stops), speed and accel sliders, raw `s1`/`s2`, STOP, and a flipper slider. It uses only the API above.
+`http://mate.local/` is for people: camera (snapshot, live, download), a screen editor (draw with clicks, type text, send), a **Faces** grid of 19 ready-made animations with a loop/once switch, an arrow pad with keyboard arrows (Space or Esc stops), speed and accel sliders, raw `s1`/`s2`, STOP, and a flipper slider with a speed slider (full = jump). It uses only the API above.
 
 ## Step 1 checklist
 

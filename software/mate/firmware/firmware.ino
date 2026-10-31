@@ -28,6 +28,8 @@ const uint8_t SDA_PIN = 20, SCL_PIN = 19;  // the second USB port's pins; that p
 const uint8_t SERVO_PIN = 40;  // flipper (shared with the unused SD slot)
 const uint16_t SERVO_MIN_US = 500, SERVO_MAX_US = 2500;
 const uint8_t SERVO_BITS = 14;  // 20 ms period / 16384 ≈ 1.2 µs per count
+const uint16_t MAX_SERVO_SPEED = 600;  // °/s; /servo without speed jumps at full speed
+const uint16_t SERVO_TICK_MS = 10;
 
 // ---- Steppers: 28BYJ-48 + ULN2003, HALF4WIRE needs IN1, IN3, IN2, IN4 ----
 // Each wheel is four header pins in a row: wheel 1 on 1, 2, 42, 41 and wheel 2 on 45, 48, 47, 21.
@@ -71,7 +73,10 @@ const char *reasonName(esp_reset_reason_t r) {
 
 bool hasOled = false, hasCam = false;
 const char *camName = "none";
-int servoAngle = -1;
+int servoAngle = -1;       // target, -1 = never set
+float servoNow = -1;       // where the pulse points now (moves toward the target at servoSpeed)
+uint16_t servoSpeed = 0;   // °/s, 0 = jump straight there
+unsigned long servoTick = 0;
 
 // ---- Screen: 128×64, 1 bit per pixel, rows top to bottom, 16 bytes per row, MSB = leftmost ----
 // POST /screen with N frames back to back plays them X-Repeat times (0 = forever), then holds
@@ -284,10 +289,31 @@ void startStreamServer() {
 
 // ---------------------------------------------------------------- devices (core 0)
 
-void setServo(int angle) {
-  uint32_t us = map(angle, 0, 180, SERVO_MIN_US, SERVO_MAX_US);
+void servoPulse(float angle) {
+  uint32_t us = SERVO_MIN_US + angle * (SERVO_MAX_US - SERVO_MIN_US) / 180;
   ledcWrite(SERVO_PIN, us * ((1 << SERVO_BITS) - 1) / 20000);
+}
+
+// speed 0 = jump. The first move after boot always jumps, since where the servo is isn't known.
+void setServo(int angle, uint16_t speed) {
   servoAngle = angle;
+  servoSpeed = servoNow < 0 ? 0 : speed;
+  if (servoSpeed == 0) {
+    servoNow = angle;
+    servoPulse(servoNow);
+  }
+}
+
+// Called often from netTask: steps the pulse toward the target at servoSpeed.
+void updateServo() {
+  if (servoAngle < 0 || servoNow == servoAngle) return;
+  unsigned long now = millis();
+  if (now - servoTick < SERVO_TICK_MS) return;
+  servoTick = now;
+  float step = servoSpeed * SERVO_TICK_MS / 1000.0f;
+  servoNow += constrain(servoAngle - servoNow, -step, step);
+  if (fabsf(servoAngle - servoNow) < 0.01f) servoNow = servoAngle;
+  servoPulse(servoNow);
 }
 
 // Shown while offline, or online with nothing sent yet.
@@ -432,6 +458,8 @@ small,#res{color:#888}
 
 <h2>Flipper servo: <span id=sv>-</span>&deg;</h2>
 <input type=range min=0 max=180 value=90 oninput="servo(this.value)">
+<label>speed: <span id=ssv>full</span></label>
+<input id=ss type=range min=0 max=600 step=10 value=0 oninput="$('ssv').textContent=this.value>0?this.value+' °/s':'full'">
 <script>
 const $=id=>document.getElementById(id);
 const streamUrl=`http://${location.hostname}:81/stream`;
@@ -590,7 +618,7 @@ show(build('eyes').frames[0]);
 let busyServo=0;
 function servo(a){$('sv').textContent=a;
  if(busyServo)return;busyServo=1;
- fetch(`/servo?angle=${a}`,{method:'POST'}).finally(()=>busyServo=0)}
+ fetch(`/servo?angle=${a}&speed=${$('ss').value}`,{method:'POST'}).finally(()=>busyServo=0)}
 // The wheels face opposite ways: same sign on both turns Mate, opposite signs drive it.
 // both + turns anticlockwise, and s1 −, s2 + drives forward (checked on the bench).
 const DIRS={up:[-1,1],down:[1,-1],left:[1,1],right:[-1,-1]};
@@ -626,7 +654,8 @@ void handleStatus() {
   j += ",\"p1\":" + String(pos1) + ",\"p2\":" + String(pos2);
   j += ",\"last\":{\"result\":\"" + String(lastResult) + "\",\"d1\":" + String(lastD1) +
        ",\"d2\":" + String(lastD2) + ",\"ms\":" + String(lastMs) + "}";
-  j += ",\"servo\":" + String(servoAngle);
+  j += ",\"servo\":" + String(servoAngle) + ",\"servo_now\":" + String((int)roundf(servoNow)) +
+       ",\"servo_moving\":" + String(servoAngle >= 0 && servoNow != servoAngle ? "true" : "false");
   j += ",\"screen\":{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) +
        ",\"repeat\":" + String(repeatTotal) + ",\"done\":" + String(screenDone ? "true" : "false") + "}";
   j += ",\"uptime_ms\":" + String(millis());
@@ -639,6 +668,7 @@ void handleInfo() {
   String j = "{\"fw\":\"mate-s3\",\"ip\":\"" + WiFi.localIP().toString() + "\"";
   j += ",\"max_steps\":" + String(MAX_STEPS) + ",\"max_speed\":" + String(MAX_SPEED) +
        ",\"max_accel\":" + String(MAX_ACCEL);
+  j += ",\"max_servo_speed\":" + String(MAX_SERVO_SPEED);
   j += ",\"oled\":" + String(hasOled ? "true" : "false");
   j += ",\"screen\":{\"width\":128,\"height\":64,\"frame_bytes\":" + String(FRAME_BYTES) +
        ",\"max_frames\":" + String(MAX_FRAMES) + ",\"max_fps\":" + String(MAX_FPS) +
@@ -721,10 +751,13 @@ void handleScreen() {
   sendJson("{\"frames\":" + String(frameCount) + ",\"fps\":" + String(fps) + ",\"repeat\":" + String(repeatTotal) + "}");
 }
 
+// /servo?angle=0–180[&speed=1–600 °/s]. No speed (or 0) = jump at the servo's own full speed.
 void handleServo() {
   long angle = server.arg("angle").toInt();
   if (!server.hasArg("angle") || angle < 0 || angle > 180) return sendJson("{\"error\":\"range\"}", 400);
-  setServo(angle);
+  long speed = server.hasArg("speed") ? server.arg("speed").toInt() : 0;
+  if (speed < 0 || speed > MAX_SERVO_SPEED) return sendJson("{\"error\":\"speed 0–" + String(MAX_SERVO_SPEED) + "\"}", 400);
+  setServo(angle, speed);
   sendJson("{\"ok\":true}");
 }
 
@@ -805,6 +838,7 @@ void netTask(void *) {
 
   for (;;) {
     server.handleClient();
+    updateServo();
     updateOled();
     delay(1);
   }
