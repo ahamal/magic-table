@@ -19,7 +19,7 @@ Running log. Newest at the bottom of each section.
 - ~~**Pump: H-bridge driven from Pi 5 GPIO** on the RAMPS 12V supply.~~ Replaced below.
 - **Gripper: 12 mm, 2-layer bellows suction cup.** *Why:* fits on a dime; 2 layers are enough because Z, the spring mount and the known stack height handle height; fewer layers grip faster and sway less.
 - **VL6180X #1 on the gantry head** (stack heights, picks, pick confirmation). Optional touch switch on GRBL's probe pin for exact contact.
-- **Overhead camera: Camera v2 (imx219)** on the Frame, about 50 cm up, on a long ribbon (≤ 1 m) with a 22→15-pin adapter for the Pi 5.
+- **Overhead camera: Camera v2 (imx219)** on the Frame, about 50 cm up, with a 22→15-pin cable to the Pi 5.
 - ~~**Mate: Pi 3B + Arduino + 2× 28BYJ-48/ULN2003 + servos + ov5647 camera + tiny screen.**~~ Replaced below.
 - **Peek camera is Mate's camera.** No third camera needed. (Now the S3 board's GC0308; an OV2640 fits the same connector if it can't read cards.)
 - ~~**VL6180X #2 on Mate**, front, pointing down: table-edge reflex.~~ Dropped Oct 31 with the move to the S3. *Why:* frees I2C and space; the hub's no-go zone (overhead camera) and the per-command step limit keep Mate on the table instead.
@@ -32,7 +32,9 @@ Running log. Newest at the bottom of each section.
 - **TF-Luna:** later, on Mate's head, for finding players and obstacles at a distance. Not for Z (20 cm blind zone, ±6 cm).
 - **Markers should blend in:** head-marker calibration (removable), small markers on top of frame corners, Mate's marker designed into its look.
 - **Suction: 12V diaphragm pump + normally-closed solenoid vent valve** (AIRZOE 2V025-08, direct-acting). Pump on to grip and hold; pump off and valve pulsed ~0.3 s to drop. *Why:* the peristaltic pump was too weak; a diaphragm pump can't reverse, so a valve does the release, as on uArm/Dobot arms and vending pickers. A pilot-operated valve (4V210) won't work on vacuum.
-- **Gripper driver: a Nano over USB from the Pi 5**, two 30N06L logic-level MOSFET modules, a 1N4007 across each load. No H-bridge. *Why:* the Pi 5 never touches the 12V side; a mistake costs a Nano, not the hub.
+- ~~**Gripper driver: a Nano over USB from the Pi 5.**~~ Replaced Oct 31: it made a ground loop that knocked the Uno off USB on every move.
+- **Gripper driver: GRBL itself.** Two 30N06L logic-level MOSFET modules on the CNC Shield: pump on CoolEn (`M8`/`M9`), vent valve on SpnDir (`M4 S0` / `M3 S0`), a 1N4007 across each load. *Why:* one USB cable means one ground path; no extra board or firmware; grips and drops stay in order with the moves. The Pi 5 still never touches 12V.
+- **Overhead camera on the Pi 5's own CSI port**, opened once by the hub (picamera2) and served at `GET /api/capture`. *Why:* about 0.04 s per photo, and one fewer board than a camera Pi.
 - **Frame speed at 12V: X/Y 9000 mm/min, acceleration 500 mm/s².** *Why:* 12000 skipped steps; 24V would be faster but needs a second supply for the 12V pump and valve. Not worth it before the deadline.
 
 ## Mate

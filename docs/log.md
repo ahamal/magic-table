@@ -56,9 +56,21 @@ What happened, when, and what we learned. Newest at the bottom. Times are ET and
 - **GRBL build checked** with `$I`: **GRBL 1.1h (2019-08-30), CoreXY enabled** (`[OPT:VCZ,15,128]`). Variable spindle, homing forces machine zero. So X/Y moves are already mixed for CoreXY by GRBL.
 - **Hub server + jog page** (`software/hub/`): FastAPI on the Pi at port 8000, one kept-open GRBL connection, live status over WebSocket. The page builds on the Robo Diner jog page (click a target on the XY table and Z rail) with hold-to-jog, keyboard, live position, zeroing, STOP and a console.
 - **Gripper Nano + server** (`software/gripper/`): Nano flashed from the Pi with avrdude (old bootloader, 57600). Separate FastAPI service on port 8001 with pump and valve switches. Both services came back on their own after a power outage.
+
+## Oct 31 (day 6)
+
+- **~17:40 The Uno started dropping off USB on every move** (`serial: device reports readiness to read but returned no data`). Tracked down:
+  - Not the Pi's power: no under-voltage, and a proper supply instead of the Mac's USB-C didn't help.
+  - **With the Nano unplugged, 5 move cycles ran with 0 drops.** Plugging it back in dropped the Uno at once.
+  - **Cause: a ground loop.** The Nano's ground is tied to 12V − (the MOSFETs need it) and its USB goes to the Pi, so stepper return current found a second path through both USB cables and the Pi. That shifts the Uno's USB ground and resets its USB chip. All the Pi's USB ports share one ground, so changing ports doesn't help.
+  - Two Pi "crashes" in between were the Pi 5's power button being bumped (`Power key pressed short` in the log).
+- **Fix: GRBL drives the gripper, no Nano.** MOSFET gates moved to the CNC Shield: pump on **CoolEn** (`M8`/`M9`, checked at 5V with a meter), valve on **SpnDir** (`M4 S0` opens, `M3 S0` closes). SpnEn can't be used: in this variable-spindle build it's the Z limit input. No reflash. 5 move cycles with grip and drop each cycle: **0 errors, 0 USB drops.**
+- **Hub on port 8000 now runs the gripper** (`/api/gripper/...`, Pump/Valve/Grip/Drop on the jog page). The port-8001 gripper service is disabled.
+- **Overhead camera works on the Pi 5** (Camera v2, imx219, now on the Pi 5's own port). `GET /api/capture` returns a 1640×1232 JPEG in about 0.04 s, from a camera kept open by the hub. Still needs a mount ~55–60 cm above the table, centered, looking straight down.
 - **Still open:**
   - Steps/mm (`$100`–`$102` = 50) hasn't been measured.
   - GRBL starts in alarm and needs `$H` or `$X`.
+  - Camera mount and pixel → gantry calibration.
 
 ## Oct 31 (day 6)
 

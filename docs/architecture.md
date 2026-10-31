@@ -23,7 +23,7 @@
 │  ├─ Frame driver ── USB serial ──► Uno + CNC Shield (GRBL)       │
 │  ├─ Overhead camera (Camera v2)                                  │
 │  ├─ VL6180X on the gantry head (I2C)                             │
-│  ├─ Gripper ── USB serial ──► Nano ──► 12V pump + vent valve     │
+│  ├─ Gripper ── GRBL M8/M9, M4/M3 ──► 12V pump + vent valve       │
 │  └─ Mate client ── HTTP ──┐                                      │
 └───────────────────────────┼──────────────────────────────────────┘
                             ▼

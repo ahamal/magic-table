@@ -183,6 +183,14 @@
       </div>
     </section>
 
+    <section>
+      <h2>Gripper <span><kbd>G</kbd> grip · <kbd>D</kbd> drop</span></h2>
+      <div class="seg">
+        <button id="pump" title="Pump on/off (M8/M9)">Pump</button><button id="valve" title="Vent valve open/closed (M4 S0/M3 S0)">Valve</button>
+        <button id="grip">Grip</button><button id="drop">Drop</button>
+      </div>
+    </section>
+
     <section class="console">
       <h2>Console</h2>
       <div id="log"></div>
@@ -237,6 +245,7 @@ function connect() {
     const ev = JSON.parse(e.data);
     if (ev.type === 'status') render(ev);
     else if (ev.type === 'settings') applySettings(ev.settings);
+    else if (ev.type === 'gripper') renderGripper(ev);
     else if (ev.type === 'log') log((ev.dir === 'out' ? '> ' : '') + ev.text,
       ev.text.startsWith('error') || ev.text.startsWith('ALARM') ? 'err' : ev.dir);
   };
@@ -443,6 +452,27 @@ $('hold').onclick = () => rt('hold');
 $('resume').onclick = () => rt('resume');
 $('reset').onclick = () => rt('reset');
 
+// ---- gripper ----
+let grip = { pump: false, valve: false };
+function renderGripper(g) {
+  grip = g;
+  $('pump').classList.toggle('on', g.pump);
+  $('valve').classList.toggle('on', g.valve);
+}
+const gripper = name => api('gripper/' + name).then(r => {
+  if (r.error) log(r.error, 'err');
+  if ('pump' in r) renderGripper(r);
+});
+$('pump').onclick = () => gripper(grip.pump ? 'pump_off' : 'pump_on');
+$('valve').onclick = () => gripper(grip.valve ? 'valve_off' : 'valve_on');
+$('grip').onclick = () => gripper('grip');
+$('drop').onclick = () => gripper('drop');
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.repeat || e.metaKey || e.ctrlKey) return;
+  if (e.key === 'g') gripper('grip');
+  else if (e.key === 'd') gripper('drop');
+});
+
 // ---- console ----
 const COMMANDS = [
   ['$$', 'View all GRBL settings'], ['$#', 'View G-code parameters'], ['$G', 'View parser state'],
@@ -451,6 +481,7 @@ const COMMANDS = [
   ['$SLP', 'Sleep mode'], ['G21', 'Units: millimetres'], ['G90', 'Absolute positioning'],
   ['G91', 'Relative positioning'], ['G0 X0 Y0', 'Rapid to work 0,0'],
   ['G10 L20 P1 X0 Y0 Z0', 'Set current position as work zero'],
+  ['M8', 'Pump on'], ['M9', 'Pump off'], ['M4 S0', 'Vent valve open'], ['M3 S0', 'Vent valve closed'],
 ];
 COMMANDS.forEach(([c, d]) => { const o = document.createElement('option'); o.value = c; o.label = d; $('cmds').append(o); });
 const history = []; let hi = 0;

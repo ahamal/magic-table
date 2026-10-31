@@ -14,11 +14,11 @@
 ## Frame
 - [ ] Gantry travel in X, Y, Z
 - [x] Controller: Uno + CNC Shield V3 running GRBL 1.1h with CoreXY (not RAMPS)
-- [x] Pump: 12V diaphragm pump + NC solenoid vent valve, switched by a Nano (peristaltic was too weak)
+- [x] Pump: 12V diaphragm pump + NC solenoid vent valve, switched by GRBL through the CNC Shield (peristaltic was too weak; a Nano made a ground loop)
 - [ ] Steps/mm: `$100`–`$102` are 50, unmeasured. Send a 100 mm move and measure
 - [ ] Does the Robo Diner hand (tilt/grab servos via PCA9685) stay, or is it replaced by the suction head?
 - [x] Pi 5 hostname: `raspberrypi.local` (user `ash`)
-- [ ] 22→15-pin camera adapter cable for the Pi 5 — on hand?
+- [x] Camera v2 on the Pi 5: works (`GET /api/capture`). Still needs a mount ~55–60 cm above the table
 - [ ] Emergency stop button wired to GRBL reset / feed hold
 
 ## Hackathon

@@ -1,4 +1,6 @@
-# Gripper server (Pi 5)
+# Gripper server (Pi 5) — retired
+
+> **Replaced Oct 31.** The Nano's USB cable plus its ground to 12V − made a ground loop through the Pi that knocked the Uno off USB on every move. GRBL now switches the pump and valve through the CNC Shield, and the hub serves them on port 8000 ([`software/hub`](../hub/README.md)). `gripper.service` is disabled on the Pi. Kept for reference.
 
 Pump and vent valve switches, separate from the GRBL hub so either can restart on its own.
 

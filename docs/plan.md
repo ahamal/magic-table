@@ -18,8 +18,9 @@ Mate runs standalone; a person drives it from a browser.
 ### Step 2 — Frame + human
 The table hub on the Pi 5; a person plays with the gantry from a browser.
 - [ ] GRBL homing, soft limits, Frame driver
-- [ ] Pump + vent valve via Nano, pick/release
-- [ ] Overhead camera + calibration (head marker)
+- [x] Pump + vent valve via GRBL (CNC Shield), grip/drop in the hub
+- [x] Overhead camera: `GET /api/capture` on the hub
+- [ ] Camera mount + calibration (head marker)
 - [ ] VL6180X on the head (`sense_z`), optional probe switch
 - [ ] Hub web server + human table page; Mate connected through the hub
 - [ ] Safety layer: limits, Mate no-go zone, e-stop
