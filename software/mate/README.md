@@ -206,7 +206,7 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 
 ### Control page
 
-`http://mate.local/` is for people: camera (snapshot, live, download), a screen editor (draw with clicks, type text, send), an arrow pad with keyboard arrows (Space or Esc stops), speed and accel sliders, raw `s1`/`s2`, STOP, and a flipper slider. It uses only the API above.
+`http://mate.local/` is for people: camera (snapshot, live, download), a screen editor (draw with clicks, type text, send), a **Faces** grid of 19 ready-made animations with a loop/once switch, an arrow pad with keyboard arrows (Space or Esc stops), speed and accel sliders, raw `s1`/`s2`, STOP, and a flipper slider. It uses only the API above.
 
 ## Step 1 checklist
 

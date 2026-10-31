@@ -8,6 +8,8 @@ Ready-made animations for Mate's 128×64 OLED. Each is a `.bin` file of frames i
 | `chicken` | 4 | 3 fps | A chicken pecking at seeds | ![chicken](chicken.png) |
 | `portrait` | 20 | 6 fps | A cartoon of a person in glasses and a hoodie, drawn from Mate's camera: smiles, blinks, waves | ![portrait](portrait.png) |
 
+The control page at `http://mate.local/` also has a **Faces** grid with 19 animations (including these two) you can tap to play, loop or once; those are drawn in the page script.
+
 ## Show one on Mate
 
 ```bash

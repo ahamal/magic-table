@@ -362,7 +362,7 @@ body{font-family:system-ui,sans-serif;max-width:420px;margin:16px auto;padding:0
 h1{font-size:18px;color:#aaa;font-weight:500}
 h2{font-size:14px;color:#aaa;font-weight:500;margin:22px 0 6px}
 #cam{width:100%;aspect-ratio:4/3;background:#222;display:block}
-#scr{width:100%;aspect-ratio:2/1;image-rendering:pixelated;background:#000;border:1px solid #444;
+#scr,#fx{width:100%;aspect-ratio:2/1;image-rendering:pixelated;background:#000;border:1px solid #444;
  display:block;touch-action:none;cursor:crosshair}
 .row{margin:10px 0}
 label{color:#aaa;font-size:13px}
@@ -398,6 +398,15 @@ small,#res{color:#888}
  <label><input id=auto type=checkbox checked> send as I draw</label>
 </div>
 <small id=scrmsg>-</small>
+
+<h2>Faces &mdash; tap one to play it on Mate</h2>
+<canvas id=fx width=128 height=64></canvas>
+<div class=row id=faces></div>
+<div class=row>
+ <label><input type=radio name=rep value=0 checked> loop</label>
+ <label><input type=radio name=rep value=1> once</label>
+ <small id=fxmsg>-</small>
+</div>
 
 <h2>Wheels (half-steps, 4096 = one turn)</h2>
 <div class=row>
@@ -474,6 +483,109 @@ async function postScreen(body){
 function sendScreen(){postScreen(bytes())}
 function statusScreen(){postScreen(new Uint8Array(0))}
 render();
+
+// ---- faces: little animations drawn here and sent to Mate as frames ----
+const TAU=Math.PI*2,fc=document.createElement('canvas');fc.width=W;fc.height=H;
+const g=fc.getContext('2d');
+function fill(s){g.fillStyle=g.strokeStyle=s}
+function rr(x,y,w,h,r){g.beginPath();g.roundRect(x,y,w,h,r);g.fill()}
+function dot(x,y,r){g.beginPath();g.arc(x,y,r,0,TAU);g.fill()}
+function ring(x,y,r,w){g.lineWidth=w;g.beginPath();g.arc(x,y,r,0,TAU);g.stroke()}
+function heart(x,y,s){g.beginPath();g.moveTo(x,y+s*.9);
+ g.bezierCurveTo(x-s*1.5,y-s*.1,x-s*.7,y-s*1.1,x,y-s*.35);
+ g.bezierCurveTo(x+s*.7,y-s*1.1,x+s*1.5,y-s*.1,x,y+s*.9);g.fill()}
+function txt(s,x,y,px){g.font=`bold ${px}px system-ui,sans-serif`;g.textAlign='center';g.textBaseline='middle';g.fillText(s,x,y)}
+function rnd(seed){return()=>(seed=(seed*16807)%2147483647)/2147483647}   // repeatable random
+// the standard pair of eyes: dx/dy look direction, o = how open (0–1)
+function eyes(dx=0,dy=0,o=1,shine=true){
+ const EW=34,EH=40,GAP=18,h=Math.max(3,EH*o);
+ for(const s of[-1,1]){const x0=64+dx+s*(GAP/2+EW/2)-EW/2,y0=32+dy-h/2;
+  fill('#fff');rr(x0,y0,EW,h,Math.min(10,h/2));
+  if(shine&&o>.5){fill('#000');dot(x0+EW/2+dx/2+6,y0+8,4)}}
+ fill('#fff')}
+const EYES=(()=>{const f=[],R=(k,n)=>{for(let j=0;j<n;j++)f.push(k)},S=a=>a.forEach(k=>f.push(k));
+ R([0,0,1],6);S([.6,.2,.05,.2,.6].map(o=>[0,0,o]));R([0,0,1],4);
+ S([-6,-12,-16].map(d=>[d,0,1]));R([-16,0,1],5);S([-10,-4].map(d=>[d,0,1]));R([0,0,1],3);
+ S([6,12,16].map(d=>[d,0,1]));R([16,0,1],5);S([10,4].map(d=>[d,0,1]));R([0,0,1],3);
+ R([0,-6,1],3);f.push([0,-3,1]);R([0,0,1],2);S([.6,.2,.05,.2,.6,1,.2,.05,.6].map(o=>[0,0,o]));return f})();
+function chicken(peck){
+ g.lineWidth=1;g.beginPath();g.moveTo(0,60.5);g.lineTo(128,60.5);g.stroke();
+ for(const x of[20,26,100,108,113])g.fillRect(x,58,1,1);
+ g.beginPath();g.moveTo(38,26);g.lineTo(28,14);g.lineTo(34,30);g.fill();
+ g.beginPath();g.moveTo(38,30);g.lineTo(24,22);g.lineTo(34,34);g.fill();
+ g.lineWidth=2;g.beginPath();g.ellipse(56,37,22,15,0,0,TAU);g.stroke();
+ g.beginPath();g.ellipse(55,38,11,8,0,200/57.3,340/57.3);g.stroke();
+ for(const x of[52,62]){g.fillRect(x-1,51,2,8);g.fillRect(x-3,59,8,1)}
+ const[hx,hy]=peck?[90,50]:[80,16];
+ g.lineWidth=3;g.beginPath();peck?(g.moveTo(74,38),g.lineTo(86,48)):(g.moveTo(72,30),g.lineTo(78,20));g.stroke();
+ fill('#000');dot(hx,hy,7);fill('#fff');ring(hx,hy,6.5,2);
+ for(const[cx,cy]of[[hx-4,hy-7],[hx,hy-9],[hx+4,hy-7]])dot(cx,cy,2.5);
+ g.beginPath();g.moveTo(hx+6,hy-2);g.lineTo(hx+13,hy+1);g.lineTo(hx+6,hy+3);g.fill();
+ dot(hx+6,hy+6,2.5);g.fillRect(hx+1,hy-3,3,3)}
+function spiral(x,y,rot){g.lineWidth=2;g.beginPath();
+ for(let t=0;t<3*TAU;t+=.2){const r=1+t*1.1;g.lineTo(x+r*Math.cos(t+rot),y+r*Math.sin(t+rot))}g.stroke()}
+
+// name: [frames, fps, draw(i, n)]
+const FACES={
+ eyes:[EYES.length,12,i=>eyes(...EYES[i])],
+ chicken:[4,3,i=>chicken(i==2)],
+ happy:[16,12,i=>{const b=Math.sin(i/16*TAU)*3;g.lineWidth=6;
+  for(const s of[-1,1]){g.beginPath();g.arc(64+s*26,40+b,14,Math.PI,0);g.stroke()}}],
+ wink:[24,12,i=>{eyes();if(i>=8&&i<18){fill('#000');g.fillRect(0,0,64,64);fill('#fff');
+  g.lineWidth=5;g.beginPath();g.arc(38,40,13,Math.PI,0);g.stroke()}}],
+ love:[16,10,i=>{const s=14+3*Math.sin(i/16*TAU);heart(38,32,s);heart(90,32,s)}],
+ sleepy:[32,8,i=>{const o=.22+.06*Math.sin(i/32*TAU);eyes(0,6,o,false);
+  for(let k=0;k<3;k++){const t=((i/32)+k/3)%1;txt('z',104+t*14,40-t*36,8+t*10)}}],
+ surprised:[16,12,i=>{const r=14+(i<4?i:4)*.8;
+  for(const s of[-1,1]){ring(64+s*28,26,r,3);dot(64+s*28,26,4)}ring(64,54,5+(i<4?i/2:2),2)}],
+ angry:[12,12,i=>{const sh=i%2?2:-2;eyes(sh,4,.8,false);fill('#000');
+  g.beginPath();g.moveTo(14+sh,12);g.lineTo(64+sh,36);g.lineTo(64+sh,0);g.lineTo(14+sh,0);g.fill();   // slanted brows cut in
+  g.beginPath();g.moveTo(114+sh,12);g.lineTo(64+sh,36);g.lineTo(64+sh,0);g.lineTo(114+sh,0);g.fill();fill('#fff')}],
+ dizzy:[16,12,i=>{const a=i/16*TAU;spiral(38,32,a);spiral(90,32,-a)}],
+ talking:[16,10,i=>{eyes(0,-10,.55,true);const m=[2,6,10,5,2,8,12,6,3,1,7,11,4,2,9,3][i];
+  g.beginPath();g.ellipse(64,52,10,m/2+1,0,0,TAU);g.fill()}],
+ heartbeat:[32,16,i=>{const P=[0,0,0,0,0,-3,0,0,6,-22,14,0,0,0,-5,-6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+  g.lineWidth=2;g.beginPath();for(let x=0;x<=128;x+=4){const k=((x/4)+i)%32;g.lineTo(x,40+P[k])}g.stroke();
+  const b=(i%32)>8&&(i%32)<13;heart(116,12,b?8:6)}],
+ bounce:[24,20,i=>{const t=i/24,y=54-46*Math.abs(Math.sin(t*Math.PI)),sq=y>50?1.4:1;
+  g.lineWidth=1;g.beginPath();g.moveTo(0,62.5);g.lineTo(128,62.5);g.stroke();
+  g.beginPath();g.ellipse(64,y+(sq>1?2:0),8*sq,8/sq,0,0,TAU);g.fill()}],
+ rain:[16,12,i=>{const r=rnd(7);for(let k=0;k<40;k++){const x=r()*128,y=(r()*64+i*4)%64;g.fillRect(x,y,1,4)}}],
+ stars:[32,16,i=>{const r=rnd(11);for(let k=0;k<45;k++){const a=r()*TAU,d=((r()*64)+i*2)%64,
+  s=d>40?2:1;g.fillRect(64+Math.cos(a)*d*1.6,32+Math.sin(a)*d,s,s)}}],
+ code:[16,12,i=>{const r=rnd(3);   // falling 0s and 1s, drawn as tiny pixel shapes
+  for(let c=0;c<16;c++){const off=r()*64;for(let j=0;j<5;j++){const y=Math.floor((off+j*13+i*4)%64),x=c*8+2;
+   if(r()<.5)g.fillRect(x+1,y,1,6);else{g.fillRect(x,y,3,1);g.fillRect(x,y+5,3,1);g.fillRect(x,y,1,6);g.fillRect(x+2,y,1,6)}}}}],
+ spinner:[8,10,i=>{for(let k=0;k<8;k++){const a=k/8*TAU,on=(k+8-i)%8;dot(64+Math.cos(a)*20,32+Math.sin(a)*20,on==0?5:on<3?3:1.5)}}],
+ fireworks:[24,12,i=>{const r=rnd(5),cx=40+r()*48,cy=20+r()*16;
+  if(i<6){g.fillRect(cx,64-(64-cy)*i/6,2,4);return}
+  const t=(i-6)/18;for(let k=0;k<20;k++){const a=k/20*TAU,d=4+t*30;if(t<.85||k%2)dot(cx+Math.cos(a)*d,cy+Math.sin(a)*d+t*t*12,t<.6?1.5:1)}}],
+ countdown:[4,1,i=>txt(['3','2','1','GO!'][i],64,34,i<3?52:34)],
+ marquee:[64,20,(i,n)=>{const s=$('t').value.trim()||'Hello from Mate!';g.font='bold 30px system-ui,sans-serif';
+  const w=g.measureText(s).width;g.textAlign='left';g.textBaseline='middle';g.fillText(s,128-(w+128)*i/(n-1),34)}],
+};
+function build(name){const[n,fps,draw]=FACES[name],out=[];
+ for(let i=0;i<n;i++){g.clearRect(0,0,W,H);fill('#000');g.fillRect(0,0,W,H);fill('#fff');draw(i,n);
+  const d=g.getImageData(0,0,W,H).data,b=new Uint8Array(W*H/8);
+  for(let p=0;p<W*H;p++)if(d[p*4]>127)b[p>>3]|=0x80>>(p&7);out.push(b)}
+ return{frames:out,fps}}
+// preview on the page canvas
+const fx=$('fx'),fxc=fx.getContext('2d');let fxTimer=null;
+function show(b){const img=fxc.createImageData(W,H);
+ for(let p=0;p<W*H;p++){const v=b[p>>3]&(0x80>>(p&7))?255:0;img.data.set([v,v,v,255],p*4)}fxc.putImageData(img,0,0)}
+function preview(frames,fps,once){clearInterval(fxTimer);let i=0;show(frames[0]);if(frames.length<2)return;
+ fxTimer=setInterval(()=>{if(++i>=frames.length){if(once){clearInterval(fxTimer);return}i=0}show(frames[i])},1000/fps)}
+async function play(name){
+ const{frames,fps}=build(name),once=document.querySelector('input[name=rep]:checked').value=='1';
+ preview(frames,fps,once);
+ const body=new Uint8Array(frames.length*1024);frames.forEach((f,k)=>body.set(f,k*1024));
+ const t0=performance.now();
+ try{const r=await (await fetch('/screen',{method:'POST',headers:{'Content-Type':'application/octet-stream',
+   'X-FPS':String(fps),'X-Repeat':once?'1':'0'},body})).json();
+  $('fxmsg').textContent=r.error?'error: '+r.error:`${name}: ${r.frames} frames at ${r.fps} fps, sent in ${(performance.now()-t0).toFixed(0)} ms`}
+ catch(e){$('fxmsg').textContent='offline'}}
+for(const name of Object.keys(FACES))$('faces').insertAdjacentHTML('beforeend',`<button onclick="play('${name}')">${name}</button>`);
+show(build('eyes').frames[0]);
 
 let busyServo=0;
 function servo(a){$('sv').textContent=a;
