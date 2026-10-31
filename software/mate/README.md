@@ -231,9 +231,12 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 
 ## Step 1 checklist
 
-- [x] Firmware on the ESP32-S3: API, both steppers, flipper servo (direct PWM), OLED bitmaps + animations, camera snapshot + stream
+- [x] Firmware on the ESP32-S3: API, both steppers, flipper servo (direct PWM, timed sweeps, 20° resting pose), OLED bitmaps + animations, camera snapshot + stream
 - [x] OLED on the S3
-- [ ] Wheels and the flipper servo tested wired to the S3
-- [ ] UI: ready-made faces, calibration notes
+- [x] Wheels and the flipper servo wired to the S3 and driven over Wi-Fi, on USB and on the power bank
+- [x] Control page: camera, screen editor, 19 faces, arrow-pad driving, speed/accel and servo sliders
+- [x] API reference for the AI brain (above)
+- [x] Sign conventions: forward = s1 −, s2 +; left turn = +, + (see [Driving](#driving-whats-known-about-the-body))
+- [ ] Calibration on the table: half-steps per mm, per degree of turn
 - [ ] Card-corner test at 10–15 cm with the GC0308
-- [ ] Human-calibrated notes: steps per mm, steps per degree, sign conventions (record in this file)
+- [ ] Mount the flipper arm and check the 20° resting pose
