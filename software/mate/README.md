@@ -66,7 +66,7 @@ Everything Mate can do goes through this HTTP API. The control page uses it, and
 Static facts about the robot. Read it once at start-up.
 
 ```json
-{"fw":"mate-s3","ip":"192.168.1.201","max_steps":4096,"max_speed":800,"max_accel":1000,"max_servo_speed":600,"oled":true,
+{"fw":"mate-s3","ip":"192.168.1.201","max_steps":4096,"max_speed":800,"max_accel":1000,"max_servo_speed":600,"servo_park":20,"oled":true,
  "screen":{"width":128,"height":64,"frame_bytes":1024,"max_frames":64,"max_fps":30,"max_repeat":1000},
  "camera":"GC0308","stream":"http://192.168.1.201:81/stream","vflip":1,"hmirror":1}
 ```
@@ -77,6 +77,7 @@ Static facts about the robot. Read it once at start-up.
 | `max_speed` | Highest `speed` for `/step`, half-steps/s |
 | `max_accel` | Highest `accel` for `/step`, half-steps/s² |
 | `max_servo_speed` | Highest `speed` for `/servo`, degrees/s |
+| `servo_park` | The flipper's resting angle, where it goes at every boot |
 | `oled` | `true` if the face screen was found |
 | `screen` | Face size and `/screen` limits |
 | `camera` | Sensor name, or `none` |
@@ -143,7 +144,7 @@ Moves the flipper (MG996R).
 
 - **Returns at once:** `{"ok":true}`. With a `speed`, Mate sweeps the flipper there in small steps on its own; `/status` shows `servo_moving: true` until it arrives (e.g. 30° at `speed=30` takes ~1 s).
 - **A new `/servo` replaces the current one**, even mid-sweep: it continues from where the flipper is now.
-- **The first move after a restart always jumps,** because Mate doesn't know where the flipper is until it has put it somewhere.
+- **Resting pose and memory:** at every boot the flipper starts at its last saved angle (so it doesn't jump), then sweeps to its resting angle, **20°** (`servo_park`), at 40°/s. Mate saves the angle to flash once the flipper has been still for 2 s with the wheels stopped. If nothing was saved yet, or the arm was turned by hand while off, the first move at boot is a jump to 20°.
 - It then holds that angle. There is no feedback of the real position, only where Mate is driving it.
 
 ```bash

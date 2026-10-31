@@ -10,6 +10,7 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <Wire.h>
+#include <Preferences.h>
 #include <AccelStepper.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -30,6 +31,12 @@ const uint16_t SERVO_MIN_US = 500, SERVO_MAX_US = 2500;
 const uint8_t SERVO_BITS = 14;  // 20 ms period / 16384 ≈ 1.2 µs per count
 const uint16_t MAX_SERVO_SPEED = 600;  // °/s; /servo without speed jumps at full speed
 const uint16_t SERVO_TICK_MS = 10;
+// Resting pose. At boot the flipper starts where it was last saved (no jump), then sweeps here.
+const int SERVO_PARK = 20;
+const uint16_t SERVO_PARK_SPEED = 40;  // °/s
+// The angle is saved to flash once the flipper has settled for this long with the wheels still,
+// so a power dip from the motors can't land in the middle of a save.
+const uint16_t SERVO_SAVE_MS = 2000;
 
 // ---- Steppers: 28BYJ-48 + ULN2003, HALF4WIRE needs IN1, IN3, IN2, IN4 ----
 // Each wheel is four header pins in a row: wheel 1 on 1, 2, 42, 41 and wheel 2 on 45, 48, 47, 21.
@@ -294,25 +301,53 @@ void servoPulse(float angle) {
   ledcWrite(SERVO_PIN, us * ((1 << SERVO_BITS) - 1) / 20000);
 }
 
-// speed 0 = jump. The first move after boot always jumps, since where the servo is isn't known.
+Preferences prefs;
+int servoSaved = -1;               // the angle stored in flash
+unsigned long servoSettledAt = 0;  // when the flipper last reached its target
+
+// speed 0 = jump. Without a saved angle the first move jumps too, since where it is isn't known.
 void setServo(int angle, uint16_t speed) {
   servoAngle = angle;
   servoSpeed = servoNow < 0 ? 0 : speed;
   if (servoSpeed == 0) {
     servoNow = angle;
     servoPulse(servoNow);
+    servoSettledAt = millis();
   }
+}
+
+// At boot: hold the saved angle (where the arm still is), then sweep to the resting pose.
+void restoreServo() {
+  prefs.begin("mate", false);
+  servoSaved = prefs.getInt("servo", -1);
+  if (servoSaved >= 0 && servoSaved <= 180) {
+    servoNow = servoSaved;
+    servoPulse(servoNow);
+  }
+  setServo(SERVO_PARK, SERVO_PARK_SPEED);
+  Serial.printf("servo: saved %d, parking at %d\n", servoSaved, SERVO_PARK);
+}
+
+void saveServo() {
+  if (servoAngle < 0 || servoNow != servoAngle || servoAngle == servoSaved) return;
+  if (state != IDLE || millis() - servoSettledAt < SERVO_SAVE_MS) return;
+  prefs.putInt("servo", servoAngle);
+  servoSaved = servoAngle;
 }
 
 // Called often from netTask: steps the pulse toward the target at servoSpeed.
 void updateServo() {
+  saveServo();
   if (servoAngle < 0 || servoNow == servoAngle) return;
   unsigned long now = millis();
   if (now - servoTick < SERVO_TICK_MS) return;
   servoTick = now;
   float step = servoSpeed * SERVO_TICK_MS / 1000.0f;
   servoNow += constrain(servoAngle - servoNow, -step, step);
-  if (fabsf(servoAngle - servoNow) < 0.01f) servoNow = servoAngle;
+  if (fabsf(servoAngle - servoNow) < 0.01f) {
+    servoNow = servoAngle;
+    servoSettledAt = now;
+  }
   servoPulse(servoNow);
 }
 
@@ -668,7 +703,7 @@ void handleInfo() {
   String j = "{\"fw\":\"mate-s3\",\"ip\":\"" + WiFi.localIP().toString() + "\"";
   j += ",\"max_steps\":" + String(MAX_STEPS) + ",\"max_speed\":" + String(MAX_SPEED) +
        ",\"max_accel\":" + String(MAX_ACCEL);
-  j += ",\"max_servo_speed\":" + String(MAX_SERVO_SPEED);
+  j += ",\"max_servo_speed\":" + String(MAX_SERVO_SPEED) + ",\"servo_park\":" + String(SERVO_PARK);
   j += ",\"oled\":" + String(hasOled ? "true" : "false");
   j += ",\"screen\":{\"width\":128,\"height\":64,\"frame_bytes\":" + String(FRAME_BYTES) +
        ",\"max_frames\":" + String(MAX_FRAMES) + ",\"max_fps\":" + String(MAX_FPS) +
@@ -799,6 +834,7 @@ void netTask(void *) {
   hasCam = initCamera();
   // Servos after the camera, so the LEDC allocator sees its timer is taken.
   ledcAttachChannel(SERVO_PIN, 50, SERVO_BITS, 0);
+  restoreServo();
   updateOled();
 
   WiFi.mode(WIFI_STA);
@@ -808,10 +844,14 @@ void netTask(void *) {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   WiFi.setTxPower(WIFI_POWER_8_5dBm);  // smaller current spikes on battery; plenty for a table
   Serial.print("WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(250);
-    Serial.print('.');
+  for (unsigned long t = millis(); WiFi.status() != WL_CONNECTED; ) {
+    delay(5);
+    updateServo();  // the boot sweep to the resting pose runs while Wi-Fi connects
     updateOled();
+    if (millis() - t >= 250) {
+      t = millis();
+      Serial.print('.');
+    }
   }
   WiFi.setSleep(false);  // again: on the S3 the setting doesn't stick until connected
   Serial.print(" ip=");
@@ -848,9 +888,10 @@ void netTask(void *) {
 
 void setup() {
   // On the power bank the MG996R's current sags the 5V enough to trip the brownout reset. The
-  // dips are short and the chip rides through them, so the reset is off. Mate never writes
-  // flash while running, so a dip can't corrupt anything. (Writing 0 to the brownout register
-  // directly, the usual ESP32 trick, boot-loops the S3.)
+  // dips are short and the chip rides through them, so the reset is off. The only flash write
+  // while running is the flipper angle, saved only when the flipper has settled and the wheels
+  // are still (no load spikes); the NVS store survives a cut-short write. (Writing 0 to the
+  // brownout register directly, the usual ESP32 trick, boot-loops the S3.)
   esp_brownout_disable();
   Serial.begin(115200);
   esp_reset_reason_t r = esp_reset_reason();
