@@ -341,6 +341,8 @@ input[type=number]{width:70px}
 button{padding:8px 12px;margin:2px}
 button.on{background:#ddd;color:#111}
 #stop{background:#c33;color:#fff;border:0;font-weight:700;width:100%;padding:12px}
+.pad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,48px);gap:4px;margin:10px 0}
+.pad button{margin:0;font-size:20px}
 small,#res{color:#888}
 </style></head><body>
 <h1>Mate</h1>
@@ -367,16 +369,22 @@ small,#res{color:#888}
 
 <h2>Wheels (half-steps, 4096 = one turn)</h2>
 <div class=row>
- s1 <input id=s1 type=number value=1024> s2 <input id=s2 type=number value=1024>
- speed <input id=sp type=number value=500>
+ <label>speed: <span id=spv>500</span> half-steps/s</label>
+ <input id=sp type=range min=50 max=800 step=10 value=500 oninput="$('spv').textContent=this.value">
+ <label>accel: <span id=acv>400</span> half-steps/s&sup2;</label>
+ <input id=ac type=range min=50 max=1000 step=10 value=400 oninput="$('acv').textContent=this.value">
+</div>
+<div class=row>steps per arrow <input id=n type=number value=1024 min=1 max=4096> <small>or use the arrow keys</small></div>
+<div class=pad>
+ <span></span><button onclick="drive('up')" title="forward">&uarr;</button><span></span>
+ <button onclick="drive('left')" title="turn left">&larr;</button>
+ <button onclick="fetch('/stop',{method:'POST'})" title="stop">&#9632;</button>
+ <button onclick="drive('right')" title="turn right">&rarr;</button>
+ <span></span><button onclick="drive('down')" title="back">&darr;</button><span></span>
 </div>
 <div class=row>
+ raw: s1 <input id=s1 type=number value=1024> s2 <input id=s2 type=number value=1024>
  <button onclick="go()">Go</button>
- <button onclick="preset(1024,1024)">both +</button>
- <button onclick="preset(-1024,-1024)">both &minus;</button>
- <button onclick="preset(1024,-1024)">opposite</button>
- <button onclick="preset(1024,0)">s1 only</button>
- <button onclick="preset(0,1024)">s2 only</button>
 </div>
 <button id=stop onclick="fetch('/stop',{method:'POST'})">STOP</button>
 <div class=row id=res>-</div>
@@ -439,9 +447,18 @@ let busyServo=0;
 function servo(a){$('sv').textContent=a;
  if(busyServo)return;busyServo=1;
  fetch(`/servo?angle=${a}`,{method:'POST'}).finally(()=>busyServo=0)}
-function preset(a,b){$('s1').value=a;$('s2').value=b;go()}
-async function go(){
- const q=`s1=${$('s1').value}&s2=${$('s2').value}&speed=${$('sp').value}`;
+// The wheels face opposite ways: same sign on both turns Mate, opposite signs drive it.
+// both + turns anticlockwise, and s1 −, s2 + drives forward (checked on the bench).
+const DIRS={up:[-1,1],down:[1,-1],left:[1,1],right:[-1,-1]};
+function drive(d){const n=+$('n').value,[a,b]=DIRS[d];move(a*n,b*n)}
+addEventListener('keydown',e=>{
+ if(e.target.tagName=='INPUT')return;
+ const d={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[e.key];
+ if(d){e.preventDefault();if(!e.repeat)drive(d)}
+ else if(e.key==' '||e.key=='Escape'){e.preventDefault();fetch('/stop',{method:'POST'})}});
+function go(){move($('s1').value,$('s2').value)}
+async function move(a,b){
+ const q=`s1=${a}&s2=${b}&speed=${$('sp').value}&accel=${$('ac').value}`;
  const r=await (await fetch('/step?'+q,{method:'POST'})).json();
  if(r.error)$('res').textContent='error: '+r.error}
 const lats=[];

@@ -71,3 +71,4 @@ What happened, when, and what we learned. Newest at the bottom. Times are ET and
 - **No pan or tilt servos;** the flipper is the only servo (GPIO 40). 38 and 39 are free.
 - **The OLED shows bitmaps now:** `POST /screen` takes 1024-byte frames (128×64, 1 bit per pixel), up to 64 at once, looped at `X-FPS`. Without a picture it shows a status screen ("not connected" or the IP). The control page has a drawable screen preview and a text box that renders into it; a drawn frame reaches Mate in ~50 ms. The OLED was found on the S3 at 0x3C on the new pins.
 - **Gotcha:** the ESP32 `WebServer` doesn't parse query args when it hands over a raw body, so the frame rate is a header (`X-FPS`), not `?fps=`.
+- **Control page driving:** an arrow pad (and keyboard arrows) plus an accel box. On the bench, both wheels + turns Mate anticlockwise, so the wheels face opposite ways: ← = +/+, → = −/−, ↑ forward = s1 −, s2 + (checked on the bench). Speed and accel are sliders.
