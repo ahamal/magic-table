@@ -63,7 +63,16 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const $ = id => document.getElementById(id);
-const CARD = [63, 88], MATE = [130, 130, 107], HEAD_MARKER = 34, BOARD_MARKER = 40;   // Mate: width, depth, height
+const CARD = [63, 88], BOARD_MARKER = 30;
+// Mate: a 130 x 130 x 100 plywood box, 3 mm off the ground on its wheels, black printed corner caps that
+// stand 2 mm proud of every face (so 105 to the top of the caps); the marker is on the plywood top (103)
+const MATE = { w: 130, d: 130, body: 100, lift: 3, proud: 2, corner: 24 };
+// The head, measured (gantry mm, relative to the head marker's centre, which is what GRBL positions):
+// the cup tip is 24.7 mm in front (-Y) and 57 mm below it (vision.TIP_OFFSET / TIP_BELOW_MARKER), and
+// the 2020 Z extrusion's centre is 18 mm behind the cup.
+const TIP = { dx: 0.6, dy: -24.7, dz: -57 }, EXTRUSION_BEHIND_CUP = 18;
+const PLATE = [38, 64, 4], HEAD_MARKER = 25, HEAD_MARKER_CUT = 33;
+const WHEEL = { d: 70, w: 8 };
 
 // Gantry: X right, Y away, Z+ up (mm; $3 inverts the Z motor). three.js: y up. So (X, Y, Z) -> (X, Z, -Y).
 const P = (x, y, z) => new THREE.Vector3(x, z, -y);
@@ -85,15 +94,50 @@ const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: .8 });
 const group = name => { const g = new THREE.Group(); g.name = name; scene.add(g); return g; };
 const boardG = group('board'), cardsG = group('cards'), mateG = group('mate'), camsG = group('cams');
 
-// head: Z rail, marker plate, cup
+// head: built around the head marker's centre (the group's origin), from measured offsets
+const L = (dx, dy, dz) => new THREE.Vector3(dx, dz, -dy);           // gantry offset -> three offset
 const head = new THREE.Group(); head.visible = false; scene.add(head);
-const rail = new THREE.Mesh(new THREE.BoxGeometry(20, 300, 20), mat(0xb8b8b8)); rail.position.y = 150 + 20; head.add(rail);
-const plate = new THREE.Mesh(new THREE.BoxGeometry(HEAD_MARKER + 8, HEAD_MARKER + 8, 3), mat(0xffffff)); head.add(plate);
-const plateInk = new THREE.Mesh(new THREE.BoxGeometry(HEAD_MARKER, HEAD_MARKER, 3.4), mat(0x111111)); head.add(plateInk);
-const stem = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 1, 16), mat(0x9a9a9a)); head.add(stem);
-const cup = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 10, 20), mat(0x8fd3ff)); head.add(cup);
+const metal = mat(0xb8bcc2), steel = mat(0x8d9096), dark2 = mat(0x2a2a2a);
+const tipL = L(TIP.dx, TIP.dy, TIP.dz);
+const ext = L(TIP.dx, TIP.dy + EXTRUSION_BEHIND_CUP, 0);           // extrusion centre line
+// 2020 Z extrusion: from the bracket up 320 mm, with its four slots
+const rail = new THREE.Mesh(new THREE.BoxGeometry(20, 320, 20), metal);
+rail.position.set(ext.x, -30 + 160, ext.z); head.add(rail);
+for (const [sx, sz] of [[10, 0], [-10, 0], [0, 10], [0, -10]]) {
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(sx ? 1 : 6, 320, sz ? 1 : 6), dark2);
+  slot.position.set(ext.x + sx, rail.position.y, ext.z + sz); head.add(slot);
+}
+// marker plate, upright; turned toward cam 1 in drawHead
+const plateG = new THREE.Group(); head.add(plateG);
+plateG.add(new THREE.Mesh(new THREE.BoxGeometry(PLATE[0], PLATE[1], PLATE[2]), mat(0xe8e2d6)));
+const paper = new THREE.Mesh(new THREE.BoxGeometry(HEAD_MARKER_CUT, HEAD_MARKER_CUT, .4), mat(0xffffff));
+paper.position.z = PLATE[2] / 2 + .3; plateG.add(paper);
+const ink = new THREE.Mesh(new THREE.BoxGeometry(HEAD_MARKER, HEAD_MARKER, .4), mat(0x111111));
+ink.position.z = PLATE[2] / 2 + .6; plateG.add(ink);
+// bracket from the extrusion out to the cup, then nut, threaded stem, spring, bellows cup
+const bracketY = TIP.dz + 34;
+const arm = new THREE.Vector3(tipL.x - ext.x, 0, tipL.z - ext.z);
+const bracket = new THREE.Mesh(new THREE.BoxGeometry(14, 5, arm.length() + 20), mat(0x3a3a3a));
+bracket.position.set((ext.x + tipL.x) / 2, bracketY, (ext.z + tipL.z) / 2);
+bracket.lookAt(new THREE.Vector3(tipL.x, bracketY, tipL.z)); head.add(bracket);
+const nut = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 5, 6), steel); nut.position.set(tipL.x, bracketY + 5, tipL.z); head.add(nut);
+const stem = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 40, 12), steel);
+stem.position.set(tipL.x, bracketY - 8, tipL.z); head.add(stem);
+for (let i = 0; i < 6; i++) {
+  const coil = new THREE.Mesh(new THREE.TorusGeometry(4.5, .7, 6, 18), steel);
+  coil.rotation.x = Math.PI / 2; coil.position.set(tipL.x, bracketY - 6 - i * 2.4, tipL.z); head.add(coil);
+}
+const glass = new THREE.MeshStandardMaterial({ color: 0xbfe6ff, transparent: true, opacity: .7, roughness: .2 });
+for (const [r, y] of [[6, TIP.dz + 2], [5, TIP.dz + 6], [6, TIP.dz + 10], [4, TIP.dz + 14]]) {
+  const fold = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 4, 20), glass);    // 2-layer bellows
+  fold.position.set(tipL.x, y, tipL.z); head.add(fold);
+}
+const tubeMat = new THREE.MeshStandardMaterial({ color: 0xdff3ff, transparent: true, opacity: .55 });
+const tube = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 260, 10), tubeMat);
+tube.position.set(tipL.x, bracketY + 130, tipL.z); head.add(tube);
+// error ring on the board under the tip
 const ring = new THREE.Mesh(new THREE.TorusGeometry(14, 2, 8, 32), new THREE.MeshBasicMaterial({ color: 0x888888 }));
-ring.rotation.x = Math.PI / 2; head.add(ring);
+ring.rotation.x = Math.PI / 2; scene.add(ring); ring.visible = false;
 
 let table = null, lastTableZ = null, framed = false;
 function drawTable(tz, markers) {
@@ -117,15 +161,32 @@ function drawTable(tz, markers) {
 
 function drawHead(h, tz) {
   if (!h) return;
-  head.visible = true;
+  head.visible = ring.visible = true;
   head.position.copy(P(h.x, h.y, h.z));
-  plate.position.set(0, 0, 0); plateInk.position.set(0, 0, 0);
-  const drop = h.z - (h.tip_z ?? h.z - 57);          // marker centre -> cup tip, mm
-  stem.scale.y = Math.max(drop - 10, 1); stem.position.y = -(drop - 10) / 2;
-  cup.position.y = -drop + 5;
-  ring.position.y = -drop;
+  // the marker plate faces the camera that tracks it
+  const cam = S && S.cameras && (S.cameras['1'] || Object.values(S.cameras)[0]);
+  if (cam) {
+    const c = P(...cam.position);
+    plateG.rotation.y = Math.atan2(c.x - head.position.x, c.z - head.position.z);
+  }
+  ring.position.copy(P(h.x + TIP.dx, h.y + TIP.dy, tz + 1));
   const e = h.error_mm;
   ring.material.color.set(e == null ? 0x888888 : e < 2 ? 0x22c55e : e < 5 ? 0xeab308 : 0xef4444);
+}
+
+// Each detection carries a little pixel noise; only redraw what moved more than this, so the
+// view holds still while the table does.
+const STILL_MM = 2, STILL_DEG = 3;
+const angDiff = (a, b, period) => { const d = (((a - b) % period) + period) % period; return Math.min(d, period - d); };
+let shownCards = null, shownMate = null;
+function cardsMoved(next) {
+  if (!shownCards || shownCards.length !== next.length) return true;
+  return next.some(c => !shownCards.some(o => o.face === c.face && Math.hypot(o.x - c.x, o.y - c.y) < STILL_MM
+                                                && angDiff(o.angle, c.angle, 180) < STILL_DEG));
+}
+function mateMoved(m) {
+  if (!m || !shownMate) return m !== shownMate;
+  return Math.hypot(m.x - shownMate.x, m.y - shownMate.y) >= STILL_MM || angDiff(m.heading, shownMate.heading, 360) >= STILL_DEG;
 }
 
 function drawCards(cards, tz) {
@@ -141,13 +202,38 @@ function drawCards(cards, tz) {
 function drawMate(m, tz) {
   mateG.clear();
   if (!m) return;
-  const h = MATE[2];
-  const body = new THREE.Mesh(new THREE.BoxGeometry(MATE[0], h, MATE[1]), mat(0xd9b98a));
-  const g = new THREE.Group(); g.add(body);
-  body.position.y = h / 2;
-  const face = new THREE.Mesh(new THREE.BoxGeometry(4, 30, 40), mat(0x111111));
-  face.position.set(MATE[0] / 2 + 2, h * .6, 0); g.add(face);
-  const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, h + 4, 0), 80, 0xea580c, 18, 12); g.add(arrow);
+  const { w: W, d: D, body: B, lift, proud, corner: C } = MATE;   // local +x = forward (the face), z = sideways
+  const h = lift + B;                                 // the plywood top, where the marker is
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, B, D), mat(0xd9b98a));
+  body.position.y = lift + B / 2; g.add(body);
+  // corner caps wrap each corner and stand `proud` mm out of every face they touch
+  for (const sx of [-1, 1]) for (const top of [0, 1]) for (const sz of [-1, 1]) {
+    const k = new THREE.Mesh(new THREE.BoxGeometry(C, C, C), mat(0x1c1c1c));
+    k.position.set(sx * (W / 2 + proud - C / 2), top ? h + proud - C / 2 : lift - proud + C / 2, sz * (D / 2 + proud - C / 2));
+    g.add(k);
+  }
+  for (const sz of [-1, 1]) {                         // wheels: black hub, red rim, on each side
+    const wheel = new THREE.Group();
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL.d / 2 - 4, WHEEL.d / 2 - 4, WHEEL.w, 32), mat(0x151515));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(WHEEL.d / 2 - 2.5, 3, 12, 40), mat(0xd62828));
+    rim.rotation.x = Math.PI / 2;
+    wheel.add(hub, rim);
+    for (let i = 0; i < 6; i++) {                     // lightening holes
+      const a = i * Math.PI / 3, hole = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, WHEEL.w + .5, 12), mat(0x3a3a3a));
+      hole.position.set(Math.cos(a) * 17, 0, Math.sin(a) * 17); wheel.add(hole);
+    }
+    wheel.rotation.x = Math.PI / 2;
+    wheel.position.set(0, WHEEL.d / 2, sz * (D / 2 + proud + WHEEL.w / 2 + 1));
+    g.add(wheel);
+  }
+  const face = new THREE.Mesh(new THREE.BoxGeometry(3, 16, 28), mat(0x111111));    // OLED
+  face.position.set(W / 2 + 1.5, lift + B * .62, 0); g.add(face);
+  const eye = new THREE.MeshBasicMaterial({ color: 0x7fd8ff });
+  for (const sz of [-6, 6]) { const e = new THREE.Mesh(new THREE.BoxGeometry(1, 3, 5), eye); e.position.set(W / 2 + 3.2, lift + B * .64, sz); g.add(e); }
+  const top = new THREE.Mesh(new THREE.BoxGeometry(40, 1, 40), mat(0xffffff)); top.position.set(0, h + .5, 0); g.add(top);
+  const topInk = new THREE.Mesh(new THREE.BoxGeometry(30, 1.2, 30), mat(0x111111)); topInk.position.set(0, h + .7, 0); g.add(topInk);
+  const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, h + proud + 4, 0), 80, 0xea580c, 18, 12); g.add(arrow);
   g.position.copy(P(m.x, m.y, tz));
   g.rotation.y = m.heading * Math.PI / 180;          // gantry heading (from +X toward +Y) -> three's y rotation
   mateG.add(g);
@@ -195,7 +281,9 @@ function render(s) {
   if (tz !== lastTableZ || !table || Object.keys(s.board || {}).length !== table.n) {
     drawTable(tz, s.board); table.n = Object.keys(s.board || {}).length; lastTableZ = tz;
   }
-  drawHead(s.head, tz); drawCards(s.cards, tz); drawMate(s.mate, tz); drawCams(s.cameras, tz);
+  drawHead(s.head, tz); drawCams(s.cameras, tz);
+  if (cardsMoved(s.cards || [])) { drawCards(s.cards, tz); shownCards = s.cards || []; }
+  if (mateMoved(s.mate)) { drawMate(s.mate, tz); shownMate = s.mate; }
   if (!framed) { frameView(false); framed = true; }
   const h = s.head || {};
   $('head').textContent = `${fmt(h.x)}, ${fmt(h.y)}, ${fmt(h.z)}`;

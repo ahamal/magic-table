@@ -90,18 +90,21 @@ Stop it (`sudo systemctl stop hub`) before running anything else that opens the 
 1. Z at its **top** over the middle of the board, Mate not under the 120 mm square around it, GRBL unlocked.
 2. **Calibrate** asks how far the cup is above the board (mm), then goes down from there in three passes, never closer than 15 mm. Any reset, pause, alarm or STOP aborts it with no further moves. The start height becomes the **travel height**.
 3. Lower the cup until it just touches the board, press **Board is here** (board height from the gantry, not from marker size).
-4. After any GRBL reset (or hub restart), unlock, then **Re-anchor**: Z goes back to the last saved value, X/Y from where the camera sees the head. Don't use Work zero on the jog page; it shifts every position.
+4. After any GRBL reset (or hub restart), unlock, then **Re-anchor**: if the camera agrees with the last saved position (within 3 mm) that position is restored exactly; if it disagrees, X/Y come from the camera and Z from the saved value; if no camera sees the head, the saved position is used (right as long as nobody moved the head by hand). Don't use Work zero on the jog page; it shifts every position.
 
-**Mate rule:** below travel height, `/api/move` goes up to travel height before crossing Mate and refuses to end over it; `/api/jog` across Mate is refused. (`/api/send` is raw G-code and isn't checked.)
+**The cup isn't under the head marker:** it sits in front of the Z extrusion, 24.7 mm from the marker plate's center in −Y (`TIP_OFFSET`, measured by camera). Head positions (GRBL, `/api/move`) are the marker's; use `/api/tip` to put the cup somewhere. Tested: cup within ~2–3 mm of a card center 110 mm from the calibration grid's center.
+
+**Mate rule:** bumping Mate sideways by accident is survivable; pressing down into it isn't. Travel height is 110 (the cup clears Mate's 105 mm caps). Below it, `/api/move` and `/api/tip` go up to travel height before crossing Mate and refuse to end over it; `/api/jog` may go sideways anywhere but won't lower the cup onto Mate. Checks use the cup's position, over Mate's 134 mm footprint plus 40 mm. (`/api/send` is raw G-code and isn't checked.)
 
 | Endpoint | |
 |---|---|
 | `POST /api/calibrate {room, span=60, steps=3, levels=3, feed=1500}` | `room` = mm between cup and board at the start (required) |
 | `GET /api/calibration` | calibrated, per-camera fit, `table_z`, `travel_z`, `needs_reanchor`, head check |
 | `POST /api/calibration/table` | the cup is touching the board now |
-| `POST /api/calibration/travel` | the current Z is the travel height |
+| `POST /api/calibration/travel {z?}` | set the travel height (cup height safe over Mate); no `z` = the current Z |
 | `POST /api/calibration/reanchor` | after a reset |
-| `GET /api/scene?fresh=false` | head, Mate, cards, board, cameras; also the `scene` WebSocket event |
+| `POST /api/tip {x, y, z?, feed?}` | put the **cup tip** at board X/Y (and Z mm above the board); same Mate rule as `/api/move` |
+| `GET /api/scene?fresh=false` | head (and cup tip), Mate, cards, board, cameras; also the `scene` WebSocket event |
 
 ## Talk page
 

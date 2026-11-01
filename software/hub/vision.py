@@ -38,10 +38,13 @@ BOARD_IDS, HEAD_ID, MATE_ID = (0, 1, 2, 3), 10, 20
 # size. The head plate stands upright, so its size says nothing about height.
 SIZE = {"board": 30.0, "head": 25.0, "mate": 30.0}
 TIP_BELOW_MARKER = 57.0   # cup tip is this far below the head marker's centre (mm)
+# the cup isn't under the Z extrusion's centre but in front of it: tip X/Y = head X/Y + this.
+# Measured by camera on Nov 1 (head over a card centre, cup seen 24.7 mm off in -Y).
+TIP_OFFSET = (0.6, -24.7)
 CLEARANCE = 15.0          # calibration keeps the cup at least this far above the board (mm)
 MATE_MARGIN = 40.0        # mm around Mate's footprint that counts as "over Mate"
 TABLE_CAM = 1             # the camera that looks down on the board (cam 0 is too low for it)
-MATE_SIZE = (130.0, 130.0, 107.0)  # mm; the marker is on its top
+MATE_SIZE = (134.0, 134.0, 105.0)  # mm, over the corner caps: 130 x 130 x 100 box, 3 mm off the ground, caps 2 mm proud
 CARD = (63.0, 88.0)       # poker card, mm
 BUMP_PX = 2.0             # board markers moved more than this: the camera moved
 
@@ -303,11 +306,11 @@ class Vision:
             CAL_FILE.write_text(json.dumps(self.cal))
         return {"ok": True, "table_z": z}
 
-    def set_travel(self):
-        """Use the current Z as the travel height (the only height allowed over Mate)."""
+    def set_travel(self, z=None):
+        """Set the travel height: the cup height (work Z) that's safe over Mate. Default: here."""
         if not self.cal:
             return {"ok": False, "error": "calibrate first"}
-        z = self._wpos()[2]
+        z = self._wpos()[2] if z is None else float(z)
         with self._lock:
             self.cal["travel_z"] = z
             CAL_FILE.write_text(json.dumps(self.cal))
@@ -316,8 +319,9 @@ class Vision:
     # ---- keeping the head off Mate ----
 
     def over_mate(self, x0, y0, x1, y1):
-        """Does the straight XY path from (x0, y0) to (x1, y1) pass over Mate (plus a margin)?
-        False when Mate isn't known (not calibrated, or not in view)."""
+        """Does the cup's straight XY path from (x0, y0) to (x1, y1) pass over Mate (plus a
+        margin)? Head coordinates in; the cup's offset is added here. False when Mate isn't
+        known (not calibrated, or not in view)."""
         m = self.scene.get("mate") if self.cal else None
         if not m:
             return False
@@ -326,10 +330,15 @@ class Vision:
         half = max(MATE_SIZE[0], MATE_SIZE[1]) / 2 + MATE_MARGIN
         n = max(2, int(math.hypot(x1 - x0, y1 - y0) / 5) + 1)  # every 5 mm along the path
         for i in range(n + 1):
-            px, py = x0 + (x1 - x0) * i / n - m["x"], y0 + (y1 - y0) * i / n - m["y"]
+            px = x0 + (x1 - x0) * i / n + TIP_OFFSET[0] - m["x"]
+            py = y0 + (y1 - y0) * i / n + TIP_OFFSET[1] - m["y"]
             if abs(px * ux + py * uy) <= half and abs(-px * uy + py * ux) <= half:
                 return True
         return False
+
+    # Mate may get nudged sideways by accident; what must never happen is the cup pressing
+    # down into it. So: never end, or lower, over Mate below travel height. Moves that would
+    # cross it below travel height go up first anyway (no reason to bump it on purpose).
 
     def plan_move(self, x, y, z):
         """Lines for an absolute move to (x, y, z), any of them None = stay. Below travel
@@ -346,17 +355,22 @@ class Vision:
         if w[2] < travel - 0.5:
             lines.append(f"G90 G0 Z{travel:.3f}")
         lines.append(f"G90 G0 X{tx:.3f} Y{ty:.3f}")
-        if tz < travel - 0.5:
+        if abs(tz - max(w[2], travel)) > 0.01:
             lines.append(f"G90 G0 Z{tz:.3f}")
         return lines, None
 
-    def jog_ok(self, dx, dy):
-        """A relative XY jog below travel height may not pass over Mate."""
+    def head_for_tip(self, x, y):
+        """Head X/Y that puts the cup tip at (x, y)."""
+        return x - TIP_OFFSET[0], y - TIP_OFFSET[1]
+
+    def jog_ok(self, dx, dy, dz):
+        """Jogs may go sideways anywhere (bumping Mate is survivable); a jog that lowers the cup
+        while it's over Mate, to below travel height, is refused."""
         travel = (self.cal or {}).get("travel_z")
         w = self._wpos()
-        if travel is None or self.needs_reanchor or w[2] >= travel - 0.5 or (not dx and not dy):
+        if travel is None or self.needs_reanchor or dz >= 0 or w[2] + dz >= travel - 0.5:
             return True
-        return not self.over_mate(w[0], w[1], w[0] + dx, w[1] + dy)
+        return not self.over_mate(w[0] + dx, w[1] + dy, w[0] + dx, w[1] + dy)
 
     def _on_grbl(self, ev):
         # a reset makes GRBL forget where it is; until re-anchored, its numbers aren't ours
@@ -411,7 +425,8 @@ class Vision:
         scene = {"at": time.time(), "calibrated": True, "table_z": tz, "table_source": self.cal.get("table_source"),
                  "travel_z": self.cal.get("travel_z"),
                  "needs_reanchor": self.needs_reanchor,
-                 "head": {"x": w[0], "y": w[1], "z": w[2], "tip_z": w[2] - TIP_BELOW_MARKER, "seen_by": []},
+                 "head": {"x": w[0], "y": w[1], "z": w[2], "tip_x": w[0] + TIP_OFFSET[0], "tip_y": w[1] + TIP_OFFSET[1],
+                          "tip_z": w[2] - TIP_BELOW_MARKER, "seen_by": []},
                  "mate": None, "cards": [], "board": {}, "cameras": {}}
         errs = []
         for cam in range(len(self.cameras)):
@@ -481,12 +496,27 @@ class Vision:
             c = found[HEAD_ID] if H is None else cv2.perspectiveTransform(
                 found[HEAD_ID].reshape(-1, 1, 2), H).reshape(-1, 2)
             x, y = to_xy(P, [centre(c)], z)[0]
+            # a plain restart doesn't move anything: if the camera agrees with the saved
+            # position, that position is exact; otherwise (moved, skipped steps) trust the camera
+            seen_off = float(np.hypot(x - self.last_pos[0], y - self.last_pos[1]))
+            if seen_off < 3.0:
+                x, y = self.last_pos[0], self.last_pos[1]
             reply = self.grbl.send(f"G10 L20 P1 X{x:.3f} Y{y:.3f} Z{z:.3f}")
             if reply == "ok":
                 self.needs_reanchor = False
             return {"ok": reply == "ok", "x": float(x), "y": float(y), "z": float(z), "cam": cam,
-                    "was": self.last_pos, "reply": reply}
-        return {"ok": False, "error": "no calibrated camera sees the head marker"}
+                    "was": self.last_pos, "camera_off_mm": seen_off,
+                    "used": "saved position" if seen_off < 3.0 else "camera", "reply": reply}
+        # no camera can see the head (e.g. high up at the edge of the view). A reset or a hub
+        # restart doesn't move anything, so the saved position is still right, unless someone
+        # moved the head by hand meanwhile; the reply says which was used
+        x, y, z = self.last_pos
+        reply = self.grbl.send(f"G10 L20 P1 X{x:.3f} Y{y:.3f} Z{z:.3f}")
+        if reply == "ok":
+            self.needs_reanchor = False
+        return {"ok": reply == "ok", "x": x, "y": y, "z": z, "was": self.last_pos, "cam": None,
+                "used": "saved position (no camera sees the head; only right if nothing moved it)",
+                "reply": reply}
 
     def run(self, hz=2.0):
         def loop():

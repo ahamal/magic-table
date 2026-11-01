@@ -113,8 +113,8 @@ async def jog(body: Jog):
     axes = "".join(f"{a}{v:.3f}" for a, v in (("X", body.x), ("Y", body.y), ("Z", body.z)) if v)
     if not axes:
         raise HTTPException(400, "nothing to jog")
-    if vision and not vision.jog_ok(body.x, body.y):
-        return {"line": "", "reply": "error:over Mate below travel height; raise Z first"}
+    if vision and not vision.jog_ok(body.x, body.y, body.z):
+        return {"line": "", "reply": "error:won't lower onto Mate below travel height"}
     return await asyncio.to_thread(run, f"$J=G91 G21 {axes} F{body.feed:.0f}")
 
 
@@ -133,6 +133,22 @@ async def move(body: Move):
             return {"line": " / ".join(lines), "reply": replies[-1]["reply"]}
     cmd = f"G90 G1 {axes} F{body.feed:.0f}" if body.feed else f"G90 G0 {axes}"
     return await asyncio.to_thread(run, cmd)
+
+
+class Tip(BaseModel):
+    x: float
+    y: float
+    z: float | None = None      # cup tip height above the board, mm (work Z 0 = touching it)
+    feed: float | None = None   # None = rapid
+
+
+@app.post("/api/tip")
+async def tip(body: Tip):
+    """Put the cup tip (not the head) at board X/Y, optionally at a height. The cup sits in
+    front of the Z extrusion (vision.TIP_OFFSET), so the head goes there minus that offset.
+    Same Mate rule as /api/move."""
+    hx, hy = vision.head_for_tip(body.x, body.y)
+    return await move(Move(x=hx, y=hy, z=body.z, feed=body.feed))
 
 
 @app.post("/api/home")
@@ -235,10 +251,14 @@ async def calibration_table():
     return await asyncio.to_thread(vision.set_table)
 
 
+class Travel(BaseModel):
+    z: float | None = None   # cup height (work Z) that's safe over Mate; None = the current Z
+
+
 @app.post("/api/calibration/travel")
-def calibration_travel():
-    """Use the current Z as the travel height: the only height allowed over Mate."""
-    return vision.set_travel()
+def calibration_travel(body: Travel = Travel()):
+    """Set the travel height: the cup height that's safe over Mate (110 mm clears it)."""
+    return vision.set_travel(body.z)
 
 
 @app.post("/api/calibration/reanchor")
