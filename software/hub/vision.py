@@ -46,7 +46,6 @@ MATE_MARGIN = 40.0        # mm around Mate's footprint that counts as "over Mate
 TABLE_CAM = 1             # the camera that looks down on the board (cam 0 is too low for it)
 MATE_SIZE = (134.0, 134.0, 105.0)  # mm, over the corner caps: 130 x 130 x 100 box, 3 mm off the ground, caps 2 mm proud
 CARD = (63.0, 88.0)       # poker card, mm
-BUMP_PX = 2.0             # board markers moved more than this: the camera moved
 
 
 def detector():
@@ -110,6 +109,18 @@ def to_xy(P, pix, z):
     H = np.c_[P[:, 0], P[:, 1], P[:, 2] * z + P[:, 3]]
     pts = cv2.perspectiveTransform(np.asarray(pix, float).reshape(-1, 1, 2), np.linalg.inv(H))
     return pts.reshape(-1, 2)
+
+
+def camera_view(P, size):
+    """Where a camera looks, from its projection: forward and up (unit vectors, gantry axes)
+    and the rays through the picture's four corners, for drawing it."""
+    M = P[:, :3]
+    s = np.sign(np.linalg.det(M)) or 1.0
+    unit = lambda v: (v / np.linalg.norm(v)).tolist()
+    w, h = size
+    Minv = np.linalg.inv(M)
+    rays = [unit(s * (Minv @ np.array([u, v, 1.0]))) for u, v in ((0, 0), (w, 0), (w, h), (0, h))]
+    return {"forward": unit(s * M[2]), "up": unit(-s * M[1]), "rays": rays}
 
 
 def camera_position(P):
@@ -289,7 +300,7 @@ class Vision:
             return {"calibrated": False}
         cams = {k: {key: v.get(key) for key in ("seen", "of", "rms_px", "error")} for k, v in self.cal["cams"].items()}
         return {"calibrated": True, "at": self.cal["at"], "table_z": self.cal.get("table_z"),
-                "travel_z": self.cal.get("travel_z"),
+                "travel_z": self.cal.get("travel_z"), "bounds": self.cal.get("bounds"),
                 "table_source": self.cal.get("table_source"), "needs_reanchor": self.needs_reanchor, "cams": cams,
                 "head_error_mm": self.scene.get("head", {}).get("error_mm"),
                 "camera_moved_px": self.scene.get("camera_moved_px")}
@@ -315,6 +326,99 @@ class Vision:
             self.cal["travel_z"] = z
             CAL_FILE.write_text(json.dumps(self.cal))
         return {"ok": True, "travel_z": z}
+
+    # ---- where the cup may go ----
+
+    def set_bounds(self, border=5.0, center=True):
+        """Measure the board markers now and save the cup's allowed X/Y: the rectangle between
+        their inner edges (white border included), so the cup never goes over a marker. Needs
+        markers on opposite sides; two diagonal corners are enough. center: also move X/Y 0, 0
+        to the middle of that rectangle (see shift_origin)."""
+        if not self.cal or self.cal.get("table_z") is None:
+            return {"ok": False, "error": "calibrate and touch off the board first"}
+        P, _ = self._cam(TABLE_CAM)
+        img = self._frame(TABLE_CAM) if P is not None else None
+        if img is None:
+            return {"ok": False, "error": f"camera {TABLE_CAM} isn't calibrated"}
+        found = {i: c for i, c in detect(self._det(TABLE_CAM), img).items() if i in BOARD_IDS}
+        quads = {i: to_xy(P, c, self.cal["table_z"]) for i, c in found.items()}
+        if len(quads) < 2:
+            return {"ok": False, "error": f"camera {TABLE_CAM} sees {len(quads)} board marker(s); need two opposite corners"}
+        mid = np.mean([q.mean(axis=0) for q in quads.values()], axis=0)
+        left = [q for q in quads.values() if q.mean(axis=0)[0] < mid[0]]
+        right = [q for q in quads.values() if q.mean(axis=0)[0] >= mid[0]]
+        low = [q for q in quads.values() if q.mean(axis=0)[1] < mid[1]]
+        high = [q for q in quads.values() if q.mean(axis=0)[1] >= mid[1]]
+        if not (left and right and low and high):
+            return {"ok": False, "error": "the markers it sees aren't on opposite corners"}
+        b = [max(q[:, 0].max() for q in left) + border, min(q[:, 0].min() for q in right) - border,
+             max(q[:, 1].max() for q in low) + border, min(q[:, 1].min() for q in high) - border]
+        b = [round(float(v), 1) for v in b]
+        with self._lock:
+            self.cal["bounds"] = b
+            # the markers are where they are now: that's the new reference for "camera moved"
+            self.cal["cams"][str(TABLE_CAM)]["board"] = {str(i): c.tolist() for i, c in found.items()}
+            CAL_FILE.write_text(json.dumps(self.cal))
+        shift = None
+        if center:
+            shift = self.shift_origin((b[0] + b[1]) / 2, (b[2] + b[3]) / 2)
+            if not shift.get("ok"):
+                return shift
+            b = self.cal["bounds"]
+        return {"ok": True, "bounds": {"x": b[:2], "y": b[2:]}, "markers": sorted(quads),
+                "origin_moved_by": shift and shift["moved_by"]}
+
+    def shift_origin(self, cx, cy):
+        """Make the point (cx, cy) the new X/Y 0, 0. A pure shift: GRBL's work coordinates, the
+        camera models, the bounds, the saved position and the calibration grid all move together,
+        so nothing needs recalibrating. Z isn't touched."""
+        if self.grbl.status.get("state") != "Idle" or self.needs_reanchor:
+            return {"ok": False, "error": "GRBL must be idle and anchored"}
+        w = self._wpos()
+        reply = self.grbl.send(f"G10 L20 P1 X{w[0] - cx:.3f} Y{w[1] - cy:.3f}")
+        if reply != "ok":
+            return {"ok": False, "error": f"GRBL answered {reply}"}
+        T = np.eye(4)
+        T[0, 3], T[1, 3] = cx, cy                    # new coords + (cx, cy) = old coords
+        with self._lock:
+            for c in self.cal["cams"].values():
+                if "P" in c:
+                    c["P"] = (np.array(c["P"]) @ T).tolist()
+                    c["camera"] = camera_position(np.array(c["P"])).tolist()
+            if self.cal.get("bounds"):
+                b = self.cal["bounds"]
+                self.cal["bounds"] = [round(b[0] - cx, 1), round(b[1] - cx, 1), round(b[2] - cy, 1), round(b[3] - cy, 1)]
+            g = self.cal.get("grid", {}).get("start")
+            if g:
+                g[0], g[1] = g[0] - cx, g[1] - cy
+            CAL_FILE.write_text(json.dumps(self.cal))
+            if self.last_pos:
+                self.last_pos = [round(self.last_pos[0] - cx, 3), round(self.last_pos[1] - cy, 3), self.last_pos[2]]
+                POS_FILE.write_text(json.dumps(self.last_pos))
+        return {"ok": True, "moved_by": [round(cx, 1), round(cy, 1)]}
+
+    def cup_in_bounds(self, hx, hy):
+        """Is the cup inside the board bounds when the head is at (hx, hy)? True if none are set."""
+        b = (self.cal or {}).get("bounds")
+        if not b:
+            return True
+        cx, cy = hx + TIP_OFFSET[0], hy + TIP_OFFSET[1]
+        return b[0] <= cx <= b[1] and b[2] <= cy <= b[3]
+
+    def clip_jog(self, dx, dy):
+        """Shorten an X/Y jog so the cup stops at the board bounds. Returns (dx, dy)."""
+        b = (self.cal or {}).get("bounds")
+        if not b or (not dx and not dy) or self.needs_reanchor:
+            return dx, dy
+        w = self._wpos()
+        cx, cy = w[0] + TIP_OFFSET[0], w[1] + TIP_OFFSET[1]
+        t = 1.0
+        for c, d, lo, hi in ((cx, dx, b[0], b[1]), (cy, dy, b[2], b[3])):
+            if d > 0:
+                t = min(t, max(0.0, (hi - c) / d))
+            elif d < 0:
+                t = min(t, max(0.0, (lo - c) / d))
+        return dx * t, dy * t
 
     # ---- keeping the head off Mate ----
 
@@ -396,8 +500,14 @@ class Vision:
         return (np.array(c["P"]), c) if c and "P" in c else (None, None)
 
     def _unbump(self, cal_cam, found):
-        """Homography that maps this frame's pixels back to calibration-time pixels, from
-        the board markers both frames see. Returns (H or None, max shift in px)."""
+        """How far the board markers have moved in the picture since they were last recorded
+        (calibration or bounds). Returns (H, max shift in px); H is always None now.
+
+        This used to also return a correction (a homography back to the recorded pixels), on
+        the idea that only a bumped camera moves the markers in the picture. But a moved board
+        or marker does too, and then the "correction" warps everything (Nov 1: marker 1 read
+        as 667, 600). So it only reports; a big shift means recalibrate, or re-measure the
+        bounds if the markers were moved on purpose."""
         ref = cal_cam.get("board", {})
         a, b = [], []
         for k, v in ref.items():
@@ -408,13 +518,7 @@ class Vision:
             return None, None
         a, b = np.array(a), np.array(b)
         shift = float(np.max(np.linalg.norm(a - b, axis=1)))
-        if shift < BUMP_PX:
-            return None, shift
-        if len(a) >= 8:
-            H, _ = cv2.findHomography(a, b)
-        else:
-            H = cv2.getPerspectiveTransform(a[:4].astype(np.float32), b[:4].astype(np.float32))
-        return H, shift
+        return None, shift
 
     def update(self):
         """One pass: look with every calibrated camera, work out the scene."""
@@ -423,7 +527,7 @@ class Vision:
         w = self._wpos()
         tz = self.cal.get("table_z")
         scene = {"at": time.time(), "calibrated": True, "table_z": tz, "table_source": self.cal.get("table_source"),
-                 "travel_z": self.cal.get("travel_z"),
+                 "travel_z": self.cal.get("travel_z"), "bounds": self.cal.get("bounds"),
                  "needs_reanchor": self.needs_reanchor,
                  "head": {"x": w[0], "y": w[1], "z": w[2], "tip_x": w[0] + TIP_OFFSET[0], "tip_y": w[1] + TIP_OFFSET[1],
                           "tip_z": w[2] - TIP_BELOW_MARKER, "seen_by": []},
@@ -440,8 +544,9 @@ class Vision:
             H, shift = self._unbump(cc, found)
             fix = (lambda pts: cv2.perspectiveTransform(np.asarray(pts, float).reshape(-1, 1, 2), H).reshape(-1, 2)) \
                 if H is not None else (lambda pts: np.asarray(pts, float).reshape(-1, 2))
-            scene["cameras"][str(cam)] = {"position": cc["camera"], "moved_px": shift,
-                                          "markers": sorted(found)}
+            h, w = img.shape[:2]
+            scene["cameras"][str(cam)] = {"position": cc["camera"], "moved_px": shift, "markers": sorted(found),
+                                          "model": self.cameras[cam].model, **camera_view(P, (w, h))}
             if shift is not None:
                 scene["camera_moved_px"] = max(scene.get("camera_moved_px") or 0, shift)
 

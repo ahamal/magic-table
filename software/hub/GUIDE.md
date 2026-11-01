@@ -6,7 +6,7 @@ How to drive the table safely and well: for the agent, and for anyone at the jog
 
 ## Coordinates
 
-- **Gantry work coordinates, in mm.** 0, 0, 0 is the middle of the board with the cup touching it. **Z is the cup's height above the board** (Z+ up).
+- **Gantry work coordinates, in mm.** X/Y 0, 0 is the middle of the area inside the board markers; Z 0 is the cup touching the board. **Z is the cup's height above the board** (Z+ up).
 - **Head vs cup.** GRBL positions the head marker. The cup sits ~25 mm in front of it. To put the **cup** somewhere, use `POST /api/tip {x, y, z}`; `/api/move` moves the head.
 - **Cards, Mate and the board** come from `GET /api/scene` in the same coordinates (card `x, y` = center, `angle` = long side, `face` up/down; Mate `x, y, heading`).
 - **Accuracy:** the cup lands within ~2–3 mm of a target on the board. Best near the middle of the board; weaker far out and high up.
@@ -15,6 +15,7 @@ How to drive the table safely and well: for the agent, and for anyone at the jog
 
 | | |
 |---|---|
+| Board bounds | The cup stays **inside the rectangle between the four board markers** (not over them). Moves outside are refused; X/Y jogs stop at the edge. `POST /api/calibration/bounds` re-measures them (do it after moving the markers or the board); it also re-centres X/Y 0, 0 on the rectangle. |
 | Z range | **−1 to 150.** −1 is a 1 mm squeeze into the board for a grip; 150 is the top of travel. Moves outside are refused; jogs stop at them. |
 | Travel height | **Z 110.** Clears Mate (105 mm to the top of its corner caps). |
 | Mate | Never lower the cup onto Mate below Z 110, and never end a move over it below Z 110 (refused). Moves that cross Mate below 110 go up first. A sideways bump is survivable; pressing down into it isn't. |
@@ -50,7 +51,8 @@ How to drive the table safely and well: for the agent, and for anyone at the jog
 ## Looking
 
 - **Cam 1** (angled, from the front) finds things: cards, Mate, the board markers. **Cam 0** (low, side) shows contact and lifts; use it to check a pick worked.
-- Park the head out of the way (e.g. high and to one side) before a `look`: it hides what's under it.
+- Park the head out of the way before a `look`: it hides what's under it (this build's park spot is in the notes).
+- `camera_moved_px` above a couple of pixels means a camera or the board moved: recalibrate (camera) or re-measure the bounds (board). Nothing is corrected automatically.
 - **Known gaps:** overlapping or touching cards come out as one blob (or not at all); card rank and suit aren't read (ask a vision model with a crop). Detection jitters by ~1 mm between frames.
 
 ## After a reset

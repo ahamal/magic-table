@@ -11,7 +11,7 @@ The Robo Diner CoreXY gantry, reused as the table's hands and eyes. Controlled b
 | Limit switches | Homing (`$H`) for repeatable coordinates | Exists |
 | Computer | Raspberry Pi 5 (`ash@raspberrypi.local`), the table hub | Exists |
 | Overhead camera | Camera v2 (imx219), ~50 cm above the table | Working on the Pi 5 (`GET /api/capture`); needs a mount |
-| Gripper | 12 mm 2-layer bellows suction cup on a sprung printed mount | Have |
+| Gripper | 2-layer bellows suction cup, 15 mm across (sold as 12 mm), on a sprung printed mount | Working |
 | Pump | 12V self-priming diaphragm pump (uxcell or CrocSee, 1.3 L/min, ~300 mA) | Working |
 | Release valve | AIRZOE 2V025-08, 12V, normally closed, direct-acting, outlet wire; 1/4" NPT | Working |
 | Gripper driver | 2× 30N06L logic-level MOSFET modules on the CNC Shield's CoolEn and SpnDir pins, 1N4007 across each load | Working |

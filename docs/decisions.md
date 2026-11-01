@@ -17,7 +17,7 @@ Running log. Newest at the bottom of each section.
 - **The Frame is the Robo Diner gantry** (CoreXY, GRBL, limit switches). The board turned out to be an **Uno + CNC Shield V3**, not RAMPS.
 - **Pi 5 is the table hub** — body API, Frame driver, overhead camera, VL6180X, pump, Mate client. The brain probably runs there too.
 - ~~**Pump: H-bridge driven from Pi 5 GPIO** on the RAMPS 12V supply.~~ Replaced below.
-- **Gripper: 12 mm, 2-layer bellows suction cup.** *Why:* fits on a dime; 2 layers are enough because Z, the spring mount and the known stack height handle height; fewer layers grip faster and sway less.
+- **Gripper: 2-layer bellows suction cup, sold as 12 mm, measures 15 mm across.** *Why:* fits on a dime; 2 layers are enough because Z, the spring mount and the known stack height handle height; fewer layers grip faster and sway less.
 - **VL6180X #1 on the gantry head** (stack heights, picks, pick confirmation). Optional touch switch on GRBL's probe pin for exact contact.
 - **Overhead camera: Camera v2 (imx219)** on the Frame, about 50 cm up, with a 22→15-pin cable to the Pi 5.
 - ~~**Mate: Pi 3B + Arduino + 2× 28BYJ-48/ULN2003 + servos + ov5647 camera + tiny screen.**~~ Replaced below.

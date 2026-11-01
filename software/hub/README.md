@@ -86,9 +86,9 @@ Stop it (`sudo systemctl stop hub`) before running anything else that opens the 
 
 ## Vision and the 3D page
 
-[`vision.py`](vision.py): where things are, from the cameras, with OpenCV only (no cloud AI). The gantry is the reference: calibration moves the head marker (ArUco ID 10) over a grid at three heights and fits each camera's 3D projection in gantry coordinates (X/Y mm, Z GRBL units, Z+ up). Twice a second it then finds the head (and checks it against GRBL, in mm), Mate (ID 20: position, heading, height), cards on the dark board (center, angle, face up/down) and the board markers (IDs 0–3; if they move in the picture the camera moved, and it's corrected). Marker sizes and offsets are constants at the top.
+[`vision.py`](vision.py): where things are, from the cameras, with OpenCV only (no cloud AI). The gantry is the reference: calibration moves the head marker (ArUco ID 10) over a grid at three heights and fits each camera's 3D projection in gantry coordinates (X/Y mm, Z GRBL units, Z+ up). Twice a second it then finds the head (and checks it against GRBL, in mm), Mate (ID 20: position, heading, height), cards on the dark board (center, angle, face up/down) and the board markers (IDs 0–3; if they move in the picture, `camera_moved_px` warns; nothing is corrected automatically, since a moved board looks the same as a moved camera). Marker sizes and offsets are constants at the top.
 
-**Page:** `http://raspberrypi.local:8000/scene`, a live three.js view: board, head and cup, Mate, cards, cameras; buttons for Calibrate, Board is here, Re-anchor, Travel height = here.
+**Page:** `http://raspberrypi.local:8000/scene`, a live three.js view: board, head and cup, Mate, cards, the cup's bounds, and each camera module posed from its calibration with its picture's footprint on the board; buttons for Calibrate, Board is here, Re-anchor, Travel height = here.
 
 **Order of use:**
 1. Z at its **top** over the middle of the board, Mate not under the 120 mm square around it, GRBL unlocked.
@@ -108,7 +108,8 @@ Stop it (`sudo systemctl stop hub`) before running anything else that opens the 
 | `GET /api/calibration` | calibrated, per-camera fit, `table_z`, `travel_z`, `needs_reanchor`, head check |
 | `POST /api/calibration/table` | the cup is touching the board now |
 | `POST /api/calibration/travel {z?}` | set the travel height (cup height safe over Mate); no `z` = the current Z |
-| `POST /api/calibration/reanchor` | after a reset |
+| `POST /api/calibration/bounds` | measure the board markers, save the cup's allowed X/Y (inside their inner edges), re-centre 0, 0 on it |
+| `POST /api/calibration/reanchor?camera=false` | after a reset: the saved position (or X/Y from the camera with `camera=true`) |
 | `POST /api/tip {x, y, z?, feed?}` | put the **cup tip** at board X/Y (and Z mm above the board); same Mate rule as `/api/move` |
 | `GET /api/scene?fresh=false` | head (and cup tip), Mate, cards, board, cameras; also the `scene` WebSocket event |
 

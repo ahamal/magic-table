@@ -124,8 +124,10 @@ async def jog(body: Jog):
     if body.z:
         z = z_now()
         body.z = min(body.z, Z_MAX - z) if body.z > 0 else max(body.z, Z_MIN - z)
-        if abs(body.z) < 0.01 and not body.x and not body.y:
-            return {"line": "", "reply": f"error:Z is at its limit ({Z_MIN:g} to {Z_MAX:g})"}
+    if vision and (body.x or body.y):
+        body.x, body.y = vision.clip_jog(body.x, body.y)   # the cup stops at the board bounds
+    if max(abs(body.x), abs(body.y), abs(body.z)) < 0.01:
+        return {"line": "", "reply": "error:at a limit (Z or the board bounds)"}
     axes = "".join(f"{a}{v:.3f}" for a, v in (("X", body.x), ("Y", body.y), ("Z", body.z)) if abs(v) >= 0.001)
     if not axes:
         raise HTTPException(400, "nothing to jog")
@@ -142,6 +144,12 @@ async def move(body: Move):
         raise HTTPException(400, "nothing to move")
     if body.z is not None and not Z_MIN <= body.z <= Z_MAX:
         return {"line": "", "reply": f"error:Z {body.z:g} is outside {Z_MIN:g} to {Z_MAX:g}"}
+    if vision:
+        w = grbl.status.get("WPos") or [0, 0, 0]
+        hx = w[0] if body.x is None else body.x
+        hy = w[1] if body.y is None else body.y
+        if not vision.cup_in_bounds(hx, hy):
+            return {"line": "", "reply": "error:that puts the cup outside the board bounds"}
     if vision:
         lines, why = vision.plan_move(body.x, body.y, body.z)
         if why:
@@ -278,6 +286,12 @@ class Travel(BaseModel):
 def calibration_travel(body: Travel = Travel()):
     """Set the travel height: the cup height that's safe over Mate (110 mm clears it)."""
     return vision.set_travel(body.z)
+
+
+@app.post("/api/calibration/bounds")
+async def calibration_bounds():
+    """Measure the board markers and save the cup's allowed X/Y: inside their inner edges."""
+    return await asyncio.to_thread(vision.set_bounds)
 
 
 @app.post("/api/calibration/reanchor")
