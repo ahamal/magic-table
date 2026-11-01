@@ -38,6 +38,7 @@
 
 <div class="hud">
   <div class="row"><b>TABLE SCENE</b><span id="conn" class="bad">offline</span></div>
+  <div class="row"><span><a href="/" style="color:var(--accent)">Jog</a> · <a href="/guide" style="color:var(--accent)">Guide</a></span></div>
   <div class="row"><span>Calibration</span><span id="cal" class="mono">–</span></div>
   <div class="row"><span>Head</span><span id="head" class="mono">–</span></div>
   <div class="row"><span>Head check (camera)</span><span id="herr" class="mono">–</span></div>
@@ -358,7 +359,8 @@ $('table').onclick = async () => {
 };
 $('reanchor').onclick = async () => {
   const r = await post('calibration/reanchor');
-  say(r.ok ? `Re-anchored: head at ${r.x.toFixed(1)}, ${r.y.toFixed(1)}, ${r.z.toFixed(1)} (last known ${r.was.map(v => v.toFixed(1)).join(', ')})`
+  say(r.ok ? `Re-anchored to the saved position ${r.x.toFixed(1)}, ${r.y.toFixed(1)}, ${r.z.toFixed(1)}` +
+             (r.camera_off_mm == null ? '' : ` (camera sees it ${r.camera_off_mm.toFixed(1)} mm away)`)
            : 'Re-anchor failed: ' + (r.error || r.reply), true);
 };
 

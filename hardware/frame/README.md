@@ -48,7 +48,7 @@ Tuned on Oct 30 at 12V (see [`docs/log.md`](../../docs/log.md)):
 |---|---|---|
 | `$100`, `$101` steps/mm X/Y | 40 | Measured Nov 1: a 100 mm jog moves 100 mm. GT2 belt, 20T pulley, TMC2208 at 1/8 step (no jumpers) |
 | `$102` steps/mm Z | 40 | Measured Nov 1: 100 commanded moved 126 at 50. Same belt and pulley as X/Y |
-| Z travel | 0 to ~150 | Work Z 0 = cup touching the board; ~150 mm to the top. Travel height (over Mate) is Z 120 |
+| Z travel | −1 to 150 | Work Z 0 = cup touching the board, 150 = top of travel; the hub keeps moves and jogs inside this. Travel height (over Mate) is Z 110 |
 | `$3` direction invert | 4 (Z) | The Z motor ran backwards (Z+ lowered the cup). Now Z+ is up, as on any CNC |
 | `$110`, `$111` max rate X/Y | 11000 mm/min (~183 mm/s) | Real mm since steps/mm = 40. About the step rate that ran clean on Oct 30; ~15000 real mm/min skipped steps |
 | `$112` max rate Z | 7000 mm/min | Z doesn't need more; keep picks gentle |

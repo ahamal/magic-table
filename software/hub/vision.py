@@ -475,15 +475,20 @@ class Vision:
             self.scene = scene
         return scene
 
-    def reanchor(self):
-        """After a GRBL reset: put the work coordinates back. Z is taken as where it was
-        last (a reset doesn't move the head; the upright head plate can't measure height),
-        X/Y from where the camera sees the head at that height."""
+    def reanchor(self, use_camera=False):
+        """After a GRBL reset: put the work coordinates back.
+
+        By default the saved position: a reset or hub restart doesn't move the head, so it's
+        exact. The camera's view is reported alongside as a check, but at the edges of the
+        calibration (high up, far out) it can be centimetres off, so it never overrides on
+        its own. use_camera=True is for when the head really moved (skipped steps, moved by
+        hand): X/Y from the camera, Z still the saved value (the upright plate can't give Z)."""
         if not self.cal:
             return {"ok": False, "error": "not calibrated"}
         if not self.last_pos:
-            return {"ok": False, "error": "no last position saved; recalibrate"}
-        z = self.last_pos[2]
+            return {"ok": False, "error": "no saved position; recalibrate"}
+        x, y, z = self.last_pos
+        seen, cam_used = None, None
         for cam in range(len(self.cameras)):
             P, cc = self._cam(cam)
             img = self._frame(cam) if P is not None else None
@@ -495,28 +500,18 @@ class Vision:
             H, _ = self._unbump(cc, found)
             c = found[HEAD_ID] if H is None else cv2.perspectiveTransform(
                 found[HEAD_ID].reshape(-1, 1, 2), H).reshape(-1, 2)
-            x, y = to_xy(P, [centre(c)], z)[0]
-            # a plain restart doesn't move anything: if the camera agrees with the saved
-            # position, that position is exact; otherwise (moved, skipped steps) trust the camera
-            seen_off = float(np.hypot(x - self.last_pos[0], y - self.last_pos[1]))
-            if seen_off < 3.0:
-                x, y = self.last_pos[0], self.last_pos[1]
-            reply = self.grbl.send(f"G10 L20 P1 X{x:.3f} Y{y:.3f} Z{z:.3f}")
-            if reply == "ok":
-                self.needs_reanchor = False
-            return {"ok": reply == "ok", "x": float(x), "y": float(y), "z": float(z), "cam": cam,
-                    "was": self.last_pos, "camera_off_mm": seen_off,
-                    "used": "saved position" if seen_off < 3.0 else "camera", "reply": reply}
-        # no camera can see the head (e.g. high up at the edge of the view). A reset or a hub
-        # restart doesn't move anything, so the saved position is still right, unless someone
-        # moved the head by hand meanwhile; the reply says which was used
-        x, y, z = self.last_pos
+            seen, cam_used = to_xy(P, [centre(c)], z)[0], cam
+            break
+        off = None if seen is None else float(np.hypot(seen[0] - x, seen[1] - y))
+        if use_camera:
+            if seen is None:
+                return {"ok": False, "error": "no calibrated camera sees the head marker"}
+            x, y = float(seen[0]), float(seen[1])
         reply = self.grbl.send(f"G10 L20 P1 X{x:.3f} Y{y:.3f} Z{z:.3f}")
         if reply == "ok":
             self.needs_reanchor = False
-        return {"ok": reply == "ok", "x": x, "y": y, "z": z, "was": self.last_pos, "cam": None,
-                "used": "saved position (no camera sees the head; only right if nothing moved it)",
-                "reply": reply}
+        return {"ok": reply == "ok", "x": x, "y": y, "z": z, "used": "camera" if use_camera else "saved position",
+                "saved": self.last_pos, "camera_off_mm": off, "cam": cam_used, "reply": reply}
 
     def run(self, hz=2.0):
         def loop():

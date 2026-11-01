@@ -6,10 +6,11 @@ Run on the Pi:  python serve.py   (HTTP :8000 and HTTPS :8443; see serve.py)
 
 import asyncio
 import os
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -107,10 +108,25 @@ async def send(body: Line):
     return await asyncio.to_thread(run, body.line)
 
 
+# Work Z is the cup's height above the board (0 = touching it). Never past the top of the Z
+# travel, never more than the 1 mm squeeze a grip needs into the board. No limit switches, so
+# these are the only stops.
+Z_MIN, Z_MAX = -1.0, 150.0
+
+
+def z_now():
+    return (grbl.status.get("WPos") or [0, 0, 0])[2]
+
+
 @app.post("/api/jog")
 async def jog(body: Jog):
-    """Relative jog ($J). Cancel early with /api/realtime/jog_cancel."""
-    axes = "".join(f"{a}{v:.3f}" for a, v in (("X", body.x), ("Y", body.y), ("Z", body.z)) if v)
+    """Relative jog ($J). Cancel early with /api/realtime/jog_cancel. Z jogs stop at the Z limits."""
+    if body.z:
+        z = z_now()
+        body.z = min(body.z, Z_MAX - z) if body.z > 0 else max(body.z, Z_MIN - z)
+        if abs(body.z) < 0.01 and not body.x and not body.y:
+            return {"line": "", "reply": f"error:Z is at its limit ({Z_MIN:g} to {Z_MAX:g})"}
+    axes = "".join(f"{a}{v:.3f}" for a, v in (("X", body.x), ("Y", body.y), ("Z", body.z)) if abs(v) >= 0.001)
     if not axes:
         raise HTTPException(400, "nothing to jog")
     if vision and not vision.jog_ok(body.x, body.y, body.z):
@@ -120,10 +136,12 @@ async def jog(body: Jog):
 
 @app.post("/api/move")
 async def move(body: Move):
-    """Absolute move in work coordinates."""
+    """Absolute move in work coordinates (Z = cup height above the board, Z_MIN to Z_MAX)."""
     axes = "".join(f"{a}{v:.3f}" for a, v in (("X", body.x), ("Y", body.y), ("Z", body.z)) if v is not None)
     if not axes:
         raise HTTPException(400, "nothing to move")
+    if body.z is not None and not Z_MIN <= body.z <= Z_MAX:
+        return {"line": "", "reply": f"error:Z {body.z:g} is outside {Z_MIN:g} to {Z_MAX:g}"}
     if vision:
         lines, why = vision.plan_move(body.x, body.y, body.z)
         if why:
@@ -175,11 +193,12 @@ def gripper_state():
 
 
 @app.post("/api/gripper/{name}")
-async def gripper_command(name: str):
-    """pump_on, pump_off, valve_on, valve_off, grip, drop, stop. Queued after any motion."""
+async def gripper_command(name: str, pump_s: float | None = None):
+    """pump_on, pump_off, valve_on, valve_off, grip, drop, stop. Queued after any motion.
+    grip?pump_s=3 runs the pump 3 s then stops it; the vacuum holds ~20 s (enough for a card)."""
     if name not in SEQUENCES:
         raise HTTPException(404, f"unknown: {name}")
-    return await asyncio.to_thread(gripper.run, name)
+    return await asyncio.to_thread(gripper.run, name, pump_s)
 
 
 def get_camera(cam):
@@ -262,9 +281,10 @@ def calibration_travel(body: Travel = Travel()):
 
 
 @app.post("/api/calibration/reanchor")
-async def reanchor():
-    """After a GRBL reset: put the work coordinates back (Z as it was, X/Y from the camera)."""
-    return await asyncio.to_thread(vision.reanchor)
+async def reanchor(camera: bool = False):
+    """After a GRBL reset: put the work coordinates back to the saved position (exact if nothing
+    moved). ?camera=true takes X/Y from the camera instead, for when the head really moved."""
+    return await asyncio.to_thread(vision.reanchor, camera)
 
 
 @app.get("/api/scene")
@@ -323,6 +343,44 @@ async def ws(ws: WebSocket):
 @app.get("/")
 def index():
     return FileResponse(HERE / "static" / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/guide", response_class=PlainTextResponse)
+def guide():
+    """How to drive the table: limits, gripper, pick-and-place recipes (GUIDE.md). The agent
+    reads this first."""
+    return (HERE / "GUIDE.md").read_text()
+
+
+NOTES = HERE / "notes.md"   # this build's notes; lives on the Pi only (not deployed, not in git)
+
+
+class Note(BaseModel):
+    text: str
+    by: str = "agent"
+
+
+@app.get("/api/notes", response_class=PlainTextResponse)
+def notes():
+    """What agents and people have learned about this particular build. Read after the guide."""
+    return NOTES.read_text() if NOTES.exists() else "# Notes on this build\n\n(none yet)\n"
+
+
+@app.post("/api/notes")
+def add_note(body: Note):
+    """Add one dated note: something learned about this build that the next agent should know."""
+    if not NOTES.exists():
+        NOTES.write_text("# Notes on this build\n\nWhat agents and people learned about this particular table. "
+                         "Newest at the bottom. Add with POST /api/notes {text, by}.\n\n")
+    line = " ".join(body.text.split())
+    with NOTES.open("a") as f:
+        f.write(f"- {time.strftime('%Y-%m-%d %H:%M')} ({body.by}): {line}\n")
+    return {"ok": True}
+
+
+@app.get("/guide")
+def guide_page():
+    return FileResponse(HERE / "static" / "guide.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/scene")

@@ -2,6 +2,8 @@
 
 The body API for the whole table. Step 2.
 
+> **How to use it: [GUIDE.md](GUIDE.md)** (also served at `/guide`, and as plain text for agents at `GET /api/guide`), then this build's notes at `GET /api/notes`. Limits, the gripper, and pick-and-place recipes live there, not in the code.
+
 ## Responsibilities
 
 - **One web server** (FastAPI): the table body API (see [`docs/architecture.md`](../../docs/architecture.md#body-interface-table)) plus the human table page. WebSocket for events (`wait_for`) and the optional live view.
@@ -38,7 +40,9 @@ The body API for the whole table. Step 2.
 | `POST /api/home` | `$H` |
 | `POST /api/realtime/{status,hold,resume,reset,jog_cancel}` | Sent immediately |
 | `GET /api/gripper` | `{pump, valve}` |
-| `POST /api/gripper/{pump_on,pump_off,valve_on,valve_off,grip,drop,stop}` | Runs after queued motion; returns `{pump, valve}`, plus `error` if GRBL refused (e.g. `error:9` in Alarm) |
+| `GET /api/guide` | the table guide, plain text (for agents) |
+| `GET /api/notes`, `POST /api/notes {text, by}` | this build's notes: what agents and people learned about this particular table. Kept on the Pi (`~/hub/notes.md`), never deployed over or committed |
+| `POST /api/gripper/{pump_on,pump_off,valve_on,valve_off,grip,drop,stop}` (grip`?pump_s=N`: pump N s, then hold on vacuum ~20 s) | Runs after queued motion; returns `{pump, valve}`, plus `error` if GRBL refused (e.g. `error:9` in Alarm) |
 | `POST /api/transcribe` | Body: one utterance as a 16/24 kHz mono 16-bit WAV. Returns `{id, at, text, audio_ms, took_ms}`, or `{text: ""}` if nothing was said |
 | `GET /api/transcripts?since=0` | Everything said on the talk page, oldest first |
 | `DELETE /api/transcripts` | Clear them |
@@ -93,6 +97,8 @@ Stop it (`sudo systemctl stop hub`) before running anything else that opens the 
 4. After any GRBL reset (or hub restart), unlock, then **Re-anchor**: if the camera agrees with the last saved position (within 3 mm) that position is restored exactly; if it disagrees, X/Y come from the camera and Z from the saved value; if no camera sees the head, the saved position is used (right as long as nobody moved the head by hand). Don't use Work zero on the jog page; it shifts every position.
 
 **The cup isn't under the head marker:** it sits in front of the Z extrusion, 24.7 mm from the marker plate's center in −Y (`TIP_OFFSET`, measured by camera). Head positions (GRBL, `/api/move`) are the marker's; use `/api/tip` to put the cup somewhere. Tested: cup within ~2–3 mm of a card center 110 mm from the calibration grid's center.
+
+**Z limits:** work Z is the cup's height above the board. Moves and `/api/tip` outside −1 to 150 are refused; Z jogs are shortened to stop at them (150 is the top of the Z travel; −1 is the 1 mm squeeze a grip needs). `/api/send` isn't checked.
 
 **Mate rule:** bumping Mate sideways by accident is survivable; pressing down into it isn't. Travel height is 110 (the cup clears Mate's 105 mm caps). Below it, `/api/move` and `/api/tip` go up to travel height before crossing Mate and refuse to end over it; `/api/jog` may go sideways anywhere but won't lower the cup onto Mate. Checks use the cup's position, over Mate's 134 mm footprint plus 40 mm. (`/api/send` is raw G-code and isn't checked.)
 

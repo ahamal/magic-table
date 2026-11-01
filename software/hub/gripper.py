@@ -11,13 +11,14 @@ state itself.
 """
 
 import threading
+import time
 
 SEQUENCES = {
     "pump_on": ["M8"],
     "pump_off": ["M9"],
     "valve_on": ["M4 S0"],
     "valve_off": ["M3 S0", "M5"],
-    "grip": ["M3 S0", "M5", "M8"],                         # valve shut, pump on
+    "grip": ["M3 S0", "M5", "M8"],                         # valve shut, pump on (stays on)
     "drop": ["M9", "M4 S0", "G4 P0.3", "M3 S0", "M5"],     # pump off, vent 0.3 s
     "stop": ["M9", "M3 S0", "M5"],
 }
@@ -27,30 +28,47 @@ AFTER = {  # (pump, valve) once a sequence finishes; None = unchanged
     "grip": (True, False), "drop": (False, False), "stop": (False, False),
 }
 VALVE_MAX_S = 10  # the valve coil heats up if left open
+# grip(pump_s=N) runs the pump N s and stops it; the sealed line then holds on its own for
+# about HOLD_S (a card: 3 s of pumping is enough). Heavier or leakier things: leave it running.
+HOLD_S = 20
 
 
 class Gripper:
     def __init__(self, grbl, emit):
         self.grbl, self.emit = grbl, emit
         self.pump = self.valve = False
+        self.gripped_at = None   # when the last grip finished; cleared by a drop or stop
         self._timer = None
         grbl.listeners.append(self._on_grbl)
 
     @property
     def state(self):
-        return {"pump": self.pump, "valve": self.valve}
+        """Pump and valve, plus how long ago a grip finished (the hold lasts ~HOLD_S)."""
+        held = round(time.time() - self.gripped_at, 1) if self.gripped_at else None
+        return {"pump": self.pump, "valve": self.valve, "held_s": held, "hold_s": HOLD_S}
 
-    def run(self, name):
-        """Send one sequence; waits for any queued motion first (M-codes sync)."""
-        for line in SEQUENCES[name]:
+    def run(self, name, pump_s=None):
+        """Send one sequence; waits for any queued motion first (M-codes sync). For grip,
+        pump_s = run the pump that many seconds then stop it (None = leave it running)."""
+        lines = list(SEQUENCES[name])
+        timed = name == "grip" and pump_s
+        if timed:
+            lines += [f"G4 P{float(pump_s):.2f}", "M9"]
+        for line in lines:
             reply = self.grbl.send(line, timeout=300)
             if reply != "ok":
                 return {**self.state, "error": f"{line}: {reply}"}
         pump, valve = AFTER[name]
+        if timed:
+            pump = False
         if pump is not None:
             self.pump = pump
         if valve is not None:
             self.valve = valve
+        if name == "grip":
+            self.gripped_at = time.time()
+        elif name in ("drop", "stop", "valve_on"):
+            self.gripped_at = None
         self._arm_timer()
         self._publish()
         return self.state

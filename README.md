@@ -4,6 +4,8 @@
 
 A tabletop robot system that learns a game from a plain-English explanation, then deals, plays, keeps score and talks. Entry for the Meta Global AI Developer Hackathon (indie developer track, theme "Push the Frontier"). Submissions due **Nov 4, 2026, 9:00 PM ET**.
 
+> **Driving the table?** Read [the table guide](software/hub/GUIDE.md) first: coordinates, limits, the gripper, pick-and-place recipes. The hub serves it at `http://raspberrypi.local:8000/guide`, and as plain text for agents at `/api/guide`.
+
 ## The idea in one picture
 
 ```
