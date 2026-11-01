@@ -1,5 +1,5 @@
 [Unit]
-Description=Magic Table hub (GRBL server + jog page)
+Description=Magic Table hub (GRBL, gripper, camera + jog page)
 After=network-online.target
 Wants=network-online.target
 
@@ -9,6 +9,8 @@ WorkingDirectory=/home/ash/hub
 ExecStart=/home/ash/hub/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=2
+# an open /api/stream keeps uvicorn waiting on shutdown; don't wait long
+TimeoutStopSec=4
 
 [Install]
 WantedBy=multi-user.target

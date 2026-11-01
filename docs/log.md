@@ -72,6 +72,13 @@ What happened, when, and what we learned. Newest at the bottom. Times are ET and
   - GRBL starts in alarm and needs `$H` or `$X`.
   - Camera mount and pixel → gantry calibration.
 
+## Nov 1 (day 7)
+
+- **Two cameras on the Pi 5:** cam 0 = ov5647 (5 MP), cam 1 = imx219 (Camera v2). The second only showed up after reseating its ribbon with the Pi off; the Pi detects cameras at boot only.
+- **Hub serves both:** `/api/capture?cam=N`, `/api/stream?cam=N`, `/api/cameras`, and live views of both on the jog page.
+- **An open stream stalled hub restarts** (uvicorn waits for it). `hub.service` now has `TimeoutStopSec=4`.
+- **Camera placement:** a true overhead camera would sit behind the gantry. Plan: a camera on the head looking down for precise picks (pick-and-place style), a fixed angled camera with ArUco table markers for finding things, SAM 3.1 to find cards.
+
 ## Oct 31 (day 6)
 
 - **Mate moves to the Freenove ESP32-S3-WROOM CAM** (ESP32-S3 rev v0.2, 8 MB flash, 8 MB PSRAM, CH343 USB at `/dev/cu.usbmodem5C930529801`, MAC `44:b1:76:c7:cd:74`). At first macOS didn't see it at all; a replug fixed it.

@@ -1,4 +1,4 @@
-"""Table hub web server: GRBL, the gripper and the overhead camera over HTTP + a live WebSocket, and the jog page.
+"""Table hub web server: GRBL, the gripper and the cameras over HTTP + a live WebSocket, and the jog page.
 
 Run on the Pi:  uvicorn server:app --host 0.0.0.0 --port 8000
 """
@@ -8,17 +8,17 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from camera import Camera
+import camera
 from grbl import REALTIME, Grbl
 from gripper import SEQUENCES, Gripper
 
 HERE = Path(__file__).parent
 grbl = Grbl(port=os.environ.get("GRBL_PORT", "/dev/ttyACM0"))
-camera = Camera()
+cameras = []  # one per camera the Pi found at boot
 app = FastAPI(title="Magic Table hub")
 clients = set()
 loop = None
@@ -47,7 +47,7 @@ async def startup():
     loop = asyncio.get_running_loop()
     grbl.listeners.append(broadcast)
     grbl.start()
-    await asyncio.to_thread(camera.start)
+    cameras.extend(await asyncio.to_thread(camera.start_all))
 
 
 # ---- API ----
@@ -147,13 +147,45 @@ async def gripper_command(name: str):
     return await asyncio.to_thread(gripper.run, name)
 
 
+def get_camera(cam):
+    if not 0 <= cam < len(cameras):
+        raise HTTPException(404, f"no camera {cam}; there are {len(cameras)}")
+    c = cameras[cam]
+    if c.cam is None:
+        raise HTTPException(503, f"camera {cam} didn't start: {c.error}")
+    return c
+
+
+@app.get("/api/cameras")
+def list_cameras():
+    return [c.info for c in cameras]
+
+
 @app.get("/api/capture")
-async def capture():
-    """A fresh JPEG from the overhead camera."""
-    jpg = await asyncio.to_thread(camera.capture)
+async def capture(cam: int = 0):
+    """A fresh full-size JPEG from one camera."""
+    c = get_camera(cam)
+    jpg = await asyncio.to_thread(c.capture)
     if jpg is None:
-        raise HTTPException(503, f"no camera: {camera.error}")
+        raise HTTPException(503, f"camera {cam} stopped")
     return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/stream")
+async def stream(cam: int = 0, fps: float = 10):
+    """Live MJPEG view of one camera, 820 px wide. Open it in a browser tab or an <img>."""
+    c = get_camera(cam)
+
+    async def frames():
+        while True:
+            jpg = await asyncio.to_thread(c.frame)
+            if jpg is None:
+                return
+            yield b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(jpg) + jpg + b"\r\n"
+            await asyncio.sleep(1 / max(fps, 0.5))
+
+    return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame",
+                             headers={"Cache-Control": "no-store"})
 
 
 @app.websocket("/ws")

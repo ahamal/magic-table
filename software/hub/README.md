@@ -8,14 +8,14 @@ The body API for the whole table. Step 2.
 - **Frame driver:** GRBL over USB serial — homing, soft limits, `move_to`, probe (`G38.2`).
 - **Gripper:** GRBL switches the 12V pump (`M8`/`M9`) and vent valve (`M4 S0`/`M3 S0`) through MOSFETs on the CNC Shield. The Pi never touches the 12V side.
 - **Sensors:** VL6180X (`sense_z`), touch switch (`probe`).
-- **Overhead camera:** `capture("overhead")`.
+- **Cameras:** the Pi 5's two CSI cameras (`capture`, `stream`); later named views like `capture("overhead")`.
 - **Mate client:** the only caller of Mate's API once the table is assembled; `capture("mate")` and `mate.*` pass through.
 - **Safety layer:** soft limits, Z only lowers when clear, the Mate no-go zone (from Mate's marker), e-stop.
 - **Calibration:** head-marker grid → pixel-to-gantry mapping, served in `get_table()`.
 
 ## Frame server (running now)
 
-[`server.py`](server.py) + [`grbl.py`](grbl.py) + [`gripper.py`](gripper.py) + [`camera.py`](camera.py) + [`static/index.html`](static/index.html): GRBL, the gripper and the overhead camera over HTTP, and a jog page. The first piece of the hub.
+[`server.py`](server.py) + [`grbl.py`](grbl.py) + [`gripper.py`](gripper.py) + [`camera.py`](camera.py) + [`static/index.html`](static/index.html): GRBL, the gripper and the cameras over HTTP, and a jog page. The first piece of the hub.
 
 - **One serial connection, kept open.** Opening the port resets the Uno, so the server owns it. Lines go one at a time and wait for `ok`/`error`; real-time bytes (status, hold, resume, reset, jog cancel) skip the queue. Status is polled 5× a second and pushed to every page over a WebSocket.
 - **Jog page** at `http://raspberrypi.local:8000/`, after the Robo Diner jog page (click the XY table and the Z rail to set a target, then go), plus:
@@ -23,9 +23,10 @@ The body API for the whole table. Step 2.
   - Jog pad with diagonals and Z: tap for one step (0.1–100 mm), hold to keep moving until release (GRBL `$J` + jog cancel). Arrow keys and PgUp/PgDn do the same; 1–5 pick the step; Esc stops.
   - Zero buttons (`G10 L20 P1`), Home, Unlock, Pause/Resume/Reset, and a console with the GRBL command list and history.
   - Gripper: Pump and Valve switches, Grip and Drop (keys G and D).
+  - Live views of every camera under the map, each with a link to a full-size photo. **Cameras** hides them; streams also pause while the tab is in the background.
   - If the last page closes mid-jog, the server cancels the jog.
 - **Gripper commands go through GRBL's queue,** so they run after any motion already sent. GRBL doesn't report the valve pin at `S0`, so the hub tracks pump and valve itself; the valve closes itself after 10 s (the coil heats up), and after an unlock or home in case a reset left it open.
-- **Camera:** picamera2 opens the Camera v2 once at startup and keeps it streaming (1640×1232, the full field of view), so a capture is the next frame, about 0.04 s.
+- **Cameras:** picamera2 opens every camera the Pi found at boot (now cam 0 = ov5647, cam 1 = imx219 / Camera v2) and keeps them streaming at 1640×1232, the full field of view, so a capture is the next frame, about 0.04 s. Cameras are only detected at boot: plug them in with the Pi off.
 
 | Endpoint | |
 |---|---|
@@ -38,7 +39,9 @@ The body API for the whole table. Step 2.
 | `POST /api/realtime/{status,hold,resume,reset,jog_cancel}` | Sent immediately |
 | `GET /api/gripper` | `{pump, valve}` |
 | `POST /api/gripper/{pump_on,pump_off,valve_on,valve_off,grip,drop,stop}` | Runs after queued motion; returns `{pump, valve}`, plus `error` if GRBL refused (e.g. `error:9` in Alarm) |
-| `GET /api/capture` | A fresh JPEG from the overhead camera; 503 if there's no camera |
+| `GET /api/cameras` | `[{cam, model, ok, error}]` |
+| `GET /api/capture?cam=0` | A fresh full-size JPEG from one camera; 404 if there's no such camera |
+| `GET /api/stream?cam=0&fps=10` | Live MJPEG view, 820 px wide (~7 fps, ~40 KB a frame); open it in a browser tab or an `<img>` |
 | `WS /ws` | `status`, `settings`, `gripper` and `log` events |
 
 **Run it on the Pi:**

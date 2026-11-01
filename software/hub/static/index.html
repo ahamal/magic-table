@@ -60,6 +60,20 @@
   .stage-foot { display: flex; align-items: center; gap: 12px; color: var(--muted); }
   .stage-foot .warn { color: var(--warn); }
   .stage-foot .warn[hidden] { display: none; }
+  .stage-foot button { height: 22px; font-size: 11px; padding: 0 8px; }
+
+  /* camera views under the map */
+  .cams { flex: none; height: 36%; min-height: 140px; display: grid; grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr); gap: 10px; }
+  .cams[hidden] { display: none; }
+  .cam { position: relative; min-width: 0; min-height: 0; background: #000; border: 1px solid var(--line); }
+  .cam img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .cam span, .cam a { position: absolute; top: 6px; font-size: 11px; color: #fff; background: rgba(0, 0, 0, .55);
+    padding: 2px 6px; text-decoration: none; }
+  .cam span { left: 6px; }
+  .cam a { right: 6px; }
+  .cam a:hover { background: var(--accent); }
+  .cam .off { position: absolute; inset: 0; display: grid; place-items: center; color: #999; }
 
   aside { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
   aside section { padding: 10px 12px; border-bottom: 1px solid var(--line); }
@@ -102,6 +116,8 @@
     body { height: auto; }
     main { grid-template-columns: minmax(0, 1fr); }
     .map { height: 60vh; flex: none; }
+    .cams { height: auto; grid-auto-flow: row; }
+    .cam { aspect-ratio: 4 / 3; }
     aside { border-left: 0; border-top: 1px solid var(--line); }
     .dro { font-size: 13px; gap: 10px; }
     header { gap: 10px; }
@@ -129,11 +145,13 @@
       <svg id="xy" role="img" aria-label="XY table: click to set a target"></svg>
       <svg id="zrail" role="img" aria-label="Z rail: click to set a target height"></svg>
     </div>
+    <div class="cams" id="cams"></div>
     <div class="stage-foot">
       <span>Click the table or Z rail to set a target</span>
       <span id="unhomed" class="warn">· Not homed: 0,0 is wherever it was at power-on</span>
       <span class="spacer"></span>
       <span id="travel" class="mono"></span>
+      <button id="camtoggle" title="Show or hide the live camera views">Cameras</button>
     </div>
   </div>
 
@@ -472,6 +490,48 @@ addEventListener('keydown', e => {
   if (e.key === 'g') gripper('grip');
   else if (e.key === 'd') gripper('drop');
 });
+
+// ---- cameras ----
+// Live MJPEG views. Streams stop while hidden (toggle or background tab) to spare the Wi-Fi.
+let camsOn = true;
+try { camsOn = localStorage.getItem('cams') !== 'off'; } catch (e) {}
+let camList = [];
+
+function camSrc(c) { return `/api/stream?cam=${c.cam}&fps=8&t=${Date.now()}`; }
+function setStreams(on) {
+  document.querySelectorAll('.cam img').forEach(img => {
+    img.src = on ? camSrc({ cam: img.dataset.cam }) : '';
+  });
+}
+function showCams() {
+  const live = camsOn && !document.hidden;
+  $('cams').hidden = !camsOn || !camList.length;
+  $('camtoggle').classList.toggle('on', camsOn);
+  setStreams(live);
+  drawMap();
+}
+fetch('/api/cameras').then(r => r.json()).then(list => {
+  camList = list;
+  $('camtoggle').hidden = !list.length;
+  list.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'cam';
+    if (c.ok) {
+      d.innerHTML = `<img data-cam="${c.cam}" alt="Camera ${c.cam}"><span>cam ${c.cam} · ${c.model}</span>` +
+        `<a href="/api/capture?cam=${c.cam}" target="_blank" title="Full-size photo">Photo ↗</a>`;
+    } else {
+      d.innerHTML = `<span>cam ${c.cam} · ${c.model}</span><div class="off">not running</div>`;
+    }
+    $('cams').append(d);
+  });
+  showCams();
+}).catch(() => { $('camtoggle').hidden = true; $('cams').hidden = true; });
+$('camtoggle').onclick = () => {
+  camsOn = !camsOn;
+  try { localStorage.setItem('cams', camsOn ? 'on' : 'off'); } catch (e) {}
+  showCams();
+};
+document.addEventListener('visibilitychange', () => setStreams(camsOn && !document.hidden));
 
 // ---- console ----
 const COMMANDS = [
