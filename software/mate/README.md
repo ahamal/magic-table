@@ -1,5 +1,7 @@
 # Mate (software)
 
+> **Using Mate as an agent:** start at [agent/mate.md](../../agent/mate.md) (how to drive it, gestures, faces, calibration). This page is the full API reference.
+
 Mate is a self-contained system: one ESP32-S3 program serves its own API over Wi-Fi, its own control page and its own camera. It works with nothing else running. Later, the table hub on the Pi 5 becomes one more client of this API.
 
 ```
@@ -237,6 +239,6 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 - [x] Control page: camera, screen editor, 19 faces, arrow-pad driving, speed/accel and servo sliders
 - [x] API reference for the AI brain (above)
 - [x] Sign conventions: forward = s1 −, s2 +; left turn = +, + (see [Driving](#driving-whats-known-about-the-body))
-- [ ] Calibration on the table: half-steps per mm, per degree of turn
+- [x] Calibration on the table: half-steps per mm, per degree of turn (Nov 1, with the overhead camera; numbers in the hub's build notes, `GET /api/notes`)
 - [ ] Card-corner test at 10–15 cm with the GC0308
-- [ ] Mount the flipper arm and check the 20° resting pose
+- [x] Mount the flipper arm and check the 20° resting pose (a bent plastic knife on the front face; see [agent/mate.md](../../agent/mate.md))

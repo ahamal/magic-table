@@ -158,8 +158,8 @@ class Aborted(Exception):
 
 
 class Vision:
-    def __init__(self, cameras, grbl, emit):
-        self.cameras, self.grbl, self.emit = cameras, grbl, emit
+    def __init__(self, cameras, grbl, emit, mate=None):
+        self.cameras, self.grbl, self.emit, self.mate = cameras, grbl, emit, mate
         self.cal = json.loads(CAL_FILE.read_text()) if CAL_FILE.exists() else None
         self.scene = {"calibrated": bool(self.cal)}
         self.busy = False
@@ -570,9 +570,12 @@ class Vision:
                     q = to_xy(P, c, z)
                     top, bottom = (q[0] + q[1]) / 2, (q[2] + q[3]) / 2
                     d = top - bottom
+                    st = self.mate.status if self.mate else None
                     scene["mate"] = {"x": float(q[:, 0].mean()), "y": float(q[:, 1].mean()),
                                      "heading": float(math.degrees(math.atan2(d[1], d[0]))),
-                                     "height": float(z - tz), "cam": cam}
+                                     "height": float(z - tz), "cam": cam,
+                                     "flipper": st.get("servo_now") if st else None,
+                                     "moving": st.get("busy") if st else None}
             scene["cards"] = find_cards(img, P, tz, found, fix, cam)
         if errs:
             scene["head"]["error_mm"] = float(min(errs))

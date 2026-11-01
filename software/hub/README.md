@@ -2,7 +2,7 @@
 
 The body API for the whole table. Step 2.
 
-> **How to use it: [GUIDE.md](GUIDE.md)** (also served at `/guide`, and as plain text for agents at `GET /api/guide`), then this build's notes at `GET /api/notes`. Limits, the gripper, and pick-and-place recipes live there, not in the code.
+> **How to use it: [agent/](../../agent/README.md)** (served at `/guide`, and as plain text at `GET /api/guide`, `/api/guide/table`, `/api/guide/mate`), then this build's notes at `GET /api/notes`. Limits, the gripper, Mate, and recipes live there, not in the code. Deploy the folder with the hub: `rsync -a agent/ ash@raspberrypi.local:hub/agent/`.
 
 ## Responsibilities
 
@@ -40,7 +40,8 @@ The body API for the whole table. Step 2.
 | `POST /api/home` | `$H` |
 | `POST /api/realtime/{status,hold,resume,reset,jog_cancel}` | Sent immediately |
 | `GET /api/gripper` | `{pump, valve}` |
-| `GET /api/guide` | the table guide, plain text (for agents) |
+| `GET /api/guide`, `/api/guide/{table,mate}` | the agent guides (repo `agent/`), plain text |
+| `POST /api/say {text, wait?}` | speak on the table's Bluetooth speaker (espeak-ng); a `speaking` event goes to the pages |
 | `GET /api/notes`, `POST /api/notes {text, by}` | this build's notes: what agents and people learned about this particular table. Kept on the Pi (`~/hub/notes.md`), never deployed over or committed |
 | `POST /api/gripper/{pump_on,pump_off,valve_on,valve_off,grip,drop,stop}` (grip`?pump_s=N`: pump N s, then hold on vacuum ~20 s) | Runs after queued motion; returns `{pump, valve}`, plus `error` if GRBL refused (e.g. `error:9` in Alarm) |
 | `POST /api/transcribe` | Body: one utterance as a 16/24 kHz mono 16-bit WAV. Returns `{id, at, text, audio_ms, took_ms}`, or `{text: ""}` if nothing was said |

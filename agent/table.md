@@ -1,8 +1,6 @@
 # Table guide
 
-How to drive the table safely and well: for the agent, and for anyone at the jog page. The hub enforces the hard limits; everything else here is a recipe that works, not a rule baked into the code. Served live at `/guide` (page) and `GET /api/guide` (plain text).
-
-**Then read `GET /api/notes`:** what's been learned about *this* build (every table is a little different: offsets, timings, what failed). When you learn something the next agent should know, add it: `POST /api/notes {text, by}`. Facts, not chatter: what you tried, what happened, the numbers.
+How to drive the gantry and the gripper safely and well. The hub enforces the hard limits; everything else here is a recipe that works, not a rule baked into the code. Served at `GET /api/guide/table`. Start at [the agent README](README.md) if you haven't.
 
 ## Coordinates
 

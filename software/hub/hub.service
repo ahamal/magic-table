@@ -8,6 +8,8 @@ User=ash
 WorkingDirectory=/home/ash/hub
 # MODEL_API_KEY for Meta's API; the file stays on the Pi, never in git
 EnvironmentFile=-/home/ash/hub/.env
+# the user's audio session (PipeWire), for the speaker; needs `loginctl enable-linger ash`
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 # HTTP :8000 and HTTPS :8443 (the talk page's mic needs HTTPS)
 ExecStart=/home/ash/hub/.venv/bin/python serve.py
 Restart=always

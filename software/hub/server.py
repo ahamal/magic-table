@@ -16,9 +16,11 @@ from pydantic import BaseModel
 
 import camera
 from grbl import REALTIME, Grbl
+from mate import MateLink
 from gripper import SEQUENCES, Gripper
 from talk import TranscribeError, Transcripts
 from vision import Vision
+from voice import Voice
 
 HERE = Path(__file__).parent
 grbl = Grbl(port=os.environ.get("GRBL_PORT", "/dev/ttyACM0"))
@@ -37,6 +39,8 @@ def broadcast(event):
 
 gripper = Gripper(grbl, broadcast)
 transcripts = Transcripts(broadcast)
+voice = Voice(broadcast)
+mate = MateLink()
 vision = None  # needs the cameras, so it starts at startup
 
 
@@ -55,7 +59,7 @@ async def startup():
     grbl.start()
     cameras.extend(await asyncio.to_thread(camera.start_all))
     global vision
-    vision = Vision(cameras, grbl, broadcast)
+    vision = Vision(cameras, grbl, broadcast, mate)
     vision.run()
 
 
@@ -307,6 +311,20 @@ async def scene(fresh: bool = False):
     return await asyncio.to_thread(vision.update) if fresh else vision.scene
 
 
+class Say(BaseModel):
+    text: str
+    wait: bool = False   # True: return once it has been spoken
+
+
+@app.post("/api/say")
+async def say(body: Say):
+    """Speak out loud on the table's speaker. Use it to talk to the people at the table, and to
+    ask them when something is impossible or unclear; their answers come back on the talk page
+    (/api/transcripts)."""
+    err = await asyncio.to_thread(voice.say, body.text, body.wait)
+    return {"ok": err is None, "error": err}
+
+
 @app.post("/api/transcribe")
 async def transcribe(request: Request):
     """Body: one utterance as a 16 or 24 kHz mono 16-bit WAV. Returns the transcript item,
@@ -359,11 +377,27 @@ def index():
     return FileResponse(HERE / "static" / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+GUIDES = HERE / "agent"   # the repo's agent/ folder, deployed next to the hub
+
+
 @app.get("/api/guide", response_class=PlainTextResponse)
 def guide():
-    """How to drive the table: limits, gripper, pick-and-place recipes (GUIDE.md). The agent
-    reads this first."""
-    return (HERE / "GUIDE.md").read_text()
+    """Start here: what the table and Mate can do and how to behave (agent/README.md). The agent
+    reads this first, then /api/guide/table, /api/guide/mate and /api/notes."""
+    return (GUIDES / "README.md").read_text()
+
+
+@app.get("/api/guide/{name}", response_class=PlainTextResponse)
+def guide_page_text(name: str):
+    path = GUIDES / f"{name}.md"
+    if not name.isidentifier() or not path.exists():
+        raise HTTPException(404, f"no guide {name}; try table or mate")
+    return path.read_text()
+
+
+@app.get("/guide")
+def guide_page():
+    return FileResponse(HERE / "static" / "guide.html", headers={"Cache-Control": "no-cache"})
 
 
 NOTES = HERE / "notes.md"   # this build's notes; lives on the Pi only (not deployed, not in git)
@@ -390,11 +424,6 @@ def add_note(body: Note):
     with NOTES.open("a") as f:
         f.write(f"- {time.strftime('%Y-%m-%d %H:%M')} ({body.by}): {line}\n")
     return {"ok": True}
-
-
-@app.get("/guide")
-def guide_page():
-    return FileResponse(HERE / "static" / "guide.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/scene")

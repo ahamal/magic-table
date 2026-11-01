@@ -21,14 +21,28 @@
 </style>
 </head>
 <body>
-<nav><b>TABLE</b><a href="/">Jog</a><a href="/scene">Scene</a><a href="/guide">Guide</a><a href="/api/guide">Plain text (for agents)</a><a href="/api/notes">Notes</a></nav>
+<nav><b>TABLE</b><a href="/">Jog</a><a href="/scene">Scene</a><a href="/guide">Start here</a><a href="/guide?doc=table">Table</a><a href="/guide?doc=mate">Mate</a><a href="/api/notes">Notes</a><a href="/api/guide">Plain text (for agents)</a></nav>
 <main><div id="doc">Loading…</div><div id="notes"></div></main>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <script>
-const render = (id, md) => document.getElementById(id).innerHTML =
-  window.marked ? marked.parse(md) : '<pre>' + md.replace(/</g, '&lt;') + '</pre>';
-fetch('/api/guide').then(r => r.text()).then(md => render('doc', md));
-fetch('/api/notes').then(r => r.text()).then(md => render('notes', md));
+// ?doc=table|mate shows that guide; no doc = the start page, with this build's notes under it
+const doc = new URLSearchParams(location.search).get('doc');
+const render = (id, md) => {
+  const el = document.getElementById(id);
+  el.innerHTML = window.marked ? marked.parse(md) : '<pre>' + md.replace(/</g, '&lt;') + '</pre>';
+  el.querySelectorAll('a[href]').forEach(a => {
+    const href = a.getAttribute('href');
+    if (/^https?:/.test(href)) return;
+    if (href.startsWith('../')) {                                 // elsewhere in the repo: on GitHub
+      a.href = 'https://github.com/ahamal/magic-table/blob/main/' + href.slice(3);
+    } else if (href.endsWith('.md')) {                            // another guide: stay on this page
+      const name = href.replace(/\.md$/, '');
+      a.href = name === 'README' ? '/guide' : '/guide?doc=' + name;
+    }
+  });
+};
+fetch(doc ? '/api/guide/' + doc : '/api/guide').then(r => r.text()).then(md => render('doc', md));
+if (!doc) fetch('/api/notes').then(r => r.text()).then(md => render('notes', md));
 </script>
 </body>
 </html>
