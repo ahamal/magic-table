@@ -3,7 +3,8 @@
 Usage: python markers.py   (needs: pip install opencv-contrib-python-headless pillow)
 Writes markers.pdf (US Letter) next to this file. Print at 100% / actual size.
 
-Dictionary DICT_4X4_50. IDs 0-3 go on the board corners, ID 10 on the head plate.
+Dictionary DICT_4X4_50. IDs 0-3 go on the board corners, ID 10 on the head plate,
+ID 20 on top of Mate (its top edge toward Mate's face, so the marker gives its heading).
 The white border is part of each marker: cut along the grey line, not the black.
 """
 
@@ -17,10 +18,15 @@ DPI = 300
 PAGE = (8.5, 11)              # inches, US Letter
 DICT = cv2.aruco.DICT_4X4_50
 
-CORNER_BLACK, CORNER_BORDER = 40, 6   # mm: 52 mm cut size
-HEAD_BLACK, HEAD_BORDER = 34, 5       # mm: 44 mm cut size, fits the head plate
-CORNERS = {0: "front-left", 1: "front-right", 2: "back-left", 3: "back-right"}
+# Sizes from a test on the black board: cam 1 still found the far corners when they were
+# simulated down to 15 mm; these keep a margin for worse light and angles.
+CORNER_BLACK, CORNER_BORDER = 30, 5   # mm: 40 mm cut size
+HEAD_BLACK, HEAD_BORDER = 25, 4       # mm: 33 mm cut size, fits the head plate
+MATE_BLACK, MATE_BORDER = 30, 5       # mm: 40 mm cut size, on top of Mate
+MATE_TAB = 9                          # mm: extra strip above Mate's marker for the arrow
+CORNERS = (0, 1, 2, 3)
 HEAD_ID = 10
+MATE_ID = 20
 
 
 def px(mm):
@@ -60,19 +66,29 @@ def sheet():
            fill="black", font=small)
 
     cut = CORNER_BLACK + 2 * CORNER_BORDER
-    for i, (id_, where) in enumerate(CORNERS.items()):
-        x = 20 + (i % 2) * (cut + 40)
-        y = 28 + (i // 2) * (cut + 18)
-        place(marker(id_, CORNER_BLACK, CORNER_BORDER), x, y, f"ID {id_} · board, {where} (front = cam 1's side)")
+    for i, id_ in enumerate(CORNERS):
+        place(marker(id_, CORNER_BLACK, CORNER_BORDER), 20 + i * (cut + 10), 28, f"ID {id_} · board corner")
+    d.text((px(20), px(28 + cut + 8)), "Any corner each, black board all around (a white border touching white "
+           "cloth hides it).", fill="black", font=small)
 
     hcut = HEAD_BLACK + 2 * HEAD_BORDER
-    y = 28 + 2 * (cut + 18)
+    y = 28 + cut + 30
     for i in range(2):
-        place(marker(HEAD_ID, HEAD_BLACK, HEAD_BORDER), 20 + i * (hcut + 40), y,
-              f"ID {HEAD_ID} · head plate" + (" (spare)" if i else ""))
+        place(marker(HEAD_ID, HEAD_BLACK, HEAD_BORDER), 20 + i * (hcut + 16), y,
+              f"ID {HEAD_ID} · head" + (" (spare)" if i else ""))
+
+    # Mate: the marker plus a strip above it with an arrow; that edge goes toward Mate's face
+    mate = marker(MATE_ID, MATE_BLACK, MATE_BORDER)
+    tab = Image.new("RGB", (mate.width, mate.height + px(MATE_TAB)), "white")
+    tab.paste(mate, (0, px(MATE_TAB)))
+    t = ImageDraw.Draw(tab)
+    cx, top = tab.width // 2, px(1.5)
+    t.polygon([(cx, top), (cx - px(3.5), top + px(4)), (cx + px(3.5), top + px(4))], fill="black")
+    t.text((cx + px(5), top), "face", fill="black", font=small)
+    place(tab, 20 + 2 * (hcut + 16) + 10, y - MATE_TAB, f"ID {MATE_ID} · top of Mate, arrow to its face")
 
     # 100 mm check ruler
-    y = px(28 + 2 * (cut + 18) + hcut + 20)
+    y = px(28 + cut + 30 + max(hcut, MATE_BLACK + 2 * MATE_BORDER) + 22)
     x0, x1 = px(20), px(120)
     d.line([x0, y, x1, y], fill="black", width=3)
     for mm in range(0, 101, 10):

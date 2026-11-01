@@ -10,3 +10,7 @@ captures/
 build/
 node_modules/
 secrets.h
+software/hub/certs/
+software/hub/transcripts.jsonl
+software/hub/calibration.json
+software/hub/last_position.json

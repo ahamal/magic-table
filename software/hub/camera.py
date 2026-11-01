@@ -44,6 +44,13 @@ class Camera:
             self.cam.capture_file(buf, format="jpeg")
             return buf.getvalue()
 
+    def image(self):
+        """The current frame as a PIL image (RGB), for the vision code."""
+        if self.cam is None:
+            return None
+        with self._lock:
+            return self.cam.capture_image("main")
+
     def frame(self, width=STREAM_WIDTH, quality=75):
         """A smaller JPEG of the current frame for the live view (~50 KB)."""
         if self.cam is None:

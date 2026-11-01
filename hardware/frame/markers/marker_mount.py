@@ -15,11 +15,11 @@ import numpy as np
 from manifold3d import Manifold
 
 # ---- Marker (printed on paper, white border included) ----
-MARKER = 44.0       # outer size of the printed square
+MARKER = 33.0       # outer size of the printed square (25 mm black + 4 mm border)
 MARKER_GAP = 0.6    # paper slides between the guides
 
 # ---- Plate ----
-WIDTH = 48.0        # across the extrusion (20 mm face, overhangs both sides)
+WIDTH = 38.0        # across the extrusion (20 mm face, overhangs both sides)
 END = 13.0          # bolt tab at each end
 THICK = 4.0
 GUIDE = 6.0         # length of each arm of a corner guide

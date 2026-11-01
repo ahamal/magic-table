@@ -46,8 +46,11 @@ Tuned on Oct 30 at 12V (see [`docs/log.md`](../../docs/log.md)):
 
 | Setting | Value | Note |
 |---|---|---|
-| `$100`–`$102` steps/mm | 50 | **Not measured yet.** GT2 + 20T pulley is 40 (1/8 step) or 80 (1/16 step) |
-| `$110`, `$111` max rate X/Y | 9000 mm/min (~150 mm/s) | 12000 skipped steps |
+| `$100`, `$101` steps/mm X/Y | 40 | Measured Nov 1: a 100 mm jog moves 100 mm. GT2 belt, 20T pulley, TMC2208 at 1/8 step (no jumpers) |
+| `$102` steps/mm Z | 40 | Measured Nov 1: 100 commanded moved 126 at 50. Same belt and pulley as X/Y |
+| Z travel | 0 to ~150 | Work Z 0 = cup touching the board; ~150 mm to the top. Travel height (over Mate) is Z 120 |
+| `$3` direction invert | 4 (Z) | The Z motor ran backwards (Z+ lowered the cup). Now Z+ is up, as on any CNC |
+| `$110`, `$111` max rate X/Y | 11000 mm/min (~183 mm/s) | Real mm since steps/mm = 40. About the step rate that ran clean on Oct 30; ~15000 real mm/min skipped steps |
 | `$112` max rate Z | 7000 mm/min | Z doesn't need more; keep picks gentle |
 | `$120`–`$122` acceleration | 500 mm/s² | Was 80; halved the test time, clean |
 | `$22` homing | on | GRBL starts in alarm: `$H` to home, or `$X` to unlock |
@@ -65,12 +68,10 @@ Tuned on Oct 30 at 12V (see [`docs/log.md`](../../docs/log.md)):
 - **Why GRBL drives the gripper, not a Nano:** a Nano on USB with its ground tied to 12V − made a second ground path through the Pi, and stepper current on it knocked the Uno off USB on every move. With the MOSFETs on the shield there's one USB cable and one ground. The pump and valve also run in order with the moves (M-codes wait for motion to finish), and the Pi still never touches 12V.
 - **SpnDir as the valve:** GRBL sets the spindle direction pin with `M4` and clears it with `M3`, and `S0` keeps the spindle itself off. It's also the Uno's LED pin, so the valve blips while the Uno boots. A soft reset can leave it set; the hub closes the valve after the next unlock or home.
 - **Camera:** Camera v2 field of view is ~62°×49°; at ~50 cm it covers about 60×44 cm. Keep the ribbon away from stepper wires.
-- **MOSFETs:** shield signal pin → 220 Ω → gate, 10 k gate → GND; source → shield GND and 12V −; drain → load −; load + → 12V +; 1N4007 across the load, stripe on +.
-
-**Z limit goes on SpnEn, not Z+/Z−.** This GRBL is built with variable spindle, which moves the spindle output to D11 (the shield's Z end-stop header) and reads the Z limit on D12 (the header labeled SpnEn). SpnEn is an input here; don't drive anything from it.
-
-**VL6180X:** usable ~5–100 mm; mount so the table is 20–60 mm below with the head up. Keep its window clear. 255 = out of range. Average ~5 readings.
-- **Calibration:** ArUco marker on the head, move to a grid of points, fit pixel → gantry mm. Remove the marker afterwards. Small backup markers on top of the frame corners.
+- **VL6180X:** usable ~5–100 mm; mount so the table is 20–60 mm below with the head up. Keep its window clear. 255 = out of range. Average ~5 readings.
+- **Calibration:** ArUco head marker (on the [marker plate](markers/README.md)) moved over a grid at three heights; the hub fits each camera ([`software/hub/vision.py`](../../software/hub/vision.py)). Start with Z at its top over the middle of the board: calibration only goes down from there, never closer than 15 mm to the board, and stops with no further moves on any reset, pause or error.
+- **No limit switches, so counts can lie.** A move into an end of travel stalls and skips steps, but GRBL counts it anyway, and the next move "back" by count overshoots. On Nov 1 calibration went up into the top of Z, then "returned" 40 mm too low and tore the board paper. Hence: start at the top and go down, never assume room above.
+- **Mate rule:** below travel height (Z's top, recorded at calibration), the hub won't move the head over Mate: absolute moves go up first, jogs across Mate are refused.
 - **Robo Diner hand:** the tilt/grab servos (PCA9685) — keep or replace with the suction head? See open questions.
 
 ## Open

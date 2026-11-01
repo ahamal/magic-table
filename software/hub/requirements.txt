@@ -1,3 +1,5 @@
 fastapi
 uvicorn[standard]
 pyserial
+requests
+opencv-contrib-python-headless==4.10.0.84

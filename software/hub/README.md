@@ -39,18 +39,33 @@ The body API for the whole table. Step 2.
 | `POST /api/realtime/{status,hold,resume,reset,jog_cancel}` | Sent immediately |
 | `GET /api/gripper` | `{pump, valve}` |
 | `POST /api/gripper/{pump_on,pump_off,valve_on,valve_off,grip,drop,stop}` | Runs after queued motion; returns `{pump, valve}`, plus `error` if GRBL refused (e.g. `error:9` in Alarm) |
+| `POST /api/transcribe` | Body: one utterance as a 16/24 kHz mono 16-bit WAV. Returns `{id, at, text, audio_ms, took_ms}`, or `{text: ""}` if nothing was said |
+| `GET /api/transcripts?since=0` | Everything said on the talk page, oldest first |
+| `DELETE /api/transcripts` | Clear them |
 | `GET /api/cameras` | `[{cam, model, ok, error}]` |
 | `GET /api/capture?cam=0` | A fresh full-size JPEG from one camera; 404 if there's no such camera |
 | `GET /api/stream?cam=0&fps=10` | Live MJPEG view, 820 px wide (~7 fps, ~40 KB a frame); open it in a browser tab or an `<img>` |
-| `WS /ws` | `status`, `settings`, `gripper` and `log` events |
+| `WS /ws` | `status`, `settings`, `gripper`, `transcript`, `transcripts_cleared` and `log` events |
 
 **Run it on the Pi:**
 
 ```bash
-rsync -a --exclude .venv --exclude __pycache__ software/hub/ ash@raspberrypi.local:hub/
+rsync -a --exclude .venv --exclude __pycache__ --exclude certs --exclude .env --exclude transcripts.jsonl \
+  software/hub/ ash@raspberrypi.local:hub/
 ssh ash@raspberrypi.local
 cd ~/hub && python3 -m venv --system-site-packages .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+.venv/bin/python serve.py      # HTTP :8000 and HTTPS :8443
+```
+
+**First time only, on the Pi:**
+
+```bash
+# Meta Model API key, for speech-to-text. Private to the Pi; never commit it.
+umask 077; echo "MODEL_API_KEY=<your key>" > ~/hub/.env
+# self-signed certificate for :8443 (phones only allow the mic on HTTPS)
+mkdir -p ~/hub/certs && cd ~/hub/certs && openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+  -keyout hub.key -out hub.crt -subj "/CN=raspberrypi.local" \
+  -addext "subjectAltName=DNS:raspberrypi.local,IP:192.168.1.99"
 ```
 
 Set `GRBL_PORT` if the Uno isn't `/dev/ttyACM0`. Nothing else may hold the port, or the camera, while the server runs. `--system-site-packages` lets the venv import picamera2, which comes with Raspberry Pi OS.
@@ -64,6 +79,38 @@ journalctl -u hub -f           # logs
 ```
 
 Stop it (`sudo systemctl stop hub`) before running anything else that opens the serial port, such as a test script.
+
+## Vision and the 3D page
+
+[`vision.py`](vision.py): where things are, from the cameras, with OpenCV only (no cloud AI). The gantry is the reference: calibration moves the head marker (ArUco ID 10) over a grid at three heights and fits each camera's 3D projection in gantry coordinates (X/Y mm, Z GRBL units, Z+ up). Twice a second it then finds the head (and checks it against GRBL, in mm), Mate (ID 20: position, heading, height), cards on the dark board (center, angle, face up/down) and the board markers (IDs 0–3; if they move in the picture the camera moved, and it's corrected). Marker sizes and offsets are constants at the top.
+
+**Page:** `http://raspberrypi.local:8000/scene`, a live three.js view: board, head and cup, Mate, cards, cameras; buttons for Calibrate, Board is here, Re-anchor, Travel height = here.
+
+**Order of use:**
+1. Z at its **top** over the middle of the board, Mate not under the 120 mm square around it, GRBL unlocked.
+2. **Calibrate** asks how far the cup is above the board (mm), then goes down from there in three passes, never closer than 15 mm. Any reset, pause, alarm or STOP aborts it with no further moves. The start height becomes the **travel height**.
+3. Lower the cup until it just touches the board, press **Board is here** (board height from the gantry, not from marker size).
+4. After any GRBL reset (or hub restart), unlock, then **Re-anchor**: Z goes back to the last saved value, X/Y from where the camera sees the head. Don't use Work zero on the jog page; it shifts every position.
+
+**Mate rule:** below travel height, `/api/move` goes up to travel height before crossing Mate and refuses to end over it; `/api/jog` across Mate is refused. (`/api/send` is raw G-code and isn't checked.)
+
+| Endpoint | |
+|---|---|
+| `POST /api/calibrate {room, span=60, steps=3, levels=3, feed=1500}` | `room` = mm between cup and board at the start (required) |
+| `GET /api/calibration` | calibrated, per-camera fit, `table_z`, `travel_z`, `needs_reanchor`, head check |
+| `POST /api/calibration/table` | the cup is touching the board now |
+| `POST /api/calibration/travel` | the current Z is the travel height |
+| `POST /api/calibration/reanchor` | after a reset |
+| `GET /api/scene?fresh=false` | head, Mate, cards, board, cameras; also the `scene` WebSocket event |
+
+## Talk page
+
+`https://raspberrypi.local:8443/talk` (or `https://192.168.1.99:8443/talk` on phones that don't resolve `.local`): instructions by voice, from any phone or laptop on the Wi-Fi.
+
+- **Tap the button, talk, tap again.** The page records, turns the audio into a 16 kHz mono WAV and posts it to the hub; the hub sends it to Meta's **Muse Voice Transcribe** (`api.meta.ai/v1/asr/transcribe`, push-to-talk mode, biased toward table words like "Mate", "raise", "flop") and shows the text. About 1–1.5 s for a sentence.
+- **Every page sees every transcript** live, so several phones and the agent share one list. They're kept in `~/hub/transcripts.jsonl` (not in git) until cleared.
+- **The certificate is self-signed:** each device shows a warning once; accept it ("visit this website" / "proceed"). The plain-HTTP page shows transcripts but can't use the mic, and links to the HTTPS one.
+- The agent reads instructions with `GET /api/transcripts?since=<last id>` or the `transcript` WebSocket events.
 
 ## Config
 

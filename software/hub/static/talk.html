@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Table Talk</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --panel: #fff; --ink: #161616; --muted: #74746f; --line: #dcdcd8;
+    --accent: #1d4ed8; --accent-ink: #fff; --rec: #dc2626; --ok: #15803d; --bad: #dc2626; --mine: #e8eefc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e0e0e; --panel: #161616; --ink: #e8e8e6; --muted: #8a8a86; --line: #2c2c2a;
+      --accent: #3b82f6; --rec: #ef4444; --ok: #4ade80; --bad: #f87171; --mine: #172238;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif;
+    -webkit-tap-highlight-color: transparent; }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
+    background: var(--panel); border-bottom: 1px solid var(--line); flex: none; }
+  header b { font-size: 14px; letter-spacing: .08em; }
+  .tag { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .tag::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: currentColor; }
+  .tag.ok { color: var(--ok); } .tag.bad { color: var(--bad); }
+  .spacer { flex: 1; }
+  header button { font: inherit; font-size: 13px; color: var(--muted); background: none; border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 10px; }
+
+  #list { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  #empty { margin: auto; text-align: center; color: var(--muted); max-width: 26ch; }
+  .msg { align-self: flex-end; max-width: 85%; background: var(--mine); border-radius: 14px 14px 4px 14px; padding: 9px 13px; }
+  .msg.other { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; }
+  .msg time { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .msg.pending { color: var(--muted); font-style: italic; }
+  .msg.err { color: var(--bad); }
+
+  footer { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--line); }
+  #mic { position: relative; width: 84px; height: 84px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+  #mic svg { width: 34px; height: 34px; }
+  #mic.rec { background: var(--rec); }
+  #mic:disabled { opacity: .5; }
+  #ring { position: absolute; inset: -6px; border-radius: 50%; border: 3px solid var(--rec); opacity: 0; transform: scale(1);
+    transition: transform 80ms linear, opacity 120ms; pointer-events: none; }
+  #mic.rec #ring { opacity: .6; }
+  #hint { font-size: 13px; color: var(--muted); min-height: 1.4em; text-align: center; }
+  #hint a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <b>TABLE TALK</b>
+  <span id="conn" class="tag">connecting</span>
+  <span class="spacer"></span>
+  <button id="clear" title="Delete every transcript">Clear</button>
+</header>
+
+<main id="list"><p id="empty">Tap the button, say your instructions, tap again. What you said appears here.</p></main>
+
+<footer>
+  <button id="mic" aria-label="Start talking">
+    <span id="ring"></span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/></svg>
+  </button>
+  <div id="hint">Tap to talk</div>
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const RATE = 16000;        // what we send; the API takes 16 or 24 kHz mono 16-bit
+const MAX_S = 60;          // stop on our own after a minute
+const shown = new Set();   // transcript ids already on screen
+const mine = new Set();    // ids this phone sent
+
+// ---- transcript list ----
+function fmtTime(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function bubble(cls) {
+  $('empty').hidden = true;
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  $('list').append(d);
+  return d;
+}
+function fill(d, item) {
+  d.className = 'msg' + (mine.has(item.id) ? '' : ' other');
+  d.textContent = item.text;
+  const t = document.createElement('time'); t.textContent = fmtTime(item.at); d.append(t);
+}
+function show(item, into) {
+  if (shown.has(item.id)) return;
+  shown.add(item.id);
+  fill(into || bubble(''), item);
+  scrollDown();
+}
+function scrollDown() { $('list').scrollTop = $('list').scrollHeight; }
+function clearList() {
+  shown.clear();
+  $('list').querySelectorAll('.msg').forEach(m => m.remove());
+  $('empty').hidden = false;
+}
+
+// ---- live updates from the hub ----
+function connect() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.onopen = () => { $('conn').textContent = 'connected'; $('conn').className = 'tag ok'; load(); };
+  ws.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'transcript') show(ev);
+    else if (ev.type === 'transcripts_cleared') clearList();
+  };
+  ws.onclose = () => { $('conn').textContent = 'offline'; $('conn').className = 'tag bad'; setTimeout(connect, 1500); };
+  setInterval(() => ws.readyState === 1 && ws.send('ping'), 10000);
+}
+function load() { fetch('/api/transcripts').then(r => r.json()).then(items => items.forEach(i => show(i))).catch(() => {}); }
+
+$('clear').onclick = () => { if (confirm('Delete every transcript?')) fetch('/api/transcripts', { method: 'DELETE' }); };
+
+// ---- recording ----
+let stream = null, ctx = null, node = null, chunks = [], recording = false, startedAt = 0, timer = null;
+
+async function openMic() {
+  if (stream) return;
+  stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(stream);
+  node = ctx.createScriptProcessor(4096, 1, 1);
+  const mute = ctx.createGain(); mute.gain.value = 0;   // keeps the node running without playing back
+  src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+  node.onaudioprocess = e => {
+    if (!recording) return;
+    const x = e.inputBuffer.getChannelData(0);
+    chunks.push(new Float32Array(x));
+    let s = 0; for (let i = 0; i < x.length; i += 16) s += x[i] * x[i];
+    $('ring').style.transform = `scale(${1 + Math.min(Math.sqrt(s / (x.length / 16)) * 4, 0.45)})`;
+  };
+}
+function closeMic() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (ctx) ctx.close();
+  stream = ctx = node = null;
+}
+
+async function start() {
+  try {
+    await openMic();
+    await ctx.resume();
+  } catch (e) {
+    $('hint').textContent = 'No microphone: ' + (e.message || e.name) + '. Allow the mic for this page and try again.';
+    closeMic();
+    return;
+  }
+  chunks = []; recording = true; startedAt = Date.now();
+  $('mic').classList.add('rec'); $('mic').setAttribute('aria-label', 'Stop and transcribe');
+  tick(); timer = setInterval(tick, 250);
+}
+function tick() {
+  const s = (Date.now() - startedAt) / 1000;
+  $('hint').textContent = `Listening… ${Math.floor(s)}s · tap to finish`;
+  if (s >= MAX_S) stop();
+}
+
+async function stop() {
+  recording = false; clearInterval(timer);
+  $('mic').classList.remove('rec'); $('mic').setAttribute('aria-label', 'Start talking');
+  $('ring').style.transform = '';
+  const secs = (Date.now() - startedAt) / 1000;
+  if (secs < 0.4 || !chunks.length) { $('hint').textContent = 'Too short. Tap, talk, then tap again.'; return; }
+
+  const wav = toWav(chunks, ctx.sampleRate);
+  chunks = [];
+  const pending = bubble('pending'); pending.textContent = 'Transcribing…'; scrollDown();
+  $('hint').textContent = 'Transcribing…';
+  $('mic').disabled = true;
+  try {
+    const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav });
+    const item = await r.json();
+    if (!r.ok) throw new Error(item.detail || r.status);
+    if (!item.text) { pending.remove(); if (!shown.size) $('empty').hidden = false; $('hint').textContent = "Didn't catch anything. Try again."; }
+    else if (shown.has(item.id)) { pending.remove(); $('hint').textContent = 'Tap to talk'; }   // the WebSocket was faster
+    else { mine.add(item.id); show(item, pending); $('hint').textContent = 'Tap to talk'; }
+  } catch (e) {
+    pending.className = 'msg err'; pending.textContent = 'Failed: ' + e.message;
+    $('hint').textContent = 'Tap to try again';
+  }
+  $('mic').disabled = false;
+}
+
+// Float32 chunks at the mic's rate -> 16 kHz mono 16-bit WAV (box-filter downsample)
+function toWav(parts, rate) {
+  const n = parts.reduce((a, p) => a + p.length, 0);
+  const all = new Float32Array(n); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
+  const ratio = rate / RATE, len = Math.floor(n / ratio);
+  const pcm = new Int16Array(len);
+  for (let i = 0; i < len; i++) {
+    const a = Math.floor(i * ratio), b = Math.min(n, Math.floor((i + 1) * ratio));
+    let s = 0; for (let j = a; j < b; j++) s += all[j];
+    const v = Math.max(-1, Math.min(1, s / Math.max(1, b - a)));
+    pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  const buf = new ArrayBuffer(44 + pcm.byteLength), d = new DataView(buf);
+  const str = (off, s) => { for (let i = 0; i < s.length; i++) d.setUint8(off + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); d.setUint32(4, 36 + pcm.byteLength, true); str(8, 'WAVE'); str(12, 'fmt ');
+  d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
+  d.setUint32(24, RATE, true); d.setUint32(28, RATE * 2, true); d.setUint16(32, 2, true); d.setUint16(34, 16, true);
+  str(36, 'data'); d.setUint32(40, pcm.byteLength, true);
+  new Int16Array(buf, 44).set(pcm);
+  return buf;
+}
+
+$('mic').onclick = () => recording ? stop() : start();
+// release the mic when the page goes to the background (and the phone's mic indicator with it)
+document.addEventListener('visibilitychange', () => { if (document.hidden) { if (recording) stop(); closeMic(); } });
+
+// the mic only works on HTTPS (or localhost)
+if (!window.isSecureContext || !navigator.mediaDevices) {
+  const url = `https://${location.hostname}:8443/talk`;
+  $('mic').disabled = true;
+  $('hint').innerHTML = `The microphone needs the secure page: <a href="${url}">${url}</a>`;
+}
+
+connect();
+</script>
+</body>
+</html>

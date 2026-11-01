@@ -1,12 +1,15 @@
 [Unit]
-Description=Magic Table hub (GRBL, gripper, camera + jog page)
+Description=Magic Table hub (GRBL, gripper, cameras, speech + jog and talk pages)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 User=ash
 WorkingDirectory=/home/ash/hub
-ExecStart=/home/ash/hub/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+# MODEL_API_KEY for Meta's API; the file stays on the Pi, never in git
+EnvironmentFile=-/home/ash/hub/.env
+# HTTP :8000 and HTTPS :8443 (the talk page's mic needs HTTPS)
+ExecStart=/home/ash/hub/.venv/bin/python serve.py
 Restart=always
 RestartSec=2
 # an open /api/stream keeps uvicorn waiting on shutdown; don't wait long
