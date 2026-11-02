@@ -1,6 +1,6 @@
 # Mate guide
 
-Mate is a small wooden robot on the board: two wheels, a flipper arm, a face screen and a camera, on its own Wi-Fi API at `http://mate.local`. It's the table's human communicator. The full API reference (every endpoint, field and error) is [software/mate/README.md](../software/mate/README.md); this page is how to use it. Served at `GET /api/guide/mate`.
+Mate is a small wooden robot on the board: two wheels, a flipper arm, a face screen and a camera, on its own Wi-Fi API at `http://mate.local`. It's the table's friendly helper and a character you puppeteer: it **never speaks and makes no sound**. It talks with gestures (below): its face, flipper and wheels. The full API reference (every endpoint, field and error) is [software/mate/README.md](../software/mate/README.md); this page is how to use it. Served at `GET /api/guide/mate`.
 
 ## Calls you'll use
 
@@ -8,7 +8,7 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 |---|---|
 | `GET /info` | Limits, screen size, camera. Once at start. |
 | `GET /status` | `busy`, the last move (`last.d1/d2`, `result`), flipper angle (`servo_now`), screen, `boots`. |
-| `POST /step?s1=&s2=&speed=640&accel=1000` | Move both wheels (half-steps, ±4096 max per call). Returns at once; poll `/status` until `busy` is false. Use `speed=640` (80% of the max 800) and `accel=1000`: slower is sluggish, full speed drops the Wi-Fi now and then. |
+| `POST /step?s1=&s2=&speed=800&accel=1000` | Move both wheels (half-steps, ±4096 max per call). Returns at once; poll `/status` until `busy` is false. Use full speed and acceleration (`speed=800&accel=1000`): slower is sluggish. |
 | `POST /stop` | Stop the wheels now. |
 | `POST /servo?angle=&speed=` | The flipper (degrees). |
 | `POST /screen` | Show frames on the face (128×64, 1 bit/pixel, 1024 bytes a frame, up to 64 frames, `X-FPS`, `X-Repeat`). |
@@ -28,14 +28,30 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 
 - A black plastic knife on a servo on Mate's **right side**, 42 mm from the right wheel's axle at 45° (forward and up). The shaft points out of the side, so the arm swings beside the box: out 73 mm, then bent 90° inward across the whole front of the face.
 - **20° is rest**: the arm angles down and the bent part lies on the table in front of the face. **It can't go below 20°**; up is fine. **~65°**: the arm points straight forward and the bent part stands flat, parallel to and centred on the face. ~110° reaches up over the top.
-- **Always give the flipper a `speed`.** A jump (no `speed`) or full speed pulls a lot of current and drops Mate's Wi-Fi now and then (~5% at full speed); up to ~80% of the max is fine. Same for the wheels: `speed=640&accel=1000` is safe.
-- **Gestures:** wave = up to ~80°, then swing 65↔110 a few times at `speed=60`, back to 20 at `speed=40`. Salute = sweep to ~110 at `speed=60`, hold a moment, back down. A slow sweep reads as a shrug or a "hmm".
+- **Always give the flipper a `speed`, at most ~60% of the max (`speed` ≤ 360).** A jump (no `speed`) or full speed pulls a lot of current and drops Mate's Wi-Fi now and then. The wheels are fine at full speed.
+- **Gestures:** use the hub's gestures (below), which keep the flipper at gentle speeds; `speed` up to ~300 is fine for small, quick moves.
 - At rest it's down at the table in front of Mate: it can slide under a thin edge there.
+
+## Gestures: how Mate talks
+
+`POST hub/api/mate/gesture {"name": "thumbs_up", "to": "Sam"}`: a reaction face, flipper and wheel moves, and a line in the chat as Mate's ("👍 thumbs up at Sam"). `GET hub/api/mate/gestures` lists them; they're defined in [gestures.json](gestures.json) (edit it to tune them or add more; the hub reads it each time). Returns at once (`wait: true` to block until done); refused while Mate is busy.
+
+| Mood | Gestures |
+|---|---|
+| Answers | `yes`, `no`, `thumbs_up`, `thumbs_down`, `shrug`, `maybe` |
+| Feelings | `celebrate`, `laugh`, `shocked`, `sulk`, `nervous`, `smug`, `love`, `bored`, `angry`, `eye_roll`, `wink` |
+| Social | `hello`, `bye`, `point`, `bow`, `suspicious` |
+| Game | `thinking`, `your_turn`, `ready`, `peek`, `fold`, `all_in`, `bluff` |
+
+- **One-offs:** no `name`, and your own `{emoji, text, face, steps}` (same format as gestures.json). Faces are the 24 reactions in [software/mate/faces/reactions/](../software/mate/faces/reactions.png).
+- Every gesture **ends where it started** (moves are a few cm, turns come back), with the flipper back at rest (20°) and the eyes back. Give Mate ~5 cm of room around it, and never gesture with a card on Mate or the cup low over it.
+- Gestures take ~4–12 s. Turns add up a little (~4° over a dozen gestures): re-square Mate with `/api/mate/goto` before precise work.
+- **Aim it:** `to` only names who it's for in the chat. To really face a player, turn Mate first (`/api/mate/goto` with a `heading`, or a turn), then gesture.
 
 ## Face
 
 - **Default: happy, lively eyes.** Loop `software/mate/faces/eyes.bin` (56 frames at 12 fps: blinks, looks left and right) whenever nothing else is going on. Vary it: random eye moves, a blink at the right moment.
-- **Communicate:** draw anything 128×64 one-bit (Pillow: `Image.new("1", (128, 64))`, `.tobytes()` is already the right format): text for a player ("Your turn!"), an arrow, a score, a reaction (surprised, laughing, thinking). Play reactions once (`X-Repeat: 1`), then go back to the eyes.
+- **Communicate:** gestures show a reaction face for you. For anything else, draw anything 128×64 one-bit (Pillow: `Image.new("1", (128, 64))`, `.tobytes()` is already the right format): text for a player ("Your turn!"), an arrow, a score, a reaction (surprised, laughing, thinking). Play reactions once (`X-Repeat: 1`), then go back to the eyes.
 - Be creative: it's the table's face. Faces in [software/mate/faces/](../software/mate/faces/) (`make.py` shows how to draw them).
 
 ## Camera
@@ -54,7 +70,7 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 - **Flipping cards over** (tested: 14 flips, all flat, either way over; ~4 s plus the place):
   1. Mate square to the card, and the flipper **lowered to rest (20°) first**: a card placed while the hand is up just gets pushed (and run over). The card's long side along Mate's heading.
   2. The crane places the card just in front of Mate's face so its near edge rests on the flipper's bent part (it lies on the table there). This build: card centre ~114 mm ahead of Mate's marker, centred left-right (the notes have the latest).
-  3. **At the same time:** flipper to 65° (`speed=60`) and drive forward ~95 mm (wheel speed 640). The near edge lifts, the card stands up, then tips over. ~4 s. It lands flipped ~10 cm further on, turned 3–5° clockwise (from above). Curving Mate during the push doesn't change that.
+  3. **At the same time:** flipper to 65° (`speed=60`) and drive forward ~95 mm (wheels at full speed). The near edge lifts, the card stands up, then tips over. ~4 s. It lands flipped ~10 cm further on, turned 3–5° clockwise (from above). Curving Mate during the push doesn't change that.
   4. Back up ~50 mm **before** lowering the flipper (or it comes down on the card), then flipper to 20°.
   5. Look where it landed before picking it. The small turn adds up if you flip the same card again and again (Mate squares to it each time): re-square it once it's ~20° off.
 - Keep Mate's turning centre at least ~2 cm inside the cup's board bounds, or a card that drifts on its top can end up out of reach.

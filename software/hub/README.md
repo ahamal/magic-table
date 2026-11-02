@@ -41,27 +41,44 @@ The body API for the whole table. Step 2.
 | `POST /api/realtime/{status,hold,resume,reset,jog_cancel}` | Sent immediately |
 | `GET /api/gripper` | `{pump, valve}` |
 | `GET /api/guide`, `/api/guide/{table,mate}` | the agent guides (repo `agent/`), plain text |
-| `POST /api/mate/goto {x, y, heading?}` | drive Mate's turning centre to (x, y) and face `heading`, with the camera checking (~5 mm, ~3°); raises the gantry head first. Wheels at 640 (80% of max) |
+| `POST /api/mate/goto {x, y, heading?}` | drive Mate's turning centre to (x, y) and face `heading`, with the camera checking (~5 mm, ~3°); raises the gantry head first. Wheels at full speed |
 | `GET /api/mate/home`, `POST /api/mate/home`, `POST /api/mate/home/set {x?, y?, heading?}` | Mate's home spot: where, go there, save a new one (no body = here) |
-| `POST /api/say {text, wait?}` | speak on the table's Bluetooth speaker (espeak-ng); a `speaking` event goes to the pages |
+| `GET /api/mate/gestures`, `POST /api/mate/gesture {name, to?, wait?}` | Mate's gestures (repo `agent/gestures.json`): a reaction face, flipper and wheel moves that end where they started, and a chat line as Mate's (`by: mate`, `via: gesture`). Or a one-off: `{emoji, text, face, steps}`. Refused while Mate is busy |
+| `POST /api/say {text, by?, wait?}` | speak on the table's Bluetooth speaker, and add the line to the chat under `by` (the agent's own name, default `agent`); a `speaking` event goes to the pages. Piper (local neural voice), streamed a sentence at a time; espeak-ng if Piper or the voice file is missing |
+| `GET /api/voice`, `POST /api/voice {voice?, speaker?, pace?}` | which voice, speaker (in multi-speaker files) and pace (1 = normal, lower = faster), and the voices installed; kept in `voice.json`. The default is `en_US-norman-medium` at pace 0.85 |
 | `GET /api/notes`, `POST /api/notes {text, by}` | this build's notes: what agents and people learned about this particular table. Kept on the Pi (`~/hub/notes.md`), never deployed over or committed |
 | `POST /api/gripper/{pump_on,pump_off,valve_on,valve_off,grip,drop,stop}` (grip`?pump_s=N`: pump N s, then hold on vacuum ~20 s) | Runs after queued motion; returns `{pump, valve}`, plus `error` if GRBL refused (e.g. `error:9` in Alarm) |
-| `POST /api/transcribe` | Body: one utterance as a 16/24 kHz mono 16-bit WAV. Returns `{id, at, text, audio_ms, took_ms}`, or `{text: ""}` if nothing was said |
-| `GET /api/transcripts?since=0` | Everything said on the talk page, oldest first |
-| `DELETE /api/transcripts` | Clear them |
+| `WS /ws/listen` | live speech to text: send 16 kHz mono PCM16 as binary frames while someone talks, then the text `end`; get `{type: "partial", text}` as words are recognised (~0.3 s behind), then `{type: "final", item}` (the chat message) or `{type: "error"}`. The hub relays to Meta's Muse Voice realtime endpoint, biased toward table words. Other pages get `chat_partial` events |
+| `POST /api/transcribe` | (fallback, not live) Body: one utterance as a 16/24 kHz mono 16-bit WAV. Returns `{id, at, text, audio_ms, took_ms}`, or `{text: ""}` if nothing was said |
+| `GET /api/chat?after=0&wait=0&by=` | The chat, oldest first: `{id, at, by, via, text}`; `by` is `player`, `mate` or an agent's name, `via` is `voice`, `typed`, `speaker` or `gesture`. `after` = only newer; `wait=N` waits up to N s (max 60) for a new one (long-poll, for agents); `by=player` = only people |
+| `POST /api/chat {text, by?}` | add a typed message (default `by: player`); spoken lines go through `/api/say`, Mate's through `/api/mate/gesture`, which add their own |
+| `DELETE /api/chat` | clear it. (`GET /api/transcripts?since=` is the old name for the chat) |
 | `GET /api/cameras` | `[{cam, model, ok, error}]` |
 | `GET /api/capture?cam=0` | A fresh full-size JPEG from one camera; 404 if there's no such camera |
 | `GET /api/stream?cam=0&fps=10` | Live MJPEG view, 820 px wide (~7 fps, ~40 KB a frame); open it in a browser tab or an `<img>` |
-| `WS /ws` | `status`, `settings`, `gripper`, `transcript`, `transcripts_cleared` and `log` events |
+| `WS /ws` | `status`, `settings`, `gripper`, `chat`, `chat_cleared`, `speaking`, `scene` and `log` events |
+
+**Voices** (Piper, not in git: ~60 MB each in `~/hub/voices/`):
+
+```bash
+cd ~/hub/voices && B=https://huggingface.co/rhasspy/piper-voices/resolve/main
+for v in en/en_US/norman/medium/en_US-norman-medium en/en_GB/semaine/medium/en_GB-semaine-medium en/en_GB/alan/medium/en_GB-alan-medium; do
+  curl -sLO $B/$v.onnx && curl -sLO $B/$v.onnx.json; done
+```
+
+Medium voices make ~5 s of speech in ~1.5 s on the Pi 5; "high" ones (e.g. ryan-high) take ~9 s, too slow.
+
 
 **Run it on the Pi:**
 
 ```bash
-rsync -a --exclude .venv --exclude __pycache__ --exclude certs --exclude .env --exclude transcripts.jsonl \
+rsync -a --exclude .venv --exclude __pycache__ --exclude certs --exclude .env --exclude chat.jsonl --exclude voices --exclude voice.json \
   software/hub/ ash@raspberrypi.local:hub/
+rsync -a agent/ ash@raspberrypi.local:hub/agent/                 # the guides and Mate's gestures
+rsync -a --include '*/' --include '*.bin' --exclude '*' software/mate/faces/ ash@raspberrypi.local:hub/faces/   # Mate's faces
 ssh ash@raspberrypi.local
 cd ~/hub && python3 -m venv --system-site-packages .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python serve.py      # HTTP :8000 and HTTPS :8443
+.venv/bin/python serve.py      # HTTP and HTTPS, both on :8000
 ```
 
 **First time only, on the Pi:**
@@ -69,7 +86,7 @@ cd ~/hub && python3 -m venv --system-site-packages .venv && .venv/bin/pip instal
 ```bash
 # Meta Model API key, for speech-to-text. Private to the Pi; never commit it.
 umask 077; echo "MODEL_API_KEY=<your key>" > ~/hub/.env
-# self-signed certificate for :8443 (phones only allow the mic on HTTPS)
+# self-signed certificate for HTTPS on :8000 (phones only allow the mic on HTTPS)
 mkdir -p ~/hub/certs && cd ~/hub/certs && openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
   -keyout hub.key -out hub.crt -subj "/CN=raspberrypi.local" \
   -addext "subjectAltName=DNS:raspberrypi.local,IP:192.168.1.99"
@@ -118,12 +135,12 @@ Stop it (`sudo systemctl stop hub`) before running anything else that opens the 
 
 ## Talk page
 
-`https://raspberrypi.local:8443/talk` (or `https://192.168.1.99:8443/talk` on phones that don't resolve `.local`): instructions by voice, from any phone or laptop on the Wi-Fi.
+`https://raspberrypi.local:8000/talk` (or `https://192.168.1.99:8000/talk` on phones that don't resolve `.local`): instructions by voice, from any phone or laptop on the Wi-Fi.
 
-- **Tap the button, talk, tap again.** The page records, turns the audio into a 16 kHz mono WAV and posts it to the hub; the hub sends it to Meta's **Muse Voice Transcribe** (`api.meta.ai/v1/asr/transcribe`, push-to-talk mode, biased toward table words like "Mate", "raise", "flop") and shows the text. About 1–1.5 s for a sentence.
-- **Every page sees every transcript** live, so several phones and the agent share one list. They're kept in `~/hub/transcripts.jsonl` (not in git) until cleared.
+- **Tap the button, talk, tap again.** The page streams the mic to the hub (`/ws/listen`), which relays it to Meta's **Muse Voice Transcribe** realtime endpoint (push-to-talk mode, biased toward table words like "Mate", "call", "raise", "flop"). Your words appear in your bubble as you speak, about 0.3 s behind, on every open page; the final text arrives ~0.1 s after you stop. If the live connection fails, the page falls back to sending the whole recording.
+- **It's a chat:** people talk (tap, speak, tap) or type; the agent's spoken lines appear too (labelled with its name), and Mate's gestures as small stage directions ("Mate 👍 thumbs up"). Every page sees every message live, so several phones and the agent share one conversation, kept in `~/hub/chat.jsonl` (not in git) until cleared.
 - **The certificate is self-signed:** each device shows a warning once; accept it ("visit this website" / "proceed"). The plain-HTTP page shows transcripts but can't use the mic, and links to the HTTPS one.
-- The agent reads instructions with `GET /api/transcripts?since=<last id>` or the `transcript` WebSocket events.
+- The agent follows the conversation with `GET /api/chat?after=<last id>&wait=30` in a loop (or the `chat` WebSocket events), and answers with `/api/say` (and Mate's gestures).
 
 ## Config
 

@@ -1,10 +1,12 @@
 """Table hub web server: GRBL, the gripper, the cameras, vision and speech-to-text over HTTP + a
 live WebSocket, the jog page, the talk page and the 3D scene page.
 
-Run on the Pi:  python serve.py   (HTTP :8000 and HTTPS :8443; see serve.py)
+Run on the Pi:  python serve.py   (HTTP and HTTPS both on :8000; see serve.py)
 """
 
 import asyncio
+import contextlib
+import json
 import os
 import time
 from pathlib import Path
@@ -18,7 +20,7 @@ import camera
 from grbl import REALTIME, Grbl
 from mate import MateLink
 from gripper import SEQUENCES, Gripper
-from talk import TranscribeError, Transcripts
+from talk import Chat, TranscribeError
 from vision import Vision
 from voice import Voice
 
@@ -38,7 +40,7 @@ def broadcast(event):
 
 
 gripper = Gripper(grbl, broadcast)
-transcripts = Transcripts(broadcast)
+chat = Chat(broadcast)
 voice = Voice(broadcast)
 mate = MateLink()
 vision = None  # needs the cameras, so it starts at startup
@@ -416,18 +418,92 @@ async def mate_home_set(body: MateHome):
     return {"ok": True, "home": home}
 
 
+FACES = HERE / "faces"     # software/mate/faces, deployed next to the hub (eyes.bin, reactions/)
+
+
+def gestures():
+    return {k: v for k, v in json.loads((GUIDES / "gestures.json").read_text()).items() if not k.startswith("_")}
+
+
+@app.get("/api/mate/gestures")
+def mate_gestures():
+    """Mate's gestures by name: what each says in the chat and which face it shows."""
+    return {k: {"emoji": g.get("emoji", ""), "text": g["text"], "face": g.get("face")} for k, g in gestures().items()}
+
+
+class Gesture(BaseModel):
+    name: str | None = None          # one of GET /api/mate/gestures
+    to: str | None = None            # who it's aimed at (a player's name), for the chat line
+    wait: bool = False               # True: return once it's done
+    # or a one-off gesture of your own instead of a name (same fields as agent/gestures.json):
+    emoji: str = ""
+    text: str | None = None
+    face: str | None = None
+    steps: list[dict] = []
+
+
+@app.post("/api/mate/gesture")
+async def mate_gesture(body: Gesture):
+    """Mate reacts: a face, flipper and wheel moves, ending where it started (a few cm at most).
+    The gesture goes in the chat as Mate's: Mate never speaks, this is how it talks. Returns at
+    once unless wait=true; Mate refuses while it's busy (a goto or another gesture)."""
+    if body.name:
+        g = gestures().get(body.name)
+        if g is None:
+            raise HTTPException(404, f"no gesture {body.name!r}; see GET /api/mate/gestures")
+    elif body.text:
+        g = {"emoji": body.emoji, "text": body.text, "face": body.face, "steps": body.steps}
+    else:
+        raise HTTPException(400, "give a gesture name, or text (+ face, steps) for a one-off")
+    if g.get("face") and not (FACES / "reactions" / f"{g['face']}.bin").exists():
+        raise HTTPException(400, f"no face {g['face']!r}; have {sorted(p.stem for p in (FACES / 'reactions').glob('*.bin'))}")
+    if mate.busy:
+        return {"ok": False, "error": "Mate is busy"}
+    said = (g["to"].format(to=body.to) if "to" in g else f"{g['text']} at {body.to}") if body.to else g["text"]
+    item = chat.add(f"{g.get('emoji', '')} {said}".strip(), "mate", "gesture", gesture=body.name or "custom",
+                    **({"to": body.to} if body.to else {}))
+    run = asyncio.to_thread(mate.gesture, g, FACES)
+    if body.wait:
+        return {**await run, "chat": item}
+    asyncio.create_task(run)
+    return {"ok": True, "chat": item}
+
+
 class Say(BaseModel):
     text: str
+    by: str = "agent"    # who's speaking: the agent's own name ("Muse", "Claude")
     wait: bool = False   # True: return once it has been spoken
 
 
 @app.post("/api/say")
 async def say(body: Say):
-    """Speak out loud on the table's speaker. Use it to talk to the people at the table, and to
-    ask them when something is impossible or unclear; their answers come back on the talk page
-    (/api/transcripts)."""
+    """Speak out loud on the table's speaker, and the line goes in the chat under `by`. Use it to
+    talk to the people at the table, and to ask them when something is impossible or unclear;
+    their answers come back in the chat (GET /api/chat?after=<id>&wait=30)."""
+    if body.by in ("player", "mate"):
+        raise HTTPException(400, "players type or talk on the talk page; Mate never speaks (use /api/mate/gesture)")
+    chat.add(body.text, body.by[:32], "speaker")
     err = await asyncio.to_thread(voice.say, body.text, body.wait)
     return {"ok": err is None, "error": err}
+
+
+@app.get("/api/voice")
+def voice_get():
+    """The table's voice: which Piper voice and pace, and the voices installed."""
+    return {**voice.choice, "voices": voice.voices(), "speakers": list(voice.speakers(voice.choice["voice"])),
+            "engine": "piper" if voice.voices() else "espeak-ng"}
+
+
+class VoiceChoice(BaseModel):
+    voice: str | None = None        # one of GET /api/voice -> voices
+    pace: float | None = None       # 1 = normal, 0.8 = a bit faster, 1.2 slower
+    speaker: str | None = None      # in a multi-speaker voice: a name (e.g. "prudence") or number
+
+
+@app.post("/api/voice")
+def voice_set(body: VoiceChoice):
+    err = voice.choose(body.voice, body.pace, body.speaker)
+    return {"ok": err is None, "error": err, **voice.choice}
 
 
 @app.post("/api/transcribe")
@@ -438,7 +514,7 @@ async def transcribe(request: Request):
     if len(wav) < 1000:
         raise HTTPException(400, "no audio")
     try:
-        item = await asyncio.to_thread(transcripts.transcribe, wav)
+        item = await asyncio.to_thread(chat.transcribe, wav)
     except TranscribeError as e:
         raise HTTPException(502, str(e))
     except Exception as e:  # network trouble reaching Meta
@@ -446,16 +522,83 @@ async def transcribe(request: Request):
     return item or {"text": ""}
 
 
+@app.get("/api/chat")
+async def get_chat(after: int = 0, wait: float = 0, by: str | None = None):
+    """The table's chat, oldest first: what people said (voice) or typed, what the agent said
+    out loud (via "speaker", by = its name), and Mate's gestures (by "mate", via "gesture").
+    after=<id>: only newer messages. wait=N: if there are none yet, wait up to N seconds
+    (max 60) for one, so an agent can loop on this to follow the conversation. by=player: only
+    people's messages."""
+    deadline = time.monotonic() + min(max(wait, 0), 60)
+    while True:
+        items = [i for i in chat.since(after) if by is None or i["by"] == by]
+        if items or time.monotonic() >= deadline:
+            return items
+        await asyncio.sleep(0.2)
+
+
+class ChatPost(BaseModel):
+    text: str
+    by: str = "player"      # "player" from the talk page; an agent may post as itself
+
+
+@app.post("/api/chat")
+def post_chat(body: ChatPost):
+    """Add a typed message to the chat (not spoken; for spoken lines use /api/say)."""
+    if body.by == "mate":
+        raise HTTPException(400, "Mate talks with gestures: /api/mate/gesture")
+    item = chat.add(body.text[:2000], body.by[:32], "typed")
+    if not item:
+        raise HTTPException(400, "empty message")
+    return item
+
+
+@app.delete("/api/chat")
+def clear_chat():
+    chat.clear()
+    return {"cleared": True}
+
+
 @app.get("/api/transcripts")
 def get_transcripts(since: int = 0):
-    """Everything said on the talk page, oldest first; since=<id> for only newer ones."""
-    return transcripts.since(since)
+    """Old name: the chat (see /api/chat)."""
+    return chat.since(since)
 
 
-@app.delete("/api/transcripts")
-def clear_transcripts():
-    transcripts.clear()
-    return {"cleared": True}
+@app.websocket("/ws/listen")
+async def listen(ws: WebSocket):
+    """Live speech to text for one utterance. The page sends 16 kHz mono PCM16 as binary frames
+    while the person talks, then the text "end". It gets {"type": "partial", text} as words are
+    recognised, then {"type": "final", item} (item is the chat message, or null if nothing was
+    said) or {"type": "error", error}. Every page also gets `chat_partial` events."""
+    await ws.accept()
+    deadline = time.monotonic() + 90             # one utterance; Meta allows far more
+
+    async def audio():
+        while time.monotonic() < deadline:
+            m = await ws.receive()
+            if m["type"] == "websocket.disconnect":
+                return
+            if m.get("bytes"):
+                yield m["bytes"]
+            elif m.get("text") == "end":
+                return
+
+    async def partial(text):
+        await ws.send_json({"type": "partial", "text": text})
+        broadcast({"type": "chat_partial", "text": text})
+
+    try:
+        item = await chat.stream(audio(), partial)
+        await ws.send_json({"type": "final", "item": item})
+    except TranscribeError as e:
+        await ws.send_json({"type": "error", "error": str(e)})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        broadcast({"type": "chat_partial", "text": None})
+        with contextlib.suppress(Exception):
+            await ws.close()
 
 
 @app.websocket("/ws")

@@ -6,7 +6,7 @@ Mate is a self-contained system: one ESP32-S3 program serves its own API over Wi
 
 ```
 software/mate/
-├── faces/      ready-made screen animations (eyes, chicken) and the script that draws them
+├── faces/      ready-made screen animations (eyes, chicken, 24 reactions for gestures) and the script that draws them
 ├── firmware/   ESP32-S3: Wi-Fi API, raw steppers, flipper servo, face, camera, control page
 ├── server/     (retired — was the Pi 3 web server; the ESP32 serves the API now)
 ├── tests/      bring-up test from the classic ESP32 DevKit
@@ -155,7 +155,7 @@ curl -X POST "http://mate.local/servo?angle=120&speed=60"   # sweep to 120° at 
 
  **Avoid the very ends** (0 and 180) if the flipper hits something there: holding against a stop draws ~2.5 A.
 
- **Keep it under ~80% of the max** (servo ≲ 480°/s, always with a `speed`; wheels `speed=640`). A jump or full speed draws enough current to drop Mate off Wi-Fi now and then (~5% of the time at full speed).
+ **Keep the servo at ~60% of the max or less** (`speed` ≤ 360, always given). A jump or full speed draws enough current to drop Mate off Wi-Fi now and then. The wheels are fine at full speed and acceleration.
 
 ### `POST /screen`
 
@@ -212,7 +212,7 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 | `s1` −, `s2` − | Turns right |
 
 - One wheel turn is 4096 half-steps. The wheels are 70 mm across, so one turn rolls about **220 mm** (≈ 0.054 mm per half-step) if nothing slips. Measured on the table: 0.048 mm per half-step (build notes).
-- Top speed: 800 half-steps/s ≈ **4.3 cm/s**. Use 640 (80%) in practice; see the servo note above.
+- Top speed: 800 half-steps/s ≈ **4.3 cm/s**. Use it (with `accel=1000`): slower is sluggish.
 - Mate doesn't know where it is. The hub's overhead camera does (`/api/scene` → `mate`), and `POST hub/api/mate/goto` drives it to a spot with the camera checking.
 - **No edge sensor:** nothing on Mate stops it at the table edge. The 4096-step limit per move (~22 cm) is the only guard.
 

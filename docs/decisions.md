@@ -44,7 +44,8 @@ Running log. Newest at the bottom of each section.
 - **Firmware keeps physics and safety only:** acceleration ramps, max speed, max steps per command, stop, coils off when idle.
 - **Mate doesn't track its own position.** The overhead camera (and in step 1, the human) is the feedback.
 - **Mate flips cards** (Nov 2). The gantry places a card on Mate's lowered flipper; Mate lifts and rolls forward at the same time and the card tips over. *Why:* the suction cup can't turn a card over, and a passive flipper part on the board would need its own space and setup. Mate's flipper already exists and goes anywhere.
-- **Motors at ~80% of their max** (Nov 2): wheels at 640 half-steps/s, the flipper always with a `speed`. *Why:* full speed draws enough current to drop Mate off Wi-Fi about 5% of the time.
+- **One agent runs it all: the crane is controlled, Mate is puppeteered, the agent speaks as itself** (Nov 2). The speaker is the table's (the Pi's); whoever drives the table (Muse, Claude) speaks through it under its own name: calm, exact, dry wit. The crane is its hand, with no personality. Mate is a character the same agent performs: it never speaks or makes a sound; it talks with gestures (a reaction face plus flipper and wheel moves, `/api/mate/gesture`), each logged in the chat as Mate's. *Why:* invented names (the House, Dr. Crane, Argus…) made it complicated; one mind playing both keeps speech and gestures in time, and a composed voice next to a silent, expressive Mate reads at once. Voice: Piper `en_US-norman-medium` (male), pace 0.85; a female voice (Semaine Prudence) didn't sound balanced. Meta's open-weight MMS-TTS was tried: one flat English voice, and ~2× slower than real time on the Pi.
+- **Wheels at full speed and acceleration; the flipper at ≤ 60% of its max, always with a `speed`** (Nov 2). *Why:* a fast flipper draws enough current to drop Mate off Wi-Fi about 5% of the time.
 
 ## Build order
 

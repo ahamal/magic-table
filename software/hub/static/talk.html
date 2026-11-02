@@ -4,27 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Table Talk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #f4f4f2; --panel: #fff; --ink: #161616; --muted: #74746f; --line: #dcdcd8;
     --accent: #1d4ed8; --accent-ink: #fff; --rec: #dc2626; --ok: #15803d; --bad: #dc2626; --mine: #e8eefc;
+    --spoken: #efe9dc; --spoken-ink: #2b2618; --btn: #dde6f7; --btn-ink: #1e3a7a; --btn-rec: #cbd9f3; --btn-rec-ink: #1e3a7a;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0e0e0e; --panel: #161616; --ink: #e8e8e6; --muted: #8a8a86; --line: #2c2c2a;
       --accent: #3b82f6; --rec: #ef4444; --ok: #4ade80; --bad: #f87171; --mine: #172238;
+      --spoken: #2a261d; --spoken-ink: #eee7d6; --btn: #1a2540; --btn-ink: #c6d4f3; --btn-rec: #22314f; --btn-rec-ink: #d6e1f8;
     }
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
-    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif;
+    font: 16px/1.45 "Manrope", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; font-weight: 500;
     -webkit-tap-highlight-color: transparent; }
 
   header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
     background: var(--panel); border-bottom: 1px solid var(--line); flex: none; }
-  header b { font-size: 14px; letter-spacing: .08em; }
-  .tag { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  header b { font-size: 15px; font-weight: 800; letter-spacing: .02em; }
+  .tag { font-size: 12px; font-weight: 600; color: var(--muted); }
   .tag::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: currentColor; }
   .tag.ok { color: var(--ok); } .tag.bad { color: var(--bad); }
   .spacer { flex: 1; }
@@ -33,53 +37,88 @@
 
   #list { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   #empty { margin: auto; text-align: center; color: var(--muted); max-width: 26ch; }
-  .msg { align-self: flex-end; max-width: 85%; background: var(--mine); border-radius: 14px 14px 4px 14px; padding: 9px 13px; }
-  .msg.other { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; }
-  .msg time { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .msg { align-self: flex-end; max-width: 85%; background: var(--mine); border-radius: 8px 8px 2px 8px; padding: 9px 13px; }
+  .msg.player { background: var(--panel); border: 1px solid var(--line); }
+  .msg.spoken { align-self: flex-start; background: var(--spoken); color: var(--spoken-ink); border-radius: 8px 8px 8px 2px; }
+  /* Mate's gestures: a stage direction, not a bubble */
+  .msg.gesture { align-self: center; max-width: 90%; background: none; padding: 0 8px; text-align: center;
+    font-size: 14px; font-style: italic; color: var(--muted); }
+  .msg.gesture b { font-weight: 700; font-style: normal; }
+  .msg.gesture time { display: inline; margin-left: 6px; font-style: normal; }
+  .msg.agent { align-self: flex-start; background: var(--panel); border: 1px dashed var(--line); border-radius: 8px 8px 8px 2px; }
+  .msg .who { display: block; font-size: 12px; font-weight: 700; opacity: .7; margin-bottom: 1px; }
+  .msg time { display: block; font-size: 11px; font-weight: 500; opacity: .55; margin-top: 2px; }
   .msg.pending { color: var(--muted); font-style: italic; }
+  .msg.live { opacity: .75; }
   .msg.err { color: var(--bad); }
 
-  footer { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 16px;
+  #type { display: flex; gap: 8px; width: 100%; max-width: 640px; }
+  #text { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--ink); }
+  #send { font: inherit; font-weight: 700; padding: 0 16px; border: 0; border-radius: 6px; background: var(--btn); color: var(--btn-ink); }
+  #send:disabled { opacity: .4; }
+  footer { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 16px;
     padding-bottom: max(16px, env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--line); }
-  #mic { position: relative; width: 84px; height: 84px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink);
-    display: grid; place-items: center; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
-  #mic svg { width: 34px; height: 34px; }
-  #mic.rec { background: var(--rec); }
+  /* hold to talk: a long bar, easy to find with a thumb */
+  #mic { position: relative; overflow: hidden; width: 100%; max-width: 640px; height: 88px; border-radius: 6px; border: 0;
+    background: var(--btn); color: var(--btn-ink); font: inherit; font-size: 18px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  #mic svg { width: 28px; height: 28px; position: relative; }
+  #mic span { position: relative; font-variant-numeric: tabular-nums; }
+  #mic.rec { background: var(--btn-rec); color: var(--btn-rec-ink); }
+  /* recording: just a small red dot, pulsing, not a red button */
+  #mic.rec::before { content: ""; position: relative; width: 10px; height: 10px; border-radius: 50%; background: var(--rec);
+    animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
   #mic:disabled { opacity: .5; }
-  #ring { position: absolute; inset: -6px; border-radius: 50%; border: 3px solid var(--rec); opacity: 0; transform: scale(1);
-    transition: transform 80ms linear, opacity 120ms; pointer-events: none; }
-  #mic.rec #ring { opacity: .6; }
-  #hint { font-size: 13px; color: var(--muted); min-height: 1.4em; text-align: center; }
-  #hint a { color: var(--accent); }
+  #level { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: currentColor; opacity: .12;
+    transition: width 80ms linear; pointer-events: none; }
+  /* status line floats just above the footer, so the button never moves when it appears */
+  #hint { position: absolute; left: 0; right: 0; bottom: 100%; padding: 6px 16px; font-size: 13px; color: var(--muted);
+    text-align: center; background: color-mix(in srgb, var(--bg) 88%, transparent); pointer-events: none; }
+  #hint a { pointer-events: auto; color: var(--accent); }
+  #hint:empty { display: none; }
 </style>
 </head>
 <body>
 <header>
-  <b>TABLE TALK</b>
+  <b>Table Talk</b>
   <span id="conn" class="tag">connecting</span>
   <span class="spacer"></span>
-  <button id="clear" title="Delete every transcript">Clear</button>
+  <button id="clear" title="Delete the whole chat">Clear</button>
 </header>
 
-<main id="list"><p id="empty">Tap the button, say your instructions, tap again. What you said appears here.</p></main>
+<main id="list"><p id="empty">Talk to the table: hold the button while you speak, or type below. Answers come here and out loud; Mate answers with gestures.</p></main>
 
 <footer>
-  <button id="mic" aria-label="Start talking">
-    <span id="ring"></span>
+  <button id="mic" aria-label="Hold to talk">
+    <i id="level"></i>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/></svg>
+    <span id="miclabel">Hold to talk</span>
   </button>
-  <div id="hint">Tap to talk</div>
+  <div id="hint"></div>
+  <form id="type"><input id="text" placeholder="Or type a message" autocomplete="off" enterkeyhint="send"><button id="send">Send</button></form>
 </footer>
 
 <script>
 const $ = id => document.getElementById(id);
 const RATE = 16000;        // what we send; the API takes 16 or 24 kHz mono 16-bit
 const MAX_S = 60;          // stop on our own after a minute
-const shown = new Set();   // transcript ids already on screen
-const mine = new Set();    // ids this phone sent
+const shown = new Set();   // message ids already on screen
+// messages this phone sent, remembered across refreshes (so they stay "mine": blue, on the right).
+// Keyed by id and time: ids start again from 1 after the chat is cleared.
+const key = item => `${item.id}@${item.at}`;
+const mine = (() => {
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem('talk.mine2') || '[]'); } catch (e) {}
+  const set = new Set(ids), add = set.add.bind(set);
+  set.add = id => { add(id); try { localStorage.setItem('talk.mine2', JSON.stringify([...set].slice(-500))); } catch (e) {} return set; };
+  return set;
+})();
 
-// ---- transcript list ----
+// ---- the chat ----
 function fmtTime(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
 function bubble(cls) {
   $('empty').hidden = true;
@@ -89,14 +128,37 @@ function bubble(cls) {
   return d;
 }
 function fill(d, item) {
-  d.className = 'msg' + (mine.has(item.id) ? '' : ' other');
-  d.textContent = item.text;
-  const t = document.createElement('time'); t.textContent = fmtTime(item.at); d.append(t);
+  const t = document.createElement('time');
+  t.textContent = fmtTime(item.at);
+  d.textContent = '';
+  d.dataset.by = item.by;
+  if (item.by === 'mate') {                       // Mate never speaks: its gestures read like stage directions
+    d.className = 'msg gesture';
+    const who = document.createElement('b'); who.textContent = 'Mate';
+    d.append(who, ' ' + item.text, t);
+    return;
+  }
+  const me = mine.has(key(item));
+  const kind = me ? '' : item.by === 'player' ? 'player' : item.via === 'speaker' || item.by === 'house' ? 'spoken' : 'agent';
+  d.className = 'msg ' + kind;
+  if (me) d.dataset.by = 'me';
+  // name the agent at the start of a run of its messages; players need no label
+  const prev = d.previousElementSibling;
+  if (kind === 'spoken' || kind === 'agent') {
+    if (!(prev && prev.dataset.by === item.by)) {
+      const who = document.createElement('span'); who.className = 'who';
+      who.textContent = item.by.charAt(0).toUpperCase() + item.by.slice(1);
+      d.append(who);
+    }
+  }
+  d.append(item.text, t);
 }
 function show(item, into) {
   if (shown.has(item.id)) return;
   shown.add(item.id);
-  fill(into || bubble(''), item);
+  const d = into || bubble('');
+  d.dataset.id = item.id;
+  fill(d, item);
   scrollDown();
 }
 function scrollDown() { $('list').scrollTop = $('list').scrollHeight; }
@@ -107,23 +169,50 @@ function clearList() {
 }
 
 // ---- live updates from the hub ----
+let keepalive = null;
 function connect() {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.onopen = () => { $('conn').textContent = 'connected'; $('conn').className = 'tag ok'; load(); };
   ws.onmessage = e => {
     const ev = JSON.parse(e.data);
-    if (ev.type === 'transcript') show(ev);
-    else if (ev.type === 'transcripts_cleared') clearList();
+    if (ev.type === 'chat') { if (ghost && ev.by === 'player') { ghost.remove(); ghost = null; } show(ev); }
+    else if (ev.type === 'chat_cleared') clearList();
+    else if (ev.type === 'chat_partial' && !liveBubble) {          // someone else talking, live
+      if (ev.text) { if (!ghost) ghost = bubble('player live'); ghost.textContent = ev.text; scrollDown(); }
+      else if (ghost) { ghost.remove(); ghost = null; }
+    }
+    else if (ev.type === 'speaking' && !recording) $('hint').textContent = ev.text ? 'Speaking…' : '';
   };
   ws.onclose = () => { $('conn').textContent = 'offline'; $('conn').className = 'tag bad'; setTimeout(connect, 1500); };
-  setInterval(() => ws.readyState === 1 && ws.send('ping'), 10000);
+  clearInterval(keepalive);
+  keepalive = setInterval(() => ws.readyState === 1 && ws.send('ping'), 10000);
 }
-function load() { fetch('/api/transcripts').then(r => r.json()).then(items => items.forEach(i => show(i))).catch(() => {}); }
+function load() { fetch('/api/chat').then(r => r.json()).then(items => items.forEach(i => show(i))).catch(() => {}); }
 
-$('clear').onclick = () => { if (confirm('Delete every transcript?')) fetch('/api/transcripts', { method: 'DELETE' }); };
+$('clear').onclick = () => { if (confirm('Delete the whole chat?')) fetch('/api/chat', { method: 'DELETE' }); };
+
+// ---- typing ----
+$('type').onsubmit = async e => {
+  e.preventDefault();
+  const text = $('text').value.trim();
+  if (!text) return;
+  $('send').disabled = true;
+  try {
+    const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const item = await r.json();
+    if (!r.ok) throw new Error(item.detail || r.status);
+    mine.add(key(item));
+    if (shown.has(item.id)) fill([...$('list').children].find(d => d.dataset.id == item.id) || bubble(''), item);
+    else show(item);
+    $('text').value = '';
+  } catch (err) { $('hint').textContent = 'Not sent: ' + err.message; }
+  $('send').disabled = false;
+};
 
 // ---- recording ----
 let stream = null, ctx = null, node = null, chunks = [], recording = false, startedAt = 0, timer = null;
+let live = null, liveBubble = null, resample = null;   // the /ws/listen socket while talking, its bubble
+let ghost = null;                                       // someone else's words, live
 
 async function openMic() {
   if (stream) return;
@@ -137,8 +226,9 @@ async function openMic() {
     if (!recording) return;
     const x = e.inputBuffer.getChannelData(0);
     chunks.push(new Float32Array(x));
+    if (live && live.readyState === 1) live.send(resample(x));
     let s = 0; for (let i = 0; i < x.length; i += 16) s += x[i] * x[i];
-    $('ring').style.transform = `scale(${1 + Math.min(Math.sqrt(s / (x.length / 16)) * 4, 0.45)})`;
+    $('level').style.width = `${Math.min(Math.sqrt(s / (x.length / 16)) * 400, 100)}%`;
   };
 }
 function closeMic() {
@@ -152,44 +242,101 @@ async function start() {
     await openMic();
     await ctx.resume();
   } catch (e) {
-    $('hint').textContent = 'No microphone: ' + (e.message || e.name) + '. Allow the mic for this page and try again.';
+    $('hint').textContent = 'No microphone: allow it for this page';
     closeMic();
     return;
   }
   chunks = []; recording = true; startedAt = Date.now();
-  $('mic').classList.add('rec'); $('mic').setAttribute('aria-label', 'Stop and transcribe');
+  startLive();
+  $('mic').classList.add('rec'); $('hint').textContent = '';
   tick(); timer = setInterval(tick, 250);
 }
 function tick() {
   const s = (Date.now() - startedAt) / 1000;
-  $('hint').textContent = `Listening… ${Math.floor(s)}s · tap to finish`;
+  $('miclabel').textContent = `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   if (s >= MAX_S) stop();
 }
 
 async function stop() {
   recording = false; clearInterval(timer);
-  $('mic').classList.remove('rec'); $('mic').setAttribute('aria-label', 'Start talking');
-  $('ring').style.transform = '';
+  $('mic').classList.remove('rec'); $('miclabel').textContent = 'Hold to talk';
+  $('level').style.width = '0';
   const secs = (Date.now() - startedAt) / 1000;
-  if (secs < 0.4 || !chunks.length) { $('hint').textContent = 'Too short. Tap, talk, then tap again.'; return; }
+  if (secs < 0.4 || !chunks.length) { stopLive(); $('hint').textContent = 'Too short'; return; }
 
+  if (live && live.readyState === 1 && liveBubble) {      // live: the hub already has the audio
+    live.send('end'); chunks = [];
+    return;
+  }
+  stopLive();
   const wav = toWav(chunks, ctx.sampleRate);
   chunks = [];
   const pending = bubble('pending'); pending.textContent = 'Transcribing…'; scrollDown();
-  $('hint').textContent = 'Transcribing…';
   $('mic').disabled = true;
   try {
     const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav });
     const item = await r.json();
     if (!r.ok) throw new Error(item.detail || r.status);
-    if (!item.text) { pending.remove(); if (!shown.size) $('empty').hidden = false; $('hint').textContent = "Didn't catch anything. Try again."; }
-    else if (shown.has(item.id)) { pending.remove(); $('hint').textContent = 'Tap to talk'; }   // the WebSocket was faster
-    else { mine.add(item.id); show(item, pending); $('hint').textContent = 'Tap to talk'; }
+    if (!item.text) { pending.remove(); if (!shown.size) $('empty').hidden = false; $('hint').textContent = "Didn't catch that"; }
+    else if (shown.has(item.id)) {                         // the WebSocket was faster: mark it as ours
+      pending.remove(); mine.add(key(item));
+      const d = [...$('list').children].find(d => d.dataset.id == item.id); if (d) fill(d, item);
+      $('hint').textContent = '';
+    }
+    else { mine.add(key(item)); show(item, pending); $('hint').textContent = ''; }
   } catch (e) {
     pending.className = 'msg err'; pending.textContent = 'Failed: ' + e.message;
-    $('hint').textContent = 'Tap to try again';
+    $('hint').textContent = '';
   }
   $('mic').disabled = false;
+}
+
+// ---- live transcription: stream the mic to the hub, which relays it to Meta ----
+function startLive() {
+  live = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/listen');
+  live.binaryType = 'arraybuffer';
+  resample = downsampler(ctx.sampleRate);
+  liveBubble = bubble('live'); liveBubble.textContent = '…'; scrollDown();
+  const sock = live;
+  sock.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'partial') { liveBubble.textContent = m.text || '…'; scrollDown(); }
+    else if (m.type === 'final') {
+      const b = liveBubble; liveBubble = null;
+      if (!m.item) { b.remove(); if (!shown.size) $('empty').hidden = false; $('hint').textContent = "Didn't catch that"; }
+      else {
+        mine.add(key(m.item));
+        if (shown.has(m.item.id)) { b.remove(); const d = [...$('list').children].find(d => d.dataset.id == m.item.id); if (d) fill(d, m.item); }
+        else show(m.item, b);
+        $('hint').textContent = '';
+      }
+      sock.close();
+    } else if (m.type === 'error') {
+      liveBubble.className = 'msg err'; liveBubble.textContent = 'Failed: ' + m.error; liveBubble = null;
+      sock.close();
+    }
+  };
+  sock.onclose = () => { if (live === sock) live = null; };
+}
+function stopLive() {
+  if (live) { live.onmessage = null; live.close(); live = null; }
+  if (liveBubble) { liveBubble.remove(); liveBubble = null; }
+}
+// the mic's rate -> 16 kHz mono 16-bit, chunk by chunk (box filter, keeps its place across chunks)
+function downsampler(rate) {
+  const ratio = rate / RATE; let pos = 0, acc = 0, n = 0;
+  return x => {
+    const out = new Int16Array(Math.ceil(x.length / ratio) + 1); let k = 0;
+    for (let i = 0; i < x.length; i++) {
+      acc += x[i]; n++; pos += 1;
+      if (pos >= ratio) {
+        const v = Math.max(-1, Math.min(1, acc / n));
+        out[k++] = v < 0 ? v * 0x8000 : v * 0x7fff;
+        pos -= ratio; acc = 0; n = 0;
+      }
+    }
+    return out.slice(0, k).buffer;
+  };
 }
 
 // Float32 chunks at the mic's rate -> 16 kHz mono 16-bit WAV (box-filter downsample)
@@ -214,13 +361,34 @@ function toWav(parts, rate) {
   return buf;
 }
 
-$('mic').onclick = () => recording ? stop() : start();
+// push to talk: record while the button is held (finger or mouse), or while Space is held
+let held = false;
+async function press(e) {
+  if (e) e.preventDefault();
+  if (held || $('mic').disabled) return;
+  held = true;
+  if (e && e.pointerId !== undefined) $('mic').setPointerCapture(e.pointerId);   // keep it even if the finger slides off
+  await start();
+  if (!held && recording) stop();          // let go while the mic was still opening
+}
+function release(e) {
+  if (e) e.preventDefault();
+  if (!held) return;
+  held = false;
+  if (recording) stop();
+}
+$('mic').addEventListener('pointerdown', press);
+$('mic').addEventListener('pointerup', release);
+$('mic').addEventListener('pointercancel', release);
+$('mic').addEventListener('contextmenu', e => e.preventDefault());   // long press shouldn't open a menu
+document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat && document.activeElement !== $('text')) press(e); });
+document.addEventListener('keyup', e => { if (e.code === 'Space' && document.activeElement !== $('text')) release(e); });
 // release the mic when the page goes to the background (and the phone's mic indicator with it)
 document.addEventListener('visibilitychange', () => { if (document.hidden) { if (recording) stop(); closeMic(); } });
 
 // the mic only works on HTTPS (or localhost)
 if (!window.isSecureContext || !navigator.mediaDevices) {
-  const url = `https://${location.hostname}:8443/talk`;
+  const url = `https://${location.host}/talk`;          // same port: :8000 takes HTTPS too
   $('mic').disabled = true;
   $('hint').innerHTML = `The microphone needs the secure page: <a href="${url}">${url}</a>`;
 }

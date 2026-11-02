@@ -2,7 +2,8 @@
 
 Agents can call Mate's own API (http://mate.local, see agent/mate.md) for anything. The hub
 adds what needs the overhead camera: `goto` turns and drives Mate, looks, and corrects until
-its turning centre is on the target, and `home` sends it to its home spot.
+its turning centre is on the target, and `home` sends it to its home spot. And `gesture`
+plays one of Mate's gestures (agent/gestures.json): a reaction face, flipper and wheel moves.
 
 The body numbers below were measured on Nov 1 against the overhead camera (build notes);
 another build should measure its own.
@@ -18,8 +19,10 @@ MATE = "http://mate.local"
 MM_PER_HALFSTEP = 0.048          # forward
 DEG_PER_HALFSTEP = {"left": 0.0377, "right": 0.0371}
 CENTRE = (8.6, 0.5)              # turning centre from the marker centre, Mate's frame (forward, left)
-SPEED, ACCEL = 640, 1000         # 80% of the max: full speed drops Mate's Wi-Fi now and then
+SPEED, ACCEL = 800, 1000         # full speed: the wheels are fine there (it's the servo that browns out)
 CLOSE_MM, CLOSE_DEG = 5.0, 3.0   # good enough
+REST, REST_SPEED = 20, 120       # the flipper's rest angle, and how gently a gesture goes back there
+FACE_FPS = 10                    # reactions are drawn for 10 fps (software/mate/faces/make.py)
 
 
 class MateLink:
@@ -43,6 +46,15 @@ class MateLink:
 
     def _post(self, path):
         req = urllib.request.Request(f"{self.url}{path}", method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read())
+
+    def servo(self, angle, speed):
+        self._post(f"/servo?angle={angle}&speed={min(speed, 360)}")   # ≤60% of max: faster browns out
+
+    def screen(self, frames, fps, repeat):
+        req = urllib.request.Request(f"{self.url}/screen", data=frames, method="POST", headers={
+            "Content-Type": "application/octet-stream", "X-FPS": str(fps), "X-Repeat": str(repeat)})
         with urllib.request.urlopen(req, timeout=5) as r:
             return json.loads(r.read())
 
@@ -119,5 +131,41 @@ class MateLink:
                     "off_mm": round(math.hypot(x - cx, y - cy), 1), "moves": moves}
         except OSError as e:
             return {"ok": False, "error": f"Mate didn't answer: {e}", "moves": moves}
+        finally:
+            self.busy = False
+
+    def gesture(self, g, faces):
+        """Play a gesture: show its face (once), run its steps (servo [angle, speed] without
+        waiting, drive mm, turn deg, wait s), then bring the flipper back to rest and the eyes
+        back. `faces` is the folder with eyes.bin and reactions/."""
+        if self.busy:
+            return {"ok": False, "error": "Mate is busy"}
+        self.busy = True
+        moved = False
+        try:
+            if g.get("face"):
+                self.screen((faces / "reactions" / f"{g['face']}.bin").read_bytes(), FACE_FPS, 1)
+            for step in g.get("steps", []):
+                if "servo" in step:
+                    angle, speed = step["servo"]
+                    self.servo(max(REST, min(150, angle)), speed)
+                    moved = True
+                if "drive" in step:
+                    self.drive(max(-60, min(60, step["drive"])))
+                if "turn" in step:
+                    self.turn(max(-360, min(360, step["turn"])))
+                if "wait" in step:
+                    time.sleep(min(step["wait"], 5))
+            if moved:
+                with urllib.request.urlopen(f"{self.url}/status", timeout=5) as r:
+                    now = json.loads(r.read()).get("servo_now", REST)
+                self.servo(REST, REST_SPEED)
+                time.sleep(abs(now - REST) / REST_SPEED)
+            time.sleep(0.8)
+            if g.get("face"):
+                self.screen((faces / "eyes.bin").read_bytes(), 12, 0)
+            return {"ok": True}
+        except (OSError, ValueError, KeyError) as e:
+            return {"ok": False, "error": f"Mate didn't answer: {e}"}
         finally:
             self.busy = False

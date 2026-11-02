@@ -43,7 +43,7 @@
   <div class="grid">
     <a class="card" href="/jog"><b>Jog</b><span>Drive the gantry, the gripper, live camera views, the GRBL console</span></a>
     <a class="card" href="/scene"><b>3D scene</b><span>Live 3D of the board, head, cards, Mate and cameras; calibrate, re-anchor</span></a>
-    <a class="card" id="talk" href="/talk"><b>Talk</b><span>Speak instructions from any phone; see what was transcribed</span></a>
+    <a class="card" id="talk" href="/talk"><b>Talk</b><span>Chat with the table from any phone: speak or type; the agent answers out loud, Mate with gestures</span></a>
   </div>
 
   <h2>Mate</h2>
@@ -58,7 +58,7 @@
     <a class="card" href="/guide"><b>Start here</b><span>What's available and how to behave (for agents and people)</span></a>
     <a class="card" href="/guide?doc=table"><b>Table guide</b><span>Gantry, gripper, limits, pick-and-place recipes</span></a>
     <a class="card" href="/api/notes"><b>Build notes</b><span>What's been learned about this table: numbers, what failed</span></a>
-    <a class="card" href="/api/transcripts"><b>Transcripts</b><span>Everything said on the talk page (JSON)</span></a>
+    <a class="card" href="/api/chat"><b>Chat</b><span>The whole conversation: players, the agent and Mate (JSON)</span></a>
   </div>
 
   <h2>Cameras and data</h2>
@@ -71,9 +71,9 @@
 </main>
 <script>
 const $ = id => document.getElementById(id);
+// the talk page needs HTTPS for the mic; :8000 serves both, so just switch the scheme
+$('talk').href = `https://${location.host}/talk`;
 const set = (id, text, cls) => { $(id).textContent = text; $(id).className = cls || ''; };
-// the talk page needs HTTPS (the mic); point the link there
-$('talk').href = `https://${location.hostname}:8443/talk`;
 
 async function refresh() {
   const j = u => fetch(u).then(r => r.ok ? r.json() : null).catch(() => null);
