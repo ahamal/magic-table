@@ -246,7 +246,7 @@ class Vision:
 
     # ---- calibration ----
 
-    def calibrate(self, room, span=60.0, steps=3, levels=3, feed=2000, settle=0.25, xy_feed=3000):
+    def calibrate(self, room, span=60.0, steps=3, levels=3, feed=2000, settle=0.25, xy_feed=6000):
         """Move the head over a steps x steps grid (+-span mm) at its current height and at
         levels-1 lower heights, see the head marker at every stop, fit each camera.
 
@@ -291,7 +291,7 @@ class Vision:
             self._move(f"G90 G1 X{x0:.3f} Y{y0:.3f} F{xy_feed:.0f}")
             offs = np.linspace(-span, span, steps)
             pts = {i: {"world": [], "pix": []} for i in range(len(self.cameras))}
-            last = {}
+            seen = {}    # board markers at every stop: the head hides one now and then
             for z in [z0 - k * dz for k in range(levels)]:   # Z+ is up: each pass is lower
                 self._move(f"G90 G1 Z{z:.3f} F{feed:.0f}")
                 for j, dy in enumerate(offs):
@@ -305,10 +305,14 @@ class Vision:
                             if img is None:
                                 continue
                             found = detect(self._det(cam), img)
-                            last[cam] = found
+                            for k in found.keys() & set(BOARD_IDS):
+                                seen.setdefault(cam, {}).setdefault(k, []).append(np.asarray(found[k], float))
                             if HEAD_ID in found:
                                 pts[cam]["world"].append(w)
                                 pts[cam]["pix"].append(centre(found[HEAD_ID]).tolist())
+            # each board marker where it usually was (median of its corners over the stops)
+            last = {cam: {k: np.median(v, axis=0) for k, v in ms.items() if len(v) * 2 >= steps * steps * levels}
+                    for cam, ms in seen.items()}
             self._move(f"G90 G1 Z{z0:.3f} F{feed:.0f}")      # up first, then back to the middle
             self._move(f"G90 G1 X{x0:.3f} Y{y0:.3f} F{xy_feed:.0f}")
 

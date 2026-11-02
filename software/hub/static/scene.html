@@ -497,12 +497,12 @@ $('calib').onclick = async () => {
   let room = touched ? S.head?.z : parseFloat(prompt('How far is the cup above the board right now (mm)?', ''));
   if (!(room > 35)) { say(room == null || isNaN(room) ? 'Calibration cancelled.' : 'Raise the cup first: it needs at least 35 mm above the board.', true); return; }
   const bounded = !!S?.bounds, top = bounded ? Math.max(room, S.travel_z ?? room) : room;
-  if (!confirm(`Calibrate: the head ${bounded ? `goes up to ${top.toFixed(0)} mm and over the middle of the board, then ` : ''}moves over most of the board (4 × 4 stops, 130 mm each way from ${bounded ? 'the middle' : 'here'}) with the cup at ${top.toFixed(0)}, ${((top + 15) / 2).toFixed(0)} and 15 mm above the board, then back to ${bounded ? 'the middle' : 'here'}. Keep the board clear under it and Mate out of the way. About 2 minutes.`)) return;
+  if (!confirm(`Calibrate: the head ${bounded ? `goes up to ${top.toFixed(0)} mm and over the middle of the board, then ` : ''}moves over the middle of the board (3 × 3 stops, 90 mm each way from ${bounded ? 'the middle' : 'here'}) with the cup at ${top.toFixed(0)}, ${((top + 15) / 2).toFixed(0)} and 15 mm above the board, then back to ${bounded ? 'the middle' : 'here'}. Keep the board clear under it and Mate at home. About 1.5 minutes.`)) return;
   $('calib').disabled = $('reanchor').disabled = $('table').disabled = true;
   $('calstop').hidden = false;
   say('Calibrating…', true);
   try {
-    const r = await post('calibrate', touched ? { span: 130, steps: 4, levels: 3 } : { room, span: 130, steps: 4, levels: 3 });   // the whole board: a small grid was 20 mm off at its edges
+    const r = await post('calibrate', touched ? { span: 90, steps: 3, levels: 3 } : { room, span: 90, steps: 3, levels: 3 });   // 27 stops, ~1.5 min; clear of Mate at its home (Nov 2: head check 2.5 mm)
     if (!r.ok) say('Calibration failed: ' + r.error, true);
     else {
       const cams = Object.entries(r.cams).map(([k, c]) => c.rms_px != null ? `cam ${k}: ${c.seen}/${c.of} stops, ${c.rms_px.toFixed(2)} px` : `cam ${k}: ${c.error}`);
