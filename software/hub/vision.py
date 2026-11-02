@@ -43,6 +43,8 @@ TIP_BELOW_MARKER = 57.0   # cup tip is this far below the head marker's centre (
 TIP_OFFSET = (0.6, -24.7)
 CLEARANCE = 15.0          # calibration keeps the cup at least this far above the board (mm)
 MATE_MARGIN = 40.0        # mm around Mate's footprint that counts as "over Mate"
+MATE_TOP = 103.0          # cup height that touches Mate's plywood top (where a card lies; the corner caps stand 2 mm above it)
+MATE_SQUEEZE = 1.5        # how far the cup may press into what's on Mate's top (a card): gentle
 TABLE_CAM = 1             # the camera that looks down on the board (cam 0 is too low for it)
 MATE_SIZE = (134.0, 134.0, 105.0)  # mm, over the corner caps: 130 x 130 x 100 box, 3 mm off the ground, caps 2 mm proud
 CARD = (63.0, 88.0)       # poker card, mm
@@ -164,9 +166,10 @@ class Vision:
         self.scene = {"calibrated": bool(self.cal)}
         self.busy = False
         self._abort = None
-        # GRBL reset since the last known position. A starting hub always means one:
-        # opening the serial port resets the Uno.
-        self.needs_reanchor = CAL_FILE.exists()
+        # GRBL reset since the last known position. Opening the port used to reset the Uno on
+        # every hub start; with `stty -hupcl` (hub.service) it doesn't, so only a banner seen
+        # since connecting (power-up, reset, replug) counts.
+        self.needs_reanchor = CAL_FILE.exists() and grbl.resets > 0
         self.last_pos = json.loads(POS_FILE.read_text()) if POS_FILE.exists() else None
         grbl.listeners.append(self._on_grbl)
         self._dets = {}
@@ -450,20 +453,25 @@ class Vision:
         return False
 
     # Mate may get nudged sideways by accident; what must never happen is the cup pressing
-    # down into it. So: never end, or lower, over Mate below travel height. Moves that would
-    # cross it below travel height go up first anyway (no reason to bump it on purpose).
+    # down into it. So the cup never goes lower over Mate than its top minus a gentle squeeze
+    # (enough to put a card on it and pick one off), and moves that cross Mate below travel
+    # height go up first (no reason to bump it on purpose).
 
     def plan_move(self, x, y, z):
-        """Lines for an absolute move to (x, y, z), any of them None = stay. Below travel
-        height, a path over Mate first goes up to travel height; ending over Mate below it
-        is refused. Returns (lines, None) or (None, why)."""
+        """Lines for an absolute move to (x, y, z), any of them None = stay. A path that crosses
+        Mate below travel height goes up to travel height first, then across, then down; ending
+        over Mate lower than its top minus MATE_SQUEEZE is refused. Returns (lines, None) or
+        (None, why)."""
         w = self._wpos()
         tx, ty, tz = (w[0] if x is None else x), (w[1] if y is None else y), (w[2] if z is None else z)
         travel = (self.cal or {}).get("travel_z")
         if travel is None or self.needs_reanchor or not self.over_mate(w[0], w[1], tx, ty):
             return None, None                                   # nothing to do: move as asked
-        if self.over_mate(tx, ty, tx, ty) and tz < travel - 0.5:
-            return None, f"that ends over Mate below travel height (Z {travel:.1f})"
+        floor = MATE_TOP - MATE_SQUEEZE
+        if self.over_mate(tx, ty, tx, ty) and tz < floor:
+            return None, f"that would press into Mate (lowest over Mate: Z {floor:.1f})"
+        if abs(tx - w[0]) < 0.01 and abs(ty - w[1]) < 0.01:      # straight up or down over Mate
+            return [f"G90 G0 Z{tz:.3f}"], None
         lines = []
         if w[2] < travel - 0.5:
             lines.append(f"G90 G0 Z{travel:.3f}")
@@ -478,10 +486,9 @@ class Vision:
 
     def jog_ok(self, dx, dy, dz):
         """Jogs may go sideways anywhere (bumping Mate is survivable); a jog that lowers the cup
-        while it's over Mate, to below travel height, is refused."""
-        travel = (self.cal or {}).get("travel_z")
+        over Mate below its top minus MATE_SQUEEZE is refused."""
         w = self._wpos()
-        if travel is None or self.needs_reanchor or dz >= 0 or w[2] + dz >= travel - 0.5:
+        if not self.cal or self.needs_reanchor or dz >= 0 or w[2] + dz >= MATE_TOP - MATE_SQUEEZE:
             return True
         return not self.over_mate(w[0] + dx, w[1] + dy, w[0] + dx, w[1] + dy)
 

@@ -136,7 +136,7 @@ async def jog(body: Jog):
     if not axes:
         raise HTTPException(400, "nothing to jog")
     if vision and not vision.jog_ok(body.x, body.y, body.z):
-        return {"line": "", "reply": "error:won't lower onto Mate below travel height"}
+        return {"line": "", "reply": "error:won't press into Mate"}
     return await asyncio.to_thread(run, f"$J=G91 G21 {axes} F{body.feed:.0f}")
 
 

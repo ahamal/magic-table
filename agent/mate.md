@@ -41,5 +41,11 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 
 ## Helping the gantry
 
-- **Turning cards:** the gantry puts a card on Mate's top, Mate turns in place, the gantry picks it up again at the new angle. While a card covers Mate's marker, the camera can't see Mate's heading: turn by the calibrated degrees per half-step, then check the card's angle once it's back on the board.
+- **Turning cards** (tested: 6 cards turned and stacked, ~35 s each):
+  1. Turn the empty Mate so the card will land **square to it**. A card at ~45° to Mate lands tilted on a corner cap and won't pick back up.
+  2. Pick the card off the board; put it on Mate's **turning centre** (in the notes; ~9 mm in front of its marker) at cup Z ≈ 105.5 (just above Mate's plywood top, 103) and drop.
+  3. Turn Mate by the angle the card needs (degrees per half-step from the notes). The card turns with it.
+  4. Look with cam 1 where the card really is on Mate's top (it drifts 5–15 mm): map the card at board + 103.5 mm, not at the board.
+  5. Pick it there: cup to Z ≈ 102 (a gentle squeeze), `grip?pump_s=2`, peel off slowly (F600), lift above travel height, and place it.
+- Keep Mate's turning centre at least ~2 cm inside the cup's board bounds, or a card that drifts on its top can end up out of reach.
 - Keep the gantry above travel height (Z 110) over Mate. Never lower onto it.

@@ -48,6 +48,7 @@ class Grbl:
         self.wco = [0.0, 0.0, 0.0]   # GRBL only reports WCO every few statuses
         self.homed = False
         self.settings = {}
+        self.resets = 0              # GRBL banners seen: each one means the Uno restarted
         self._lines = queue.Queue()  # (line, reply_queue)
         self._reply = None           # reply queue of the line waiting for ok
         self._write = threading.Lock()
@@ -182,6 +183,8 @@ class Grbl:
                 self.settings[key] = val
         if line.startswith("ALARM:") or line.startswith("Grbl "):
             self.homed = False
+        if line.startswith("Grbl "):
+            self.resets += 1
         self._emit({"type": "log", "dir": "in", "text": line})
 
     def _set_status(self, st):

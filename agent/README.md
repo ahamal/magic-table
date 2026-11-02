@@ -27,6 +27,6 @@ You're an agent (AI or person) about to use the Magic Table: a gantry that picks
 
 ## Working together: gantry + Mate
 
-- Mate can **turn in place**, so it can turn things: the gantry puts a card on Mate's top, Mate rotates, the gantry picks the card back up at the new angle (the cup itself can't rotate cards). A card on Mate's top covers Mate's marker, so the camera loses Mate's heading while it's there: count the turn from Mate's step calibration instead (in the notes).
-- The gantry must **never press down on Mate** (the hub refuses it below travel height, Z 110). Bumping Mate sideways is survivable but not a plan.
+- Mate can **turn in place**, so it can turn things: the gantry puts a card on Mate's top, Mate rotates, the gantry picks the card back up at the new angle (the cup itself can't rotate cards). It works: see the recipe in [mate.md](mate.md). A card on Mate's top covers Mate's marker, so turn by Mate's step calibration (in the notes), then look where the card ended up before picking it.
+- The gantry must **never press down on Mate**: the hub keeps the cup above Mate's top minus a gentle 1.5 mm squeeze (enough to place or pick a card there), and crosses Mate at travel height (Z 110). Bumping Mate sideways is survivable but not a plan.
 - Mate has no position sense of its own; the overhead camera (`/api/scene` → `mate`) is where it is.
