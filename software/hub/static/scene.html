@@ -128,12 +128,14 @@ const MATE = { w: 130, d: 130, body: 100, lift: 3, proud: 2, corner: 24 };
 // bent part stands flat, parallel to and centred on the face; past that it rises over the top.
 const FLIP = { fromAxle: 42, at: 45, seg1: 73, seg2: 146, width: 14, rest: 20, level: 65 };
 const WHEEL_FORWARD = 5;   // the axle is 5 mm ahead of the box's middle
-// The head, relative to the head marker's centre (what GRBL positions). Measured: the cup tip is at
-// (0.6, -24.7) and 57 mm below (vision.TIP_OFFSET / TIP_BELOW_MARKER; checked against card centres).
-// The marker is on thin card glued to the 2020 Z extrusion's left face (-X, facing left, toward
-// cam 1), ~1 mm out, so the extrusion's centre is EXT_RIGHT mm to its right (+X). Everything else
-// hangs off the measured marker -> cup offset (TIP), not off the extrusion.
-const TIP = { dx: 0.6, dy: -24.7, dz: -57 }, EXT_RIGHT = 10 + 1 + .5;
+// The head, relative to the head marker's centre (what GRBL positions). The cup tip lands at
+// (-2.4, -19.7) and 57 mm below (vision.TIP_OFFSET / TIP_BELOW_MARKER: measured where it lands, in
+// vision's frame). The build, as it is: the gripper is bolted to the 2020 Z extrusion's front face
+// (-Y, toward the person at the table), in line with the bar, cup straight down; the marker card is
+// glued to the bar's left face (-X, facing cam 1), ~1 mm out. Draw it like that, anchored on the cup:
+// the bar is in line with the cup and the card on its left face, even though that puts the drawn card
+// ~11 mm left of where vision puts the marker (TIP's X is a landing fix, not a ruler measurement).
+const TIP = { dx: -2.4, dy: -19.7, dz: -57 }, EXT_RIGHT = 10 + 1 + .5;
 const PLATE = [38, 64, .5], HEAD_MARKER = 25, HEAD_MARKER_CUT = 33; // card thickness approximated for display
 const WHEEL = { d: 70, w: 8 };
 
@@ -162,7 +164,7 @@ const L = (dx, dy, dz) => new THREE.Vector3(dx, dz, -dy);           // gantry of
 const head = new THREE.Group(); head.visible = false; scene.add(head);
 const metal = mat(0xb8bcc2), steel = mat(0x8d9096), dark2 = mat(0x2a2a2a);
 const tipL = L(TIP.dx, TIP.dy, TIP.dz);
-// 2020 Z extrusion with its four slots, right of the marker
+// 2020 Z extrusion with its four slots
 const railG = new THREE.Group(); head.add(railG);
 railG.add(new THREE.Mesh(new THREE.BoxGeometry(20, 320, 20), metal));
 for (const [sx, sz] of [[10, 0], [-10, 0], [0, 10], [0, -10]]) {
@@ -176,16 +178,17 @@ const paper = new THREE.Mesh(new THREE.PlaneGeometry(HEAD_MARKER_CUT, HEAD_MARKE
 paper.position.z = PLATE[2] / 2 + .2; plateG.add(paper);
 const ink = new THREE.Mesh(new THREE.PlaneGeometry(HEAD_MARKER, HEAD_MARKER), mat(0x111111));
 ink.position.z = PLATE[2] / 2 + .4; plateG.add(ink);
-// bracket from the extrusion out to the cup, then nut, threaded stem, spring, bellows cup
+// The gripper is bolted to the extrusion's front face (-Y, toward the person at the table) and
+// runs parallel to it, straight down: a bracket straight out of that face to the stem, then nut,
+// threaded stem, spring, bellows cup. Nothing is angled.
 const bracketY = TIP.dz + 34;
-const ext = L(EXT_RIGHT, 0, 0);                                   // extrusion centre
+const ext = L(TIP.dx, 0, 0);                                      // extrusion centre: in line with the cup
 railG.position.set(ext.x, -30 + 160, ext.z);
-const reach = Math.hypot(tipL.x - ext.x, tipL.z - ext.z);           // bracket: extrusion to the cup's stem
-const bracket = new THREE.Mesh(new THREE.BoxGeometry(14, 5, reach + 7), mat(0x3a3a3a)); head.add(bracket);
-bracket.position.set((ext.x + tipL.x) / 2, bracketY, (ext.z + tipL.z) / 2);
-bracket.rotation.y = Math.atan2(tipL.x - ext.x, tipL.z - ext.z);
+const front = L(0, -10, 0).z;                                      // the front face
+const bracket = new THREE.Mesh(new THREE.BoxGeometry(14, 5, tipL.z - front + 7), mat(0x3a3a3a)); head.add(bracket);
+bracket.position.set(tipL.x, bracketY, (front + tipL.z + 7) / 2);
 plateG.rotation.y = -Math.PI / 2;                                  // left face (-X), facing left
-plateG.position.set(-1, 0, 0);       // the marker's centre is the origin; drawn 1 mm further out so it doesn't flicker
+plateG.position.set(ext.x - EXT_RIGHT - 1, 0, 0);                 // on the left face; 1 mm further out so it doesn't flicker
 const nut = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 5, 6), steel); nut.position.set(tipL.x, bracketY + 5, tipL.z); head.add(nut);
 const stem = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 40, 12), steel);
 stem.position.set(tipL.x, bracketY - 8, tipL.z); head.add(stem);

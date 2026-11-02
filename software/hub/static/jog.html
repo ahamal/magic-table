@@ -302,7 +302,7 @@ function render(s) {
 // The board, from above, in work coordinates: 0,0 is its middle, X right, Y up. The dot is the
 // head (what Go and the readout use); the cup hangs TIP from it, so the cup's reach is drawn as
 // where the head can be (shifted by TIP). Markers and Mate are where the cameras see them.
-const PAD = 12, TIP = [0.6, -24.7], ZMIN = -1, ZMAX = 150;
+const PAD = 12, TIP = [-2.4, -19.7], ZMIN = -1, ZMAX = 150;
 let board = { bounds: [-210, 210, -191, 191], markers: {}, mate: null };
 const view = () => { const b = board.bounds, m = 50;          // the board: the cup's reach plus the marker margin
   return [b[0] - m, b[1] + m, b[2] - m, b[3] - TIP[1] + m]; };

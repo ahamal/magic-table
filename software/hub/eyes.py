@@ -156,6 +156,99 @@ def describe(box, mask, P=None, z=None, bounds=None):
     return obj
 
 
+# Height from the side. Cam 1 says where a thing is and its footprint; cam 0, low and from the
+# side, sees how tall it stands. A row v of a calibrated camera is a plane through it,
+# (P[1] - v P[2]) . [X, Y, Z, 1] = 0, so a point sliding along a line lands on that row at one
+# t, in closed form. Two solves per thing: slide the footprint along cam 0's line of sight until
+# its near edge, on the board, sits on the bottom row of cam 0's outline (that absorbs cam 1's
+# few-mm error in where it is), then raise the far edge, slid the same, until it's on the top row.
+SIDE_SLIDE = 12.0    # mm: sliding more than this means cam 0 sees something else, or it's hidden
+SIDE_MATCH = 30      # px: a cam 0 outline's bottom must be this close to where the footprint lands
+SIDE_EDGE = 2        # px: an outline this close to the picture's edge is cut off
+
+
+def cam_centre(P):
+    """Where a calibrated camera is (gantry X, Y, Z)."""
+    return -np.linalg.solve(P[:, :3], P[:, 3])
+
+
+def row_solve(P, v, base, step):
+    """t at which base + t * step lands on picture row v."""
+    a = P[1] - v * P[2]
+    return float(-(a @ np.r_[base, 1.0]) / (a[:3] @ step))
+
+
+def _sight(P0, c):
+    """Cam 0's line of sight to c, flat on the board (a unit x, y vector)."""
+    d = c - cam_centre(P0)[:2]
+    return d / np.linalg.norm(d)
+
+
+def side_height(P0, mask, poly, tz, P1=None):
+    """How tall a thing stands, from cam 0's outline of it (picture-sized 0/1 array) and its
+    footprint on the board (poly: x, y points, cam 1's outline mapped onto the board): (height
+    mm, slide mm along cam 0's line of sight), or None if the outline is cut off by the
+    picture's edge. Cam 1 sees a thing's side too, which stretches the footprint away from it
+    by height x cot(cam 1's angle); with P1 that is taken off the far edge."""
+    ys, xs = np.nonzero(mask)
+    if len(ys) < 30 or ys.min() < SIDE_EDGE or ys.max() > mask.shape[0] - 1 - SIDE_EDGE \
+            or xs.min() < SIDE_EDGE or xs.max() > mask.shape[1] - 1 - SIDE_EDGE:
+        return None
+    poly = np.asarray(poly, float)
+    c = poly.mean(axis=0)
+    d = _sight(P0, c)
+    reach = (poly - c) @ d
+    stretch = 0.0
+    if P1 is not None:
+        C1 = cam_centre(P1)
+        d1 = c - C1[:2]
+        stretch = max(0.0, d @ d1 / np.linalg.norm(d1)) * np.linalg.norm(d1) / (C1[2] - tz)
+    near = c + reach.min() * d
+    top = 0.0
+    for _ in range(3):                                  # the stretch depends on the height
+        far = c + (reach.max() - stretch * max(top, 0.0)) * d
+        slide = row_solve(P0, ys.max() + .5, np.r_[near, tz], np.r_[d, 0.0])
+        top = row_solve(P0, ys.min() - .5, np.r_[far + slide * d, tz], np.array([0.0, 0.0, 1.0]))
+    return top, slide
+
+
+def side_match(P0, polys, side, tz):
+    """Pair cam 1's items (their footprints, None for one off the board) with cam 0's outlines
+    (picture-sized arrays): each outline's bottom middle against where the item's near edge
+    lands in cam 0, closest first. {item index: outline}."""
+    pairs = []
+    for i, poly in enumerate(polys):
+        if poly is None:
+            continue
+        poly = np.asarray(poly, float)
+        c = poly.mean(axis=0)
+        d = _sight(P0, c)
+        u, v = project(P0, np.r_[c + ((poly - c) @ d).min() * d, tz])
+        for j, m in enumerate(side):
+            ys, xs = np.nonzero(m)
+            if not len(ys):
+                continue
+            dist = float(np.hypot(xs[ys >= ys.max() - 3].mean() - u, ys.max() - v))
+            if dist < SIDE_MATCH:
+                pairs.append((dist, i, j))
+    got, used = {}, set()
+    for _, i, j in sorted(pairs):
+        if i not in got and j not in used:
+            got[i] = side[j]
+            used.add(j)
+    return got
+
+
+async def _side(jpeg, names):
+    """SAM on cam 0 with each name in turn until something matches (no check: matching to cam
+    1's items by place does that)."""
+    for n in names:
+        m = await segment(jpeg, n)
+        if m:
+            return m
+    return []
+
+
 SEE = ("Overhead photo of a game table: a black board with white square markers at its corners. "
        "List the kinds of loose objects lying on the board (not the board, its markers, the machine's "
        "frame, cables, suction cup, gripper, wheels, or any part of the wooden robot), with how many of each. For each give: name, a short "
@@ -276,7 +369,8 @@ async def _first(jpeg, img, names, effort="minimal", robots=None):
     return [], None
 
 
-async def find(jpeg, wanted, P=None, tz=None, bounds=None, question=None, effort="minimal", robot=None):
+async def find(jpeg, wanted, P=None, tz=None, bounds=None, question=None, effort="minimal", robot=None,
+               side=None):
     """Where things are in one camera's picture (SAM). wanted: names, each with fallbacks after
     "|" ("earbuds case|white object") tried in order. Each item: what (the first name), matched
     (the name SAM found it by), its box and outline in the picture, and for a calibrated camera
@@ -285,12 +379,17 @@ async def find(jpeg, wanted, P=None, tz=None, bounds=None, question=None, effort
     middle of what it sees, which is partway down its near side (20 mm off from cam 1). With a
     question, Muse Spark answers it about each item on the board, from its crop. robot: boxes
     of the head and Mate where they're tracked (see robot_masks); each item says how much of it
-    is inside them and which it's near."""
+    is inside them and which it's near. side: (cam 0's JPEG, its P), taken at the same time:
+    each item it sees also gets height_mm (side_height; None where cam 0 can't see it whole)."""
     t0 = time.time()
     chains = [[n.strip() for n in w.split("|") if n.strip()] for w in wanted]
     img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
     robots = robot_masks(P, robot, img.shape[:2]) if P is not None and robot else None
-    got = await asyncio.gather(*(_first(jpeg, img, c, effort, robots) for c in chains))
+    looks = [_first(jpeg, img, c, effort, robots) for c in chains]
+    if side and P is not None:
+        looks += [_side(side[0], c) for c in chains]
+    got = await asyncio.gather(*looks)
+    side_ms, got = got[len(chains):], got[:len(chains)]
     items, boxes = [], []
     for chain, (ms, name) in zip(chains, got):
         for box, m in ms:
@@ -307,6 +406,17 @@ async def find(jpeg, wanted, P=None, tz=None, bounds=None, question=None, effort
                 it["pick"] = {"x": b["x"], "y": b["y"], "clear_mm": round(min(b["w"], b["h"]) / 2, 1)}
             items.append(it)
             boxes.append(box)
+    if side_ms:
+        shape0 = cv2.imdecode(np.frombuffer(side[0], np.uint8), cv2.IMREAD_GRAYSCALE).shape
+        outlines0 = [raster_match(b, m, shape0) for ms in side_ms for b, m in ms]
+        polys = [to_xy(P, np.array(it["outline"], float), tz) if it.get("board") else None for it in items]
+        for i, m in side_match(side[1], polys, outlines0, tz).items():
+            h = side_height(side[1], m, polys[i], tz, P)
+            items[i]["height_mm"] = round(h[0], 1) if h and abs(h[1]) <= SIDE_SLIDE else None
+            items[i]["side"] = {"slide_mm": round(h[1], 1)} if h else {"cut_off": True}
+        for it in items:
+            if it.get("board"):
+                it.setdefault("height_mm", None)
     seen_ms = round((time.time() - t0) * 1000)
     if question:
         asked = [i for i in items if i.get("on_board") is not False][:24]

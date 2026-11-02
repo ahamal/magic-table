@@ -313,6 +313,18 @@ def confused():
     return opener(two(c, dx=-8, extra=lambda d: question(d, 110, 4)), 6)
 
 
+def x_eye(d, x0, y0, x1, y1, side):              # x: knocked out
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    d.line([(cx - 13, cy - 13), (cx + 13, cy + 13)], fill=1, width=7)
+    d.line([(cx - 13, cy + 13), (cx + 13, cy - 13)], fill=1, width=7)
+
+
+def dizzy():
+    """Back from a blackout: x x, a wobble, then blinking awake."""
+    return [two(x_eye)] * 3 + [two(x_eye, dx=x, dy=y) for x, y in ((-3, 1), (3, -1), (-3, 1), (3, -1), (0, 0))] \
+        + [two(x_eye)] * 4 + [eye_frame(open_=0.05), eye_frame(open_=0.3), eye_frame(open_=0.05), eye_frame()]
+
+
 def laughing():
     return opener(two(laugh_eye), 1) + [two(laugh_eye, dy=y) for y in (-4, 0, -4, 0, -4, 0)]
 
@@ -365,7 +377,7 @@ def thumbs_down():
 
 
 REACTIONS = [happy, sad, angry, shocked, smug, meh, sleepy, love, thinking, nervous, wink, confused, laughing,
-             alert, determined, sneaky, suspicious, blank, yes, no, eyeroll, humble, thumbs_up, thumbs_down]
+             alert, determined, sneaky, suspicious, blank, yes, no, eyeroll, humble, thumbs_up, thumbs_down, dizzy]
 
 
 # ---------------------------------------------------------------- build

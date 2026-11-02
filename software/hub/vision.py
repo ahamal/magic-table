@@ -42,9 +42,11 @@ TIP_BELOW_MARKER = 57.0   # cup tip is this far below the head marker's centre (
 # Every head position is the marker's centre: calibration fits the cameras to it, GRBL's work
 # X/Y/Z are it. The marker is on thin card on the Z extrusion's left face (facing -X, ~1 mm out),
 # so the extrusion's centre is ~11.5 mm to its +X. The cup is found from the marker, not the
-# extrusion: tip X/Y = head X/Y + this. Measured by camera on Nov 1 (head over a card centre,
-# cup seen 24.7 mm off in -Y).
-TIP_OFFSET = (0.6, -24.7)
+# extrusion: tip X/Y = head X/Y + this, in vision's frame. Measured Nov 2 by centring the cup over
+# two chips 90 mm apart by eye (both needed the same +3 X, -5 Y on the old (0.6, -24.7)); the Y
+# matches a ruler (20 mm). The X isn't physical (the cup is in line with the extrusion, ~11 mm +X
+# of the card): it's what lands, so it absorbs some of vision's error. Re-measure after calibrating.
+TIP_OFFSET = (-2.4, -19.7)
 CLEARANCE = 15.0          # calibration keeps the cup at least this far above the board (mm)
 MATE_MARGIN = 40.0        # mm around Mate's footprint that counts as "over Mate"
 MATE_TOP = 103.0          # cup height that touches Mate's plywood top (where a card lies; the corner caps stand 2 mm above it)

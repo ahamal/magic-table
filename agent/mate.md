@@ -17,7 +17,9 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 ## Driving
 
 - **Easiest: let the hub drive it.** `POST hub/api/mate/goto {x, y, heading}` puts Mate's turning centre on (x, y) in board mm and turns it to `heading`, looking with the camera and correcting until it's within ~5 mm and ~3°. It raises the gantry head out of the way first and refuses spots off the board.
-- **Home:** `POST hub/api/mate/home` parks Mate at its home spot: the middle of the left margin, in line with the left board markers, facing into the board. `GET hub/api/mate/home` says where that is; `POST hub/api/mate/home/set` saves a new one (no body = where Mate is now). Send Mate home when it's done helping, and before calibrating the cameras.
+- **It looks before it drives.** Unless you pass `check: false`, before a move (`goto`, `home`, `look`) cam 1 takes a fresh picture and checks Mate's lane and the circles it sweeps turning at both ends for anything on the mat that isn't Mate, the crane or a board marker (~1 s, no API call). Something there: it refuses with `in_the_way` [{x, y}] and doesn't move. Then go around (a waypoint first), pick another `side` to look from, or ask a person to move it. It can't see dark things on the dark mat, and it only checks the mat.
+- **When to skip it:** `check: false` for a short hop where you've just looked, or to push things on purpose. Mate is a fine bulldozer for chips: shove the pot to the winner, sweep a mess off the play area. Say it as you do it ("Your winnings, sir."). Never push through cards you'll want to pick later, or anything tall that could topple onto them.
+- **Home:** `POST hub/api/mate/home` parks Mate at its home spot: on this build the middle of the far margin, facing the players (the notes have it). Move the gantry head to the front first: parked over the back, its wires hang across Mate's marker and the camera loses it. `GET hub/api/mate/home` says where that is; `POST hub/api/mate/home/set` saves a new one (no body = where Mate is now). Send Mate home when it's done helping, and before calibrating the cameras.
 
 - **Signs:** forward = `s1` −, `s2` +. Backward = `s1` +, `s2` −. Turn left (anticlockwise from above) = `+, +`. Turn right = `−, −`.
 - **Where it is:** Mate doesn't know. The hub's camera does: `GET hub/api/scene` → `mate {x, y, heading}` (heading = the way its face points, degrees anticlockwise from the gantry's +X). Its marker is on the top, so it needs to be in cam 1's view.
@@ -42,11 +44,22 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 | Feelings | `celebrate`, `laugh`, `shocked`, `sulk`, `nervous`, `smug`, `love`, `bored`, `angry`, `eye_roll`, `wink` |
 | Social | `hello`, `bye`, `point`, `bow`, `suspicious` |
 | Game | `thinking`, `your_turn`, `ready`, `peek`, `fold`, `all_in`, `bluff` |
+| Helping | `on_it` (asked to do something), `counting` (taking a close look) |
+| Recovering | `woke_up` (back from a blackout: x x eyes, a wobble, then blinking awake) |
 
 - **One-offs:** no `name`, and your own `{emoji, text, face, steps}` (same format as gestures.json). Faces are the 24 reactions in [software/mate/faces/reactions/](../software/mate/faces/reactions.png).
 - Every gesture **ends where it started** (moves are a few cm, turns come back), with the flipper back at rest (20°) and the eyes back. Give Mate ~5 cm of room around it, and never gesture with a card on Mate or the cup low over it.
 - Gestures take ~4–12 s. Turns add up a little (~4° over a dozen gestures): re-square Mate with `/api/mate/goto` before precise work.
 - **Aim it:** `to` only names who it's for in the chat. To really face a player, turn Mate first (`/api/mate/goto` with a `heading`, or a turn), then gesture.
+
+## When Mate blacks out
+
+Mate sometimes browns out and restarts, mostly on a flipper move (the servo pulls too much current), and its Wi-Fi drops for ~10-20 s. You'll see a gesture or a move come back with "Mate didn't answer", and then `GET /status` shows a small `uptime_ms` and `reset_reason` (e.g. `power_on`). Play it as part of the show, not as an error:
+
+1. **Cover for it, in character, right away.** Make up an excuse and vary it: "My helper needs a moment. Union rules." / "He's thinking very hard." / "Overwhelmed by the stakes, I'm afraid." Never say brownout, Wi-Fi or reboot to the table.
+2. **Wait for it:** `GET /status` every ~2 s until it answers (give it ~30 s; if not, ask the people at the table to check its switch).
+3. **When it's back, play `woke_up`** (x x eyes, a wobble, then blinking awake) and say something to close it ("Welcome back." / "There he is."). Its face goes back to the plain eyes on its own.
+4. **Then pick up where you were.** Its flipper is wherever it stopped (bring it to 20 slowly), and a move it was making stopped part-way: check `hub/api/scene` for where it is before carrying on.
 
 ## Face
 
@@ -57,7 +70,18 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 ## Camera
 
 - `GET /capture`: what Mate sees, from ~6 cm up: the cards in front of it, the players' side of the table, people. Turn Mate to look around. ~1 s a photo; don't use the stream (`:81`) from an agent, it slows Mate's Wi-Fi.
-- Good for close looks the overhead cameras can't give: reading a card in front of it, looking at a player.
+- Good for close looks the overhead cameras can't give: reading a card in front of it, looking at a player, how tall something is or how many chips are in a stack (the overhead cameras look down on it and can't tell).
+
+## Looking with Mate
+
+When the cameras above can't tell you something (a stack's height, what's under or behind something, a card's face from the side), send Mate to look:
+
+1. **Say what you're doing, and have Mate show it.** Out loud first, as yourself: "Let me ask my helper to count that." Then `on_it` (Mate nods: no flipper, so it can't brown out on the way). The table should never wonder why Mate is moving.
+2. **Drive there:** `POST hub/api/mate/look {x, y, distance}` sends Mate to `distance` mm from (x, y) (its camera to the spot), facing it, from the side it's already on (`side`: degrees, to choose). Cam 1 checks the way first (above) and it refuses with `in_the_way` if anything's on it (the thing it's looking at doesn't count): pick another `side`, go around, or ask. ~15–20 s; `ok`, `off_mm`.
+3. **Look:** `counting` while you do. `GET hub/api/find?cam=mate&what=<it>&ask=<question>&effort=low` crops the thing out of Mate's picture and asks Muse Spark about the crop. Or `GET hub/api/see?cam=mate&ask=...` for the whole view.
+4. **Say what Mate found** ("Four reds.") and react with a gesture (`thumbs_up`, `shocked`...). Send Mate home when it's done helping.
+
+Tested Nov 2 on a stack of 4 red chips: from home (~300 mm) Muse said "about 3"; at 150 mm, whole picture, 3; at 120 mm with `find` (a crop) and `effort=low`, **4, right**; `minimal` effort still said 3. At 80 mm the stack's bottom was out of the picture (the camera sits ~6 cm up and tilts up a little). So: **~120 mm, crop with find, effort low.**
 
 ## Helping the gantry
 

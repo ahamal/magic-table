@@ -23,10 +23,10 @@ from pydantic import BaseModel
 import camera
 import eyes
 from grbl import REALTIME, Grbl
-from mate import MateLink
+from mate import CENTRE as MATE_CENTRE, MateLink
 from gripper import SEQUENCES, Gripper
 from talk import Chat, TranscribeError
-from vision import MATE_SIZE, Vision
+from vision import MATE_SIZE, Vision, to_xy
 from voice import Voice
 
 HERE = Path(__file__).parent
@@ -323,7 +323,8 @@ def _robot_boxes():
 
 
 @app.get("/api/find")
-async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = "minimal", by: str = "agent"):
+async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = "minimal", height: bool = False,
+               by: str = "agent"):
     """Where things are, for picking (SAM 3.1, one fresh picture from `cam`: 1 by default, 0, or
     "mate"). what: one or more names, comma-separated (from /api/see, or your own); fallbacks
     after "|" are tried in order when a name finds nothing: what=earbuds case|white object
@@ -331,18 +332,25 @@ async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = 
     calibrated camera its footprint on the board {x, y, w, h, angle}, on_board, and pick
     {x, y, clear_mm}: put the cup at x, y; clear_mm is how much room the cup (15 mm) has.
     Mate's camera gives pixels only. ask: a question Muse Spark answers about each item from
-    its crop (answer). ~2-3 s."""
+    its crop (answer). height=true (cam 1): cam 0, low at the side, looks at the same moment
+    and each item gets height_mm, how tall it stands (None where cam 0 can't see it whole).
+    Off by default: on this build cam 0's board level is off (Nov 2), so it finds nothing yet.
+    ~2-3 s, ~3-5 s with height."""
     phrases = [p.strip() for p in what.split(",") if p.strip()][:6]
     if not phrases:
         raise HTTPException(400, "say what to find, e.g. what=playing card")
     if effort not in eyes.EFFORTS:
         raise HTTPException(400, f"effort is one of {', '.join(eyes.EFFORTS)}")
-    jpg, P = await _picture(cam)
+    side = cam == "1" and height and vision._cam(0)[0] is not None
+    shots = await asyncio.gather(_picture(cam), *([_picture("0")] if side else []))
+    jpg, P = shots[0]
     tz = (vision.cal or {}).get("table_z")
     if tz is None:
         P = None
-    res = await _meta(eyes.find(jpg, phrases, P, tz, (vision.cal or {}).get("bounds"), ask, effort, _robot_boxes()))
-    return _eyes_done("find", {"cam": cam, "what": phrases, "ask": ask, **res}, {cam: jpg}, by)
+    res = await _meta(eyes.find(jpg, phrases, P, tz, (vision.cal or {}).get("bounds"), ask, effort, _robot_boxes(),
+                                shots[1] if side else None))
+    return _eyes_done("find", {"cam": cam, "what": phrases, "ask": ask, **res},
+                      {cam: jpg, **({"0": shots[1][0]} if side else {})}, by)
 
 
 @app.get("/api/find/shapes")
@@ -539,9 +547,66 @@ class MateGoto(BaseModel):
     x: float
     y: float
     heading: float | None = None   # degrees, anticlockwise from +X; None = any
+    check: bool = True             # cam 1 checks the way first (~1 s, no API call); false = just go
 
 
-def mate_goto(x, y, heading):
+MATE_EYE = MATE_SIZE[0] / 2 - MATE_CENTRE[0]   # the camera, on the front face, ahead of the turning centre (mm)
+MATE_SWEEP = 100.0      # mm: what Mate's corners reach when it turns in place, from its turning centre
+MATE_LANE = MATE_SIZE[1] / 2 + 10   # mm either side of its path that it brushes
+MAT_GREY = 120          # cam 1: the mat is darker than this (it reads 30-85 across the board)
+MAT_RED = (100, 90)     # ...and anything this saturated and bright isn't the mat either (a red chip)
+IN_THE_WAY_PX = 120     # px: something this big in cam 1 is in the way (a chip is ~2000)
+MARKER_CLEAR = 30       # mm around a board marker's centre that's the marker, not in the way
+
+
+def _in_the_way(start, end, ignore=()):
+    """What Mate would hit driving from start to end (its turning centre), from a fresh cam 1
+    picture: anything that isn't dark mat along its lane and where it turns, apart from Mate,
+    the gantry head, the board markers and the spots in `ignore`. Only on the mat (inside the
+    board markers): past them is the table. [{x, y, px}], or why it can't tell (a string)."""
+    P, _ = vision._cam(1)
+    tz = (vision.cal or {}).get("table_z")
+    marks = (vision.scene or {}).get("board") or {}
+    if P is None or tz is None:
+        return "cam 1 isn't calibrated"
+    if len(marks) < 4:
+        return "cam 1 can't see all four board markers"
+    jpg = get_camera(1).capture()
+    if jpg is None:
+        return "cam 1 gave no picture"
+    img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+    shape = img.shape[:2]
+    pix = lambda pts: np.array([eyes.project(P, (x, y, tz)) for x, y in pts], np.int32)
+    ring = lambda c, r: [(c[0] + r * math.cos(t), c[1] + r * math.sin(t)) for t in np.linspace(0, 2 * math.pi, 32)]
+    (sx, sy), (ex, ey) = start, end
+    n = math.hypot(ex - sx, ey - sy) or 1.0
+    ox, oy = -(ey - sy) / n * MATE_LANE, (ex - sx) / n * MATE_LANE
+    path = np.zeros(shape, np.uint8)
+    cv2.fillConvexPoly(path, pix([(sx + ox, sy + oy), (ex + ox, ey + oy), (ex - ox, ey - oy), (sx - ox, sy - oy)]), 1)
+    for c in (start, end):
+        cv2.fillConvexPoly(path, pix(ring(c, MATE_SWEEP)), 1)
+    mat = np.zeros(shape, np.uint8)
+    cv2.fillConvexPoly(mat, cv2.convexHull(pix([(m["x"], m["y"]) for m in marks.values()])), 1)
+    path &= mat
+    for r in eyes.robot_masks(P, _robot_boxes() or {}, shape).values():
+        path[r > 0] = 0
+    for c in [(m["x"], m["y"]) for m in marks.values()]:
+        cv2.fillConvexPoly(path, pix(ring(c, MARKER_CLEAR)), 0)
+    for c in ignore:
+        cv2.fillConvexPoly(path, pix(ring(c, 35)), 0)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    odd = (cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) > MAT_GREY) | ((hsv[..., 1] > MAT_RED[0]) & (hsv[..., 2] > MAT_RED[1]))
+    odd = cv2.morphologyEx((odd & (path > 0)).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    k, _, stats, mids = cv2.connectedComponentsWithStats(odd)
+    hit = []
+    for i in range(1, k):
+        if stats[i, cv2.CC_STAT_AREA] >= IN_THE_WAY_PX:
+            x, y = to_xy(P, mids[i:i + 1], tz)[0]
+            hit.append({"x": round(float(x), 1), "y": round(float(y), 1), "px": int(stats[i, cv2.CC_STAT_AREA])})
+    return hit
+
+
+def mate_goto(x, y, heading, check=True, ignore=()):
     if not vision.cal:
         return {"ok": False, "error": "not calibrated"}
     b = vision.cal.get("bounds")
@@ -553,15 +618,60 @@ def mate_goto(x, y, heading):
     if travel is not None and z_now() < travel - 0.5:   # nothing low for Mate to run into
         if grbl.send(f"G90 G0 Z{travel:.3f}") != "ok" or grbl.send("G4 P0", 60) != "ok":
             return {"ok": False, "error": "couldn't raise the head first"}
-    return mate.goto(mate_pose, x, y, heading)
+    p = mate_pose()
+    if p is None:
+        return {"ok": False, "error": "the camera can't see Mate's marker"}
+    if check:
+        hit = _in_the_way(mate.centre(p), (x, y), ignore)
+        if isinstance(hit, str):
+            return {"ok": False, "error": f"can't check Mate's way: {hit} (check=false to go anyway)"}
+        if hit:
+            return {"ok": False, "error": "something is in Mate's way", "in_the_way": hit}
+    res = mate.goto(mate_pose, x, y, heading)
+    res["checked_path"] = check
+    return res
 
 
 @app.post("/api/mate/goto")
 async def mate_goto_api(body: MateGoto):
     """Drive Mate so its turning centre ends on (x, y), then turn to `heading`. Turns, drives,
     looks with the camera and corrects until within ~5 mm and ~3 deg. Raises the gantry head to
-    travel height first."""
-    return await asyncio.to_thread(mate_goto, body.x, body.y, body.heading)
+    travel height first. With check (the default), cam 1 looks at the way first (its lane and
+    where it turns, ~1 s, no API call): anything on the mat there, or no way to check, and it
+    refuses (in_the_way [{x, y}]). check=false just goes (a short hop in the clear, or pushing
+    chips on purpose)."""
+    return await asyncio.to_thread(mate_goto, body.x, body.y, body.heading, body.check)
+
+
+class MateLook(BaseModel):
+    x: float
+    y: float
+    distance: float = 150.0          # from Mate's camera to (x, y), mm
+    side: float | None = None        # look from this direction (degrees from +X, from the spot toward Mate); None = from where Mate is
+    check: bool = True               # cam 1 checks the way first; false = just go
+
+
+def mate_look(x, y, distance=150.0, side=None, check=True):
+    p = mate_pose()
+    if p is None:
+        return {"ok": False, "error": "the camera can't see Mate's marker"}
+    cx, cy = mate.centre(p)
+    a = math.radians(side) if side is not None else math.atan2(cy - y, cx - x)
+    back = distance + MATE_EYE
+    spot = (x + back * math.cos(a), y + back * math.sin(a))
+    heading = (math.degrees(a) + 180 + 180) % 360 - 180      # facing the spot
+    res = mate_goto(spot[0], spot[1], heading, check, ignore=[(x, y)])
+    res["looking_at"] = [x, y]
+    return res
+
+
+@app.post("/api/mate/look")
+async def mate_look_api(body: MateLook):
+    """Send Mate to look at a spot on the board with its own camera: it drives (with the
+    overhead camera checking) to `distance` mm from (x, y) and faces it, from `side` or from
+    where it already is. Then use cam=mate with /api/see (ask=...) or /api/find to look. Like
+    goto, it checks the way first (in_the_way; check=false skips that). ~20 s."""
+    return await asyncio.to_thread(mate_look, body.x, body.y, body.distance, body.side, body.check)
 
 
 @app.get("/api/mate/home")
