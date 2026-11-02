@@ -23,10 +23,12 @@ You're an agent (AI or person) about to use the Magic Table: a gantry that picks
 - **Mate is the friendly one.** It's how the table relates to people: expressive eyes on its face most of the time (happy, curious, looking around), gestures with its flipper (wave, salute), looking at people with its camera. Keep it lively but not frantic.
 - **Safety first, then speed.** The hub refuses the dangerous things (Z limits, board bounds, lowering onto Mate). Inside those, go fast for steps that are proven, slow for anything new, and check the first try before repeating it.
 - **Look, act, check.** Before a move, look (`/api/scene`); after it, look again. Cameras and counts can be wrong; the photo is the truth.
+- **Snapshot as you go.** For any multi-step job, save both camera photos (`/api/capture?cam=0|1`) at each stage, in the background. Don't stop to look at them unless something's off; they're for reviewing a failure afterwards.
 - **Keep notes.** The next agent starts from what you learned.
 
 ## Working together: gantry + Mate
 
 - Mate can **turn in place**, so it can turn things: the gantry puts a card on Mate's top, Mate rotates, the gantry picks the card back up at the new angle (the cup itself can't rotate cards). It works: see the recipe in [mate.md](mate.md). A card on Mate's top covers Mate's marker, so turn by Mate's step calibration (in the notes), then look where the card ended up before picking it.
+- Mate can **flip cards over** with its flipper: the gantry places a card on the lowered flipper in front of Mate's face, Mate lifts it and rolls forward, and the card tips over. Recipe in [mate.md](mate.md).
 - The gantry must **never press down on Mate**: the hub keeps the cup above Mate's top minus a gentle 1.5 mm squeeze (enough to place or pick a card there), and crosses Mate at travel height (Z 110). Bumping Mate sideways is survivable but not a plan.
 - Mate has no position sense of its own; the overhead camera (`/api/scene` → `mate`) is where it is.

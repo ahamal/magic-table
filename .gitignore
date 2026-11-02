@@ -14,4 +14,5 @@ software/hub/certs/
 software/hub/transcripts.jsonl
 software/hub/calibration.json
 software/hub/last_position.json
+software/hub/needs_reanchor
 software/hub/notes.md

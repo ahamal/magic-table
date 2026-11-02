@@ -10,6 +10,7 @@ A small wheeled robot on the table — the AI player's body. Self-contained: its
 | Camera | The board's bundled **GC0308**, 640×480, no hardware JPEG (the firmware encodes in software). Fixed on Mate's head, mounted upside down (the firmware rotates it 180°) — also the peek camera. An OV2640/OV3660 module fits the same connector | Working |
 | Wheels | 2× 28BYJ-48 + ULN2003, differential drive, 70 mm printed wheels ([`wheels/`](wheels/)), ball caster or skid at the back | Have motors, wheels designed |
 | Servo | Flipper: **MG996R** (big: ~0.5–0.9 A moving, ~2.5 A stalled), driven straight from the ESP32's PWM. No pan or tilt servos | Working |
+| Flipper hand | On the right side, 42 mm from the right wheel's axle at 45° up-forward: a 73 mm arm, then bent 90° across the whole face. Rests on the table at 20°, level and centred on the face at 65°. Flips cards over | Working (second hand, Nov 2) |
 | Face | 0.96" SSD1306 OLED, 128×64, I2C 0x3C, on the head with the camera just below it. The only I2C device. Shows bitmaps sent over Wi-Fi, or a status screen | Working on the S3 |
 | Range sensor | TF-Luna on the head (I2C mode, 0x10, 5V power) | Later |
 | Speech | Done by the hub (the Pi 5 speaks for Mate) | — |

@@ -72,7 +72,7 @@ Tuned on Oct 30 at 12V (see [`docs/log.md`](../../docs/log.md)):
 - **Calibration:** ArUco head marker (on the [marker plate](markers/README.md)) moved over a grid at three heights; the hub fits each camera ([`software/hub/vision.py`](../../software/hub/vision.py)). Start with Z at its top over the middle of the board: calibration only goes down from there, never closer than 15 mm to the board, and stops with no further moves on any reset, pause or error.
 - **No limit switches, so counts can lie.** A move into an end of travel stalls and skips steps, but GRBL counts it anyway, and the next move "back" by count overshoots. On Nov 1 calibration went up into the top of Z, then "returned" 40 mm too low and tore the board paper. Hence: start at the top and go down, never assume room above.
 - **Mate rule:** a sideways bump is fine, pressing down into Mate isn't. Travel height is Z 110 (Mate is 105 to the top of its corner caps); below it the hub never lowers or ends the cup over Mate, and moves across it go up first. Mate's toggle switch now sits at the back, off the top.
-- **Robo Diner hand:** the tilt/grab servos (PCA9685) — keep or replace with the suction head? See open questions.
+- **Robo Diner hand:** replaced by the suction head (pump on CoolEn, valve on SpnDir); the tilt/grab servos aren't used.
 
 ## Open
 

@@ -122,9 +122,14 @@ def z_now():
     return (grbl.status.get("WPos") or [0, 0, 0])[2]
 
 
+UNANCHORED = {"line": "", "reply": "error:GRBL reset, so its position is unknown: $X, then POST /api/calibration/reanchor"}
+
+
 @app.post("/api/jog")
 async def jog(body: Jog):
     """Relative jog ($J). Cancel early with /api/realtime/jog_cancel. Z jogs stop at the Z limits."""
+    if vision and vision.needs_reanchor:
+        return UNANCHORED          # the limits are in work coordinates, which a reset lost
     if body.z:
         z = z_now()
         body.z = min(body.z, Z_MAX - z) if body.z > 0 else max(body.z, Z_MIN - z)
@@ -146,6 +151,8 @@ async def move(body: Move):
     axes = "".join(f"{a}{v:.3f}" for a, v in (("X", body.x), ("Y", body.y), ("Z", body.z)) if v is not None)
     if not axes:
         raise HTTPException(400, "nothing to move")
+    if vision and vision.needs_reanchor:
+        return UNANCHORED
     if body.z is not None and not Z_MIN <= body.z <= Z_MAX:
         return {"line": "", "reply": f"error:Z {body.z:g} is outside {Z_MIN:g} to {Z_MAX:g}"}
     if vision:
@@ -356,6 +363,8 @@ def mate_goto(x, y, heading):
     b = vision.cal.get("bounds")
     if b and not (b[0] - 80 <= x <= b[1] + 80 and b[2] - 80 <= y <= b[3] + 80):
         return {"ok": False, "error": "that's off the board"}
+    if vision.needs_reanchor:                           # can't tell how high the head is
+        return {"ok": False, "error": UNANCHORED["reply"].removeprefix("error:")}
     travel = vision.cal.get("travel_z")
     if travel is not None and z_now() < travel - 0.5:   # nothing low for Mate to run into
         if grbl.send(f"G90 G0 Z{travel:.3f}") != "ok" or grbl.send("G4 P0", 60) != "ok":

@@ -30,6 +30,7 @@ import numpy as np
 
 CAL_FILE = Path(__file__).parent / "calibration.json"
 POS_FILE = Path(__file__).parent / "last_position.json"   # for re-anchoring after a GRBL reset
+RESET_FILE = Path(__file__).parent / "needs_reanchor"      # there while a reset is unresolved, across hub restarts
 
 DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 BOARD_IDS, HEAD_ID, MATE_ID = (0, 1, 2, 3), 10, 20
@@ -163,17 +164,30 @@ class Vision:
     def __init__(self, cameras, grbl, emit, mate=None):
         self.cameras, self.grbl, self.emit, self.mate = cameras, grbl, emit, mate
         self.cal = json.loads(CAL_FILE.read_text()) if CAL_FILE.exists() else None
+        self._reset_flag = False
         self.scene = {"calibrated": bool(self.cal)}
         self.busy = False
         self._abort = None
-        # GRBL reset since the last known position. Opening the port used to reset the Uno on
-        # every hub start; with `stty -hupcl` (hub.service) it doesn't, so only a banner seen
-        # since connecting (power-up, reset, replug) counts.
-        self.needs_reanchor = CAL_FILE.exists() and grbl.resets > 0
+        # GRBL reset since the last known position: a banner seen, or GRBL found in alarm on
+        # connecting (see grbl.py). Kept on disk so a hub restart doesn't forget it. Opening the
+        # port doesn't reset the Uno (`stty -hupcl` in hub.service).
+        self.needs_reanchor = CAL_FILE.exists() and (grbl.resets > 0 or RESET_FILE.exists())
         self.last_pos = json.loads(POS_FILE.read_text()) if POS_FILE.exists() else None
         grbl.listeners.append(self._on_grbl)
         self._dets = {}
         self._lock = threading.Lock()
+
+    @property
+    def needs_reanchor(self):
+        return self._reset_flag
+
+    @needs_reanchor.setter
+    def needs_reanchor(self, v):
+        self._reset_flag = bool(v)
+        try:
+            RESET_FILE.touch() if v else RESET_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def _det(self, cam):
         if cam not in self._dets:

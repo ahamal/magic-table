@@ -68,11 +68,12 @@ const CARD = [63, 88], BOARD_MARKER = 30;
 // Mate: a 130 x 130 x 100 plywood box, 3 mm off the ground on its wheels, black printed corner caps that
 // stand 2 mm proud of every face (so 105 to the top of the caps); the marker is on the plywood top (103)
 const MATE = { w: 130, d: 130, body: 100, lift: 3, proud: 2, corner: 24 };
-// Flipper: a bent black plastic knife on a servo by the right wheel, 42 mm ahead of it, near the front
-// corner. The servo sits at 45 deg, so the blade sweeps a diagonal plane around that corner onto the
-// face: 20 deg (rest) low across the front edge, ~60 deg across the face, ~110 deg up over the top.
-// Approximate: 73 mm, a bend, 27 mm more.
-const FLIP = { aheadOfWheel: 42, pivotUp: 45, seg1: 73, seg2: 27, bend: 40, width: 14, flatAt: 60 };
+// Flipper: a black plastic knife on a servo on the right side, 42 mm from the right wheel's axle at
+// 45 deg (forward and up). The shaft points straight out of the side, so the blade swings in a plane
+// beside the box: out 73 mm, then bent 90 deg inward across the whole front of the face. 20 deg (rest): the
+// arm angles down and the bent part lies on the table; 65 deg: the arm points straight forward and the
+// bent part stands flat, parallel to and centred on the face; past that it rises over the top.
+const FLIP = { fromAxle: 42, at: 45, seg1: 73, seg2: 146, width: 14, rest: 20, level: 65 };
 const WHEEL_FORWARD = 5;   // the axle is 5 mm ahead of the box's middle
 // The head, relative to the head marker's centre (what GRBL positions). Measured: the cup tip is at
 // (0.6, -24.7) and 57 mm below (vision.TIP_OFFSET / TIP_BELOW_MARKER; checked against card centres).
@@ -273,26 +274,22 @@ function drawMate(m, tz) {
     wheel.position.set(WHEEL_FORWARD, WHEEL.d / 2, sz * (D / 2 + proud + WHEEL.w / 2 + 1));
     g.add(wheel);
   }
-  // flipper: pivot at the right side, near the front corner; the servo axis points out of that
-  // corner at 45 deg (forward + right), so the blade sweeps the diagonal plane across the face.
-  // phi: angle from horizontal, 0 = straight across the face, + = up
+  // flipper: the shaft points out of the right side (+z), the arm swings in the x-y plane beside it
   const flip = new THREE.Group();
-  flip.position.set(WHEEL_FORWARD + FLIP.aheadOfWheel, lift + FLIP.pivotUp, D / 2 + proud + 3);
-  const axis = new THREE.Vector3(1, 0, 1).normalize();         // servo shaft: out of the front-right corner
-  const across = new THREE.Vector3(1, 0, -1).normalize();      // in the sweep plane: forward-left, across the face
-  const horn = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 4, 16), mat(0x2b2b2b));
-  horn.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis); flip.add(horn);
-  const phi = ((m.flipper ?? 20) - FLIP.flatAt) * Math.PI / 180;
-  const up = new THREE.Vector3(0, 1, 0);
-  const blade = (len, a, from) => {                  // a box along its own +y, laid along direction a
-    const dir = across.clone().multiplyScalar(Math.cos(a)).addScaledVector(up, Math.sin(a)).normalize();
-    const b = new THREE.Mesh(new THREE.BoxGeometry(FLIP.width, len, 2.5), mat(0x101010));
-    b.quaternion.setFromUnitVectors(up, dir);
-    b.position.copy(from).addScaledVector(dir, len / 2); flip.add(b);
-    return from.clone().addScaledVector(dir, len);
-  };
-  const elbow = blade(FLIP.seg1, phi, new THREE.Vector3(0, 0, 0));
-  blade(FLIP.seg2, phi + FLIP.bend * Math.PI / 180, elbow);
+  const fa = FLIP.at * Math.PI / 180;
+  const pivotY = WHEEL.d / 2 + FLIP.fromAxle * Math.sin(fa);
+  flip.position.set(WHEEL_FORWARD + FLIP.fromAxle * Math.cos(fa), pivotY, D / 2 + proud + 6);
+  const horn = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 6, 16), mat(0x2b2b2b));
+  horn.rotation.x = Math.PI / 2; horn.position.z = -3; flip.add(horn);
+  // phi: the arm's angle from straight forward (+ = up); level at FLIP.level, down on the table at FLIP.rest
+  const restPhi = -Math.asin(Math.min(1, (pivotY - 5) / FLIP.seg1));
+  const phi = ((m.flipper ?? FLIP.rest) - FLIP.level) / (FLIP.level - FLIP.rest) * -restPhi;
+  const arm = new THREE.Group(); arm.rotation.z = phi; flip.add(arm);
+  const k = mat(0x101010);
+  const s1 = new THREE.Mesh(new THREE.BoxGeometry(FLIP.seg1, FLIP.width, 2.5), k);   // flat side faces out
+  s1.position.x = FLIP.seg1 / 2; arm.add(s1);
+  const s2 = new THREE.Mesh(new THREE.BoxGeometry(2.5, FLIP.width, FLIP.seg2), k);   // bent inward, flat side faces forward
+  s2.position.set(FLIP.seg1, 0, -FLIP.seg2 / 2 + 1.25); arm.add(s2);
   g.add(flip);
   const face = new THREE.Mesh(new THREE.BoxGeometry(3, 16, 28), mat(0x111111));    // OLED
   face.position.set(W / 2 + 1.5, lift + B * .62, 0); g.add(face);

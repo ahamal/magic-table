@@ -1,7 +1,7 @@
 """One long-lived connection to GRBL over USB serial.
 
-Opening the port resets the Uno (and GRBL forgets its position), so the
-hub opens it once and keeps it open. Lines are sent one at a time and wait
+A reset makes GRBL forget its position. Opening the port used to reset the Uno; hub.service
+turns that off (`stty -hupcl`), and the hub opens the port once and keeps it open. Lines are sent one at a time and wait
 for GRBL's `ok`/`error`; real-time bytes (status, hold, resume, reset, jog
 cancel) skip the queue. A poller asks for status a few times a second and
 every parsed status or message goes to the listeners.
@@ -49,6 +49,7 @@ class Grbl:
         self.homed = False
         self.settings = {}
         self.resets = 0              # GRBL banners seen: each one means the Uno restarted
+        self._first_status = True    # the first status after connecting
         self._lines = queue.Queue()  # (line, reply_queue)
         self._reply = None           # reply queue of the line waiting for ok
         self._write = threading.Lock()
@@ -76,9 +77,10 @@ class Grbl:
     def _connect(self):
         self.ser = serial.Serial(self.port, self.baud, timeout=0.1)
         self._emit({"type": "log", "dir": "sys", "text": f"opened {self.port}, waiting for GRBL"})
-        time.sleep(2)  # the Uno resets on open
+        time.sleep(2)  # in case the Uno resets on open (it shouldn't with -hupcl)
         self.ser.reset_input_buffer()
         self.ser.write(b"\r\n\r\n")
+        self._first_status = True
         threading.Thread(target=self.load_settings, daemon=True).start()
 
     # ---- sending ----
@@ -164,6 +166,14 @@ class Grbl:
             if "MPos" in st:
                 st["WPos"] = [round(a - b, 3) for a, b in zip(st["MPos"], self.wco)]
             st["homed"] = self.homed
+            if self._first_status:
+                self._first_status = False
+                # GRBL boots into alarm ($22=1). Found in alarm on connecting, it most likely reset
+                # before we were listening (the Pi booting powers up the Uno too), so its banner
+                # was missed: count it as a reset.
+                if st.get("state", "").startswith("Alarm"):
+                    self.resets += 1
+                    self._emit({"type": "log", "dir": "sys", "text": "Grbl in alarm on connect: treating it as a reset"})
             self._set_status(st)
             return
 

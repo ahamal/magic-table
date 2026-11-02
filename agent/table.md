@@ -31,7 +31,7 @@ How to drive the gantry and the gripper safely and well. The hub enforces the ha
 **Pick a card** (thin, flat, smooth)
 1. `GET /api/scene` → the card's `x, y`.
 2. `POST /api/tip {x, y, z: 3}`: rapid to just above it (stay at travel height first if Mate is anywhere near the path).
-3. `G1 Z-0.8 F1200`: the cup touches and squeezes a little. On a stack of n cards add 0.3 × (n − 1).
+3. `G1 Z-0.8 F1200`: the cup touches and squeezes a little. On a stack of n cards add 0.3 × (n − 1). If the card stays behind, go deeper: on this build some spots need Z −1.5 to −2 (the cup is sprung; −2 only via `/api/send`) and a 2 s pump.
 4. `grip?pump_s=1`. One second of pumping is enough; the vacuum then holds ~20 s.
 5. **Peel off at F1500** (`G1 Z5 F1500`), then rapid up to **Z 40** and move. A faster peel (F2000) left every card behind: the seal isn't strong enough yet to yank it.
 
@@ -55,7 +55,7 @@ How to drive the gantry and the gripper safely and well. The hub enforces the ha
 
 ## After a reset
 
-Any hub restart, Uno reset or power cycle loses GRBL's position. Unlock (`$X`), then `POST /api/calibration/reanchor`: it restores the saved position, which is exact if nothing moved the head. If the head did move (skipped steps, moved by hand), use `?camera=true` instead. Never use the jog page's Work zero after calibrating.
+An Uno reset, a Pi reboot or a power cycle loses GRBL's position (a hub restart doesn't). The hub flags it (`/api/calibration` → `needs_reanchor`) and refuses moves until it's fixed. Unlock (`$X`), then `POST /api/calibration/reanchor`: it restores the saved position, which is exact if nothing moved the head. If the head did move (skipped steps, moved by hand), use `?camera=true` instead. Never use the jog page's Work zero after calibrating.
 
 ## Calibrating
 

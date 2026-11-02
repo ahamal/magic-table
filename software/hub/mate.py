@@ -18,7 +18,7 @@ MATE = "http://mate.local"
 MM_PER_HALFSTEP = 0.048          # forward
 DEG_PER_HALFSTEP = {"left": 0.0377, "right": 0.0371}
 CENTRE = (8.6, 0.5)              # turning centre from the marker centre, Mate's frame (forward, left)
-SPEED, ACCEL = 800, 1000
+SPEED, ACCEL = 640, 1000         # 80% of the max: full speed drops Mate's Wi-Fi now and then
 CLOSE_MM, CLOSE_DEG = 5.0, 3.0   # good enough
 
 

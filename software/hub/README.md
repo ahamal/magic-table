@@ -41,7 +41,7 @@ The body API for the whole table. Step 2.
 | `POST /api/realtime/{status,hold,resume,reset,jog_cancel}` | Sent immediately |
 | `GET /api/gripper` | `{pump, valve}` |
 | `GET /api/guide`, `/api/guide/{table,mate}` | the agent guides (repo `agent/`), plain text |
-| `POST /api/mate/goto {x, y, heading?}` | drive Mate's turning centre to (x, y) and face `heading`, with the camera checking (~5 mm, ~3°); raises the gantry head first |
+| `POST /api/mate/goto {x, y, heading?}` | drive Mate's turning centre to (x, y) and face `heading`, with the camera checking (~5 mm, ~3°); raises the gantry head first. Wheels at 640 (80% of max) |
 | `GET /api/mate/home`, `POST /api/mate/home`, `POST /api/mate/home/set {x?, y?, heading?}` | Mate's home spot: where, go there, save a new one (no body = here) |
 | `POST /api/say {text, wait?}` | speak on the table's Bluetooth speaker (espeak-ng); a `speaking` event goes to the pages |
 | `GET /api/notes`, `POST /api/notes {text, by}` | this build's notes: what agents and people learned about this particular table. Kept on the Pi (`~/hub/notes.md`), never deployed over or committed |
@@ -112,7 +112,7 @@ Stop it (`sudo systemctl stop hub`) before running anything else that opens the 
 | `POST /api/calibration/table` | the cup is touching the board now |
 | `POST /api/calibration/travel {z?}` | set the travel height (cup height safe over Mate); no `z` = the current Z |
 | `POST /api/calibration/bounds` | measure the board markers, save the cup's allowed X/Y (inside their inner edges), re-centre 0, 0 on it |
-| `POST /api/calibration/reanchor?camera=false` | after a reset: the saved position (or X/Y from the camera with `camera=true`) |
+| `POST /api/calibration/reanchor?camera=false` | after a reset: the saved position (or X/Y from the camera with `camera=true`). Until then `/api/move`, `/api/tip`, `/api/jog` and `/api/mate/goto` refuse (a reset loses the position the limits rely on). A reset counts when GRBL's banner arrives, or when GRBL is found in alarm on connecting (a Pi boot resets the Uno before the hub listens) |
 | `POST /api/tip {x, y, z?, feed?}` | put the **cup tip** at board X/Y (and Z mm above the board); same Mate rule as `/api/move` |
 | `GET /api/scene?fresh=false` | head (and cup tip), Mate, cards, board, cameras; also the `scene` WebSocket event |
 

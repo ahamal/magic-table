@@ -155,6 +155,8 @@ curl -X POST "http://mate.local/servo?angle=120&speed=60"   # sweep to 120° at 
 
  **Avoid the very ends** (0 and 180) if the flipper hits something there: holding against a stop draws ~2.5 A.
 
+ **Keep it under ~80% of the max** (servo ≲ 480°/s, always with a `speed`; wheels `speed=640`). A jump or full speed draws enough current to drop Mate off Wi-Fi now and then (~5% of the time at full speed).
+
 ### `POST /screen`
 
 Shows a picture or a looping animation on the face (the OLED).
@@ -209,9 +211,9 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 | `s1` +, `s2` + | Turns **left** (anticlockwise, seen from above) |
 | `s1` −, `s2` − | Turns right |
 
-- One wheel turn is 4096 half-steps. The wheels are 70 mm across, so one turn rolls about **220 mm** (≈ 0.054 mm per half-step) if nothing slips. Not yet measured on the table.
-- Top speed: 800 half-steps/s ≈ **4.3 cm/s**.
-- Mate doesn't know where it is. Use the overhead camera (later) or `/capture` to see where it went.
+- One wheel turn is 4096 half-steps. The wheels are 70 mm across, so one turn rolls about **220 mm** (≈ 0.054 mm per half-step) if nothing slips. Measured on the table: 0.048 mm per half-step (build notes).
+- Top speed: 800 half-steps/s ≈ **4.3 cm/s**. Use 640 (80%) in practice; see the servo note above.
+- Mate doesn't know where it is. The hub's overhead camera does (`/api/scene` → `mate`), and `POST hub/api/mate/goto` drives it to a spot with the camera checking.
 - **No edge sensor:** nothing on Mate stops it at the table edge. The 4096-step limit per move (~22 cm) is the only guard.
 
 ### A typical agent loop
@@ -241,4 +243,5 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 - [x] Sign conventions: forward = s1 −, s2 +; left turn = +, + (see [Driving](#driving-whats-known-about-the-body))
 - [x] Calibration on the table: half-steps per mm, per degree of turn (Nov 1, with the overhead camera; numbers in the hub's build notes, `GET /api/notes`)
 - [ ] Card-corner test at 10–15 cm with the GC0308
-- [x] Mount the flipper arm and check the 20° resting pose (a bent plastic knife on the front face; see [agent/mate.md](../../agent/mate.md))
+- [x] Mount the flipper arm and check the 20° resting pose (on the right side, bent across the face; level and centred at 65°; see [agent/mate.md](../../agent/mate.md))
+- [x] Flip cards over with the flipper (Nov 2: 14 flips, all flat; recipe in [agent/mate.md](../../agent/mate.md))

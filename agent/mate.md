@@ -8,7 +8,7 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 |---|---|
 | `GET /info` | Limits, screen size, camera. Once at start. |
 | `GET /status` | `busy`, the last move (`last.d1/d2`, `result`), flipper angle (`servo_now`), screen, `boots`. |
-| `POST /step?s1=&s2=&speed=800&accel=1000` | Move both wheels (half-steps, ±4096 max per call). Returns at once; poll `/status` until `busy` is false. Use the max `speed=800` and `accel=1000`: it's slow otherwise. |
+| `POST /step?s1=&s2=&speed=640&accel=1000` | Move both wheels (half-steps, ±4096 max per call). Returns at once; poll `/status` until `busy` is false. Use `speed=640` (80% of the max 800) and `accel=1000`: slower is sluggish, full speed drops the Wi-Fi now and then. |
 | `POST /stop` | Stop the wheels now. |
 | `POST /servo?angle=&speed=` | The flipper (degrees). |
 | `POST /screen` | Show frames on the face (128×64, 1 bit/pixel, 1024 bytes a frame, up to 64 frames, `X-FPS`, `X-Repeat`). |
@@ -26,9 +26,10 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 
 ## Flipper
 
-- A bent black plastic knife on a servo by Mate's **right wheel**, near the front corner. The servo sits at 45°, so the blade sweeps around that corner onto the face.
-- **20° is rest** (low across the front edge, at the table). **It can't go below 20°**; up is fine. ~60° goes across the face; ~110° reaches up over the top.
-- **Gestures:** wave = up to ~80°, then swing 60↔110 a few times fast (`speed=600`), back to 20 at `speed=300`. Salute = sweep to ~110 and hold a moment, back down. A slow sweep reads as a shrug or a "hmm".
+- A black plastic knife on a servo on Mate's **right side**, 42 mm from the right wheel's axle at 45° (forward and up). The shaft points out of the side, so the arm swings beside the box: out 73 mm, then bent 90° inward across the whole front of the face.
+- **20° is rest**: the arm angles down and the bent part lies on the table in front of the face. **It can't go below 20°**; up is fine. **~65°**: the arm points straight forward and the bent part stands flat, parallel to and centred on the face. ~110° reaches up over the top.
+- **Always give the flipper a `speed`.** A jump (no `speed`) or full speed pulls a lot of current and drops Mate's Wi-Fi now and then (~5% at full speed); up to ~80% of the max is fine. Same for the wheels: `speed=640&accel=1000` is safe.
+- **Gestures:** wave = up to ~80°, then swing 65↔110 a few times at `speed=60`, back to 20 at `speed=40`. Salute = sweep to ~110 at `speed=60`, hold a moment, back down. A slow sweep reads as a shrug or a "hmm".
 - At rest it's down at the table in front of Mate: it can slide under a thin edge there.
 
 ## Face
@@ -50,5 +51,11 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
   3. Turn Mate by the angle the card needs (degrees per half-step from the notes). The card turns with it.
   4. Look with cam 1 where the card really is on Mate's top (it drifts 5–15 mm): map the card at board + 103.5 mm, not at the board.
   5. Pick it there: cup to Z ≈ 102 (a gentle squeeze), `grip?pump_s=2`, peel off slowly (F600), lift above travel height, and place it.
+- **Flipping cards over** (tested: 14 flips, all flat, either way over; ~4 s plus the place):
+  1. Mate square to the card, and the flipper **lowered to rest (20°) first**: a card placed while the hand is up just gets pushed (and run over). The card's long side along Mate's heading.
+  2. The crane places the card just in front of Mate's face so its near edge rests on the flipper's bent part (it lies on the table there). This build: card centre ~114 mm ahead of Mate's marker, centred left-right (the notes have the latest).
+  3. **At the same time:** flipper to 65° (`speed=60`) and drive forward ~95 mm (wheel speed 640). The near edge lifts, the card stands up, then tips over. ~4 s. It lands flipped ~10 cm further on, turned 3–5° clockwise (from above). Curving Mate during the push doesn't change that.
+  4. Back up ~50 mm **before** lowering the flipper (or it comes down on the card), then flipper to 20°.
+  5. Look where it landed before picking it. The small turn adds up if you flip the same card again and again (Mate squares to it each time): re-square it once it's ~20° off.
 - Keep Mate's turning centre at least ~2 cm inside the cup's board bounds, or a card that drifts on its top can end up out of reach.
 - Keep the gantry above travel height (Z 110) over Mate. Never lower onto it.

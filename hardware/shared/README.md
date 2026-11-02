@@ -26,4 +26,4 @@ Options for blending in: tone-on-tone colours, a pixel-art border, a logo badge.
 
 ## Printed parts
 
-To design: suction cup mount (sprung), card flipper (passive), peek window / Mate paddle, card and chip trays, stone dispenser, Mate chassis and pan/tilt mount, camera mount for the Frame.
+To design: suction cup mount (sprung), peek window / Mate paddle, card and chip trays, stone dispenser, Mate chassis and pan/tilt mount, camera mount for the Frame.
