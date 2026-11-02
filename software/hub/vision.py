@@ -285,6 +285,8 @@ class Vision:
                 cal["table_z"], cal["table_source"] = self.cal["table_z"], "touch"
             if self.cal and self.cal.get("bounds"):
                 cal["bounds"] = self.cal["bounds"]
+            if self.cal and self.cal.get("travel_z") is not None:   # a chosen travel height stays
+                cal["travel_z"] = self.cal["travel_z"]
             CAL_FILE.write_text(json.dumps(cal))
             self.needs_reanchor = False
             with self._lock:
