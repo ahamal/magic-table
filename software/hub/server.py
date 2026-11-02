@@ -23,7 +23,7 @@ from pydantic import BaseModel
 import camera
 import eyes
 from grbl import REALTIME, Grbl
-from mate import CENTRE as MATE_CENTRE, MateLink
+from mate import CENTRE as MATE_CENTRE, CLOSE_MM as MATE_CLOSE, MateLink
 from gripper import SEQUENCES, Gripper
 from talk import Chat, TranscribeError
 from vision import MATE_SIZE, Vision, to_xy
@@ -551,19 +551,43 @@ class MateGoto(BaseModel):
 
 
 MATE_EYE = MATE_SIZE[0] / 2 - MATE_CENTRE[0]   # the camera, on the front face, ahead of the turning centre (mm)
-MATE_SWEEP = 100.0      # mm: what Mate's corners reach when it turns in place, from its turning centre
-MATE_LANE = MATE_SIZE[1] / 2 + 10   # mm either side of its path that it brushes
 MAT_GREY = 120          # cam 1: the mat is darker than this (it reads 30-85 across the board)
 MAT_RED = (100, 90)     # ...and anything this saturated and bright isn't the mat either (a red chip)
 IN_THE_WAY_PX = 120     # px: something this big in cam 1 is in the way (a chip is ~2000)
 MARKER_CLEAR = 30       # mm around a board marker's centre that's the marker, not in the way
+MATE_BODY = (-67.0, 87.0, -67.0, 67.0)   # Mate's footprint from its marker (back, front with the flipper down, right, left), mm
+MATE_GAP = 3.0          # mm: how close Mate may pass something
+MATE_SELF = 25.0        # mm around Mate's box that's still Mate in the picture (its arm and wheels)
 
 
-def _in_the_way(start, end, ignore=()):
-    """What Mate would hit driving from start to end (its turning centre), from a fresh cam 1
-    picture: anything that isn't dark mat along its lane and where it turns, apart from Mate,
-    the gantry head, the board markers and the spots in `ignore`. Only on the mat (inside the
-    board markers): past them is the table. [{x, y, px}], or why it can't tell (a string)."""
+def _footprint(cx, cy, heading, grow=MATE_GAP):
+    """Mate's footprint on the board with its turning centre at (cx, cy): 4 corners."""
+    b, f, r, l = MATE_BODY
+    a = math.radians(heading)
+    c, s = math.cos(a), math.sin(a)
+    return [(cx + c * (u - MATE_CENTRE[0]) - s * (v - MATE_CENTRE[1]), cy + s * (u - MATE_CENTRE[0]) + c * (v - MATE_CENTRE[1]))
+            for u, v in ((b - grow, r - grow), (f + grow, r - grow), (f + grow, l + grow), (b - grow, l + grow))]
+
+
+def _sweep(start, h0, end, h1, h2):
+    """Where Mate's footprint goes: turning at start from h0 to h1, driving to end, turning to
+    h2 (h2 None: no turn). Convex pieces (lists of x, y)."""
+    turn = lambda c, a, b: [_footprint(*c, a + (b - a) * k / 12) for k in range(13)]
+    d = lambda a, b: (b - a + 180) % 360 - 180
+    out = turn(start, h0, h0 + d(h0, h1))
+    out.append(_footprint(*start, h1) + _footprint(*end, h1))        # its hull is the drive
+    if h2 is not None:
+        out += turn(end, h1, h1 + d(h1, h2))
+    return out
+
+
+def _in_the_way(pose, end, heading=None, ignore=()):
+    """What Mate would touch driving from `pose` (its marker's x, y, heading) to `end` (its
+    turning centre) and turning to `heading`, the way mate.goto drives (turn toward it, or
+    away and back up, then drive), from a fresh cam 1 picture: anything that isn't dark mat
+    where its footprint goes (MATE_GAP to spare), apart from Mate itself, the gantry head, the
+    board markers and the spots in `ignore`. Only on the mat (inside the board markers): past
+    them is the table. [{x, y, px}], or why it can't tell (a string)."""
     P, _ = vision._cam(1)
     tz = (vision.cal or {}).get("table_z")
     marks = (vision.scene or {}).get("board") or {}
@@ -576,20 +600,25 @@ def _in_the_way(start, end, ignore=()):
         return "cam 1 gave no picture"
     img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
     shape = img.shape[:2]
-    pix = lambda pts: np.array([eyes.project(P, (x, y, tz)) for x, y in pts], np.int32)
-    ring = lambda c, r: [(c[0] + r * math.cos(t), c[1] + r * math.sin(t)) for t in np.linspace(0, 2 * math.pi, 32)]
-    (sx, sy), (ex, ey) = start, end
-    n = math.hypot(ex - sx, ey - sy) or 1.0
-    ox, oy = -(ey - sy) / n * MATE_LANE, (ex - sx) / n * MATE_LANE
+    pix = lambda pts, z=tz: np.array([eyes.project(P, (x, y, z)) for x, y in pts], np.int32)
+    start = mate.centre(pose)
+    h1 = math.degrees(math.atan2(end[1] - start[1], end[0] - start[0]))
+    if abs((h1 - pose[2] + 180) % 360 - 180) > 90:      # it backs up there instead
+        h1 += 180
+    if math.hypot(end[0] - start[0], end[1] - start[1]) <= MATE_CLOSE:
+        h1 = pose[2]                                     # already there: only the last turn
     path = np.zeros(shape, np.uint8)
-    cv2.fillConvexPoly(path, pix([(sx + ox, sy + oy), (ex + ox, ey + oy), (ex - ox, ey - oy), (sx - ox, sy - oy)]), 1)
-    for c in (start, end):
-        cv2.fillConvexPoly(path, pix(ring(c, MATE_SWEEP)), 1)
+    for piece in _sweep(start, pose[2], end, h1, heading):
+        cv2.fillConvexPoly(path, cv2.convexHull(pix(piece)), 1)
     mat = np.zeros(shape, np.uint8)
     cv2.fillConvexPoly(mat, cv2.convexHull(pix([(m["x"], m["y"]) for m in marks.values()])), 1)
     path &= mat
-    for r in eyes.robot_masks(P, _robot_boxes() or {}, shape).values():
-        path[r > 0] = 0
+    me = _footprint(*start, pose[2], MATE_SELF)          # Mate itself, from below the board to its top
+    cv2.fillConvexPoly(path, cv2.convexHull(np.r_[pix(me, tz - 20), pix(me, tz + MATE_SIZE[2])]), 0)
+    for name, r in eyes.robot_masks(P, _robot_boxes() or {}, shape).items():
+        if name != "mate":
+            path[r > 0] = 0
+    ring = lambda c, r: [(c[0] + r * math.cos(t), c[1] + r * math.sin(t)) for t in np.linspace(0, 2 * math.pi, 32)]
     for c in [(m["x"], m["y"]) for m in marks.values()]:
         cv2.fillConvexPoly(path, pix(ring(c, MARKER_CLEAR)), 0)
     for c in ignore:
@@ -622,7 +651,7 @@ def mate_goto(x, y, heading, check=True, ignore=()):
     if p is None:
         return {"ok": False, "error": "the camera can't see Mate's marker"}
     if check:
-        hit = _in_the_way(mate.centre(p), (x, y), ignore)
+        hit = _in_the_way(p, (x, y), heading, ignore)
         if isinstance(hit, str):
             return {"ok": False, "error": f"can't check Mate's way: {hit} (check=false to go anyway)"}
         if hit:

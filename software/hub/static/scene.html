@@ -546,11 +546,11 @@ function drawItems(res) {
   const tz = S?.table_z ?? 0, items = (res.items || []).filter(i => i.board && i.on_board !== false);
   const kinds = [...new Set(items.map(i => i.what))];
   for (const it of items) {
-    const b = it.board, h = Math.max(b.top ?? 2, 1.5), col = ITEM_COLORS[kinds.indexOf(it.what) % ITEM_COLORS.length];
+    const b = it.board, h = Math.max(it.height_mm ?? b.top ?? 2, 1.5), col = ITEM_COLORS[kinds.indexOf(it.what) % ITEM_COLORS.length];
     const g = new THREE.Group();
     g.position.copy(P(b.x, b.y, tz));
     g.rotation.y = b.angle * Math.PI / 180;
-    const box = new THREE.Mesh(new THREE.BoxGeometry(b.h, h, b.w),
+    const box = new THREE.Mesh(b.round ? new THREE.CylinderGeometry(b.w / 2, b.w / 2, h, 32) : new THREE.BoxGeometry(b.h, h, b.w),
       new THREE.MeshStandardMaterial({ color: col, transparent: true, opacity: .45, roughness: .6, depthWrite: false }));
     box.position.y = h / 2; g.add(box);
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({ color: col, transparent: true }));

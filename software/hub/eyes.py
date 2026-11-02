@@ -50,6 +50,8 @@ MUSE = "muse-spark-1.3"
 EFFORTS = ("minimal", "low", "medium", "high")
 CROP_PAD = 12    # px around a thing's box in the crop sent with a question
 EDGE_MM = 20     # how far past the cup bounds something still counts as on the board
+ROUND_FILL = 0.86     # a footprint filling less of its rectangle than this is round (a circle: 0.79)
+ROUND_ASPECT = 0.75   # ...if it's about as wide as long (cam 1 stretches a chip ~10% along its view)
 
 
 class EyesError(Exception):
@@ -150,6 +152,8 @@ def describe(box, mask, P=None, z=None, bounds=None):
             ang += 90                                  # the angle of the long side
         obj["board"] = {"x": round(float(cx), 1), "y": round(float(cy), 1), "w": round(float(min(w, h)), 1),
                         "h": round(float(max(w, h)), 1), "angle": round(float(ang % 180), 1)}
+        if w * h and cv2.contourArea(q) / (w * h) < ROUND_FILL and min(w, h) / max(w, h) > ROUND_ASPECT:
+            obj["board"]["round"] = True               # a chip, a coin, a cup: w is its diameter
         if bounds:
             obj["on_board"] = bool(bounds[0] - EDGE_MM <= cx <= bounds[1] + EDGE_MM and
                                    bounds[2] - EDGE_MM <= cy <= bounds[3] + EDGE_MM)
