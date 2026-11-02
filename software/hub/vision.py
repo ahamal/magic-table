@@ -681,6 +681,13 @@ class Vision:
                                      "flipper": st.get("servo_now") if st else None,
                                      "moving": st.get("busy") if st else None}
             scene["cards"] = find_cards(img, P, tz, found, fix, cam)
+        if self.mate:
+            m = scene["mate"]
+            if m:
+                self.mate.seen((m["x"], m["y"], m["heading"]))
+            elif self.mate.pose:                          # unseen: where it was, plus moves since
+                x, y, h = self.mate.pose
+                scene["mate"] = {"x": x, "y": y, "heading": h, "assumed": True}
         if errs:
             scene["head"]["error_mm"] = float(min(errs))
         with self._lock:

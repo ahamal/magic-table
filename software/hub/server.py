@@ -517,7 +517,7 @@ def mate_pose(n=3):
     seen = []
     for _ in range(n):
         m = vision.update().get("mate")
-        if m:
+        if m and not m.get("assumed"):
             seen.append((m["x"], m["y"], m["heading"]))
         time.sleep(0.15)
     if not seen:
@@ -560,6 +560,7 @@ MARKER_CLEAR = 30       # mm around a board marker's centre that's the marker, n
 MATE_BODY = (-67.0, 87.0, -67.0, 67.0)   # Mate's footprint from its marker (back, front with the flipper down, right, left), mm
 MATE_GAP = 3.0          # mm: how close Mate may pass something
 MATE_SELF = 25.0        # mm around Mate's box that's still Mate in the picture (its arm and wheels)
+CARD_MM = ((52, 76), (78, 100))   # a lying card's footprint as cam 1 maps it (63 x 88; fine for Mate to drive over)
 
 
 def _footprint(cx, cy, heading, grow=MATE_GAP):
@@ -627,14 +628,32 @@ def _in_the_way(pose, end, heading=None, ignore=()):
         cv2.fillConvexPoly(path, pix(ring(c, 35)), 0)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     odd = (cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) > MAT_GREY) | ((hsv[..., 1] > MAT_RED[0]) & (hsv[..., 2] > MAT_RED[1]))
-    odd = cv2.morphologyEx((odd & (path > 0)).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    k, _, stats, mids = cv2.connectedComponentsWithStats(odd)
+    odd = cv2.morphologyEx((odd & (mat > 0)).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    k, labels = cv2.connectedComponents(odd)
     hit = []
     for i in range(1, k):
-        if stats[i, cv2.CC_STAT_AREA] >= IN_THE_WAY_PX:
-            x, y = to_xy(P, mids[i:i + 1], tz)[0]
-            hit.append({"x": round(float(x), 1), "y": round(float(y), 1), "px": int(stats[i, cv2.CC_STAT_AREA])})
+        thing = labels == i
+        inside = thing & (path > 0)
+        n = int(inside.sum())
+        if n < IN_THE_WAY_PX or _a_card(P, thing, tz):
+            continue                                     # Mate drives over cards (it's 3 mm up)
+        ys, xs = np.nonzero(inside)
+        x, y = to_xy(P, np.array([[xs.mean(), ys.mean()]]), tz)[0]
+        hit.append({"x": round(float(x), 1), "y": round(float(y), 1), "px": n})
     return hit
+
+
+def _a_card(P, thing, tz):
+    """Is this blob (a 0/1 picture) one playing card lying on the board: its footprint about
+    63 x 88 mm and filling its rectangle?"""
+    cs, _ = cv2.findContours(thing.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cs:
+        return False
+    q = to_xy(P, max(cs, key=cv2.contourArea).reshape(-1, 2).astype(float), tz).astype(np.float32)
+    (_, _), (w, h), _ = cv2.minAreaRect(q)
+    w, h = sorted((w, h))
+    return CARD_MM[0][0] <= w <= CARD_MM[0][1] and CARD_MM[1][0] <= h <= CARD_MM[1][1] \
+        and cv2.contourArea(q) > 0.8 * w * h
 
 
 def mate_goto(x, y, heading, check=True, ignore=()):

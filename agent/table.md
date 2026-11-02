@@ -21,7 +21,7 @@ How to drive the gantry and the gripper safely and well. The hub enforces the ha
 | Board bounds | The cup stays **inside the rectangle between the four board markers** (not over them). Moves outside are refused; X/Y jogs stop at the edge. `POST /api/calibration/bounds` re-measures them (do it after moving the markers or the board); it also re-centres X/Y 0, 0 on the rectangle. |
 | Z range | **−1 to 150.** −1 is a 1 mm squeeze into the board for a grip; 150 is the top of travel. Moves outside are refused; jogs stop at them. |
 | Travel height | **Z 110.** Clears Mate (105 mm to the top of its corner caps). |
-| Mate | Never lower the cup onto Mate below Z 110, and never end a move over it below Z 110 (refused). Moves that cross Mate below 110 go up first. A sideways bump is survivable; pressing down into it isn't. |
+| Mate | Never lower the cup onto Mate below Z 110, and never end a move over it below Z 110 (refused). Moves that cross Mate below 110 go up first. A sideways bump is survivable; pressing down into it isn't. **Carrying a card, Mate is in the card's way too:** the hub keeps the *cup* 40 mm off Mate, but a card hangs up to 44 mm past the cup. Near Mate, carry cards at Z 110, or keep the card's far edge 10 mm from Mate. |
 | Raw G-code | `/api/send` isn't checked against any of this. Use `/api/tip`, `/api/move`, `/api/jog`. |
 
 ## Gripper

@@ -14,8 +14,10 @@ import math
 import threading
 import time
 import urllib.request
+from pathlib import Path
 
 MATE = "http://mate.local"
+POSE_FILE = Path(__file__).parent / "mate_pose.json"   # where Mate is, kept across restarts
 MM_PER_HALFSTEP = 0.048          # forward
 DEG_PER_HALFSTEP = {"left": 0.0377, "right": 0.0371}
 CENTRE = (8.6, 0.5)              # turning centre from the marker centre, Mate's frame (forward, left)
@@ -32,7 +34,11 @@ class MateLink:
         self.seen_at = None
         self.busy = False         # a goto is running
         self.pose = None          # where Mate's marker is (x, y, heading): last seen, plus moves since
-        self.assumed = False      # True while that's only worked out from the moves
+        self.assumed = True       # True while that's only worked out from the moves
+        try:
+            self.pose = tuple(json.loads(POSE_FILE.read_text()))
+        except (OSError, ValueError):
+            pass
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
@@ -84,7 +90,16 @@ class MateLink:
 
     def seen(self, pose):
         """The camera saw Mate here: that's where it is now."""
-        self.pose, self.assumed = pose, False
+        self._keep(pose, False)
+
+    def _keep(self, pose, assumed):
+        moved = self.pose is None or max(abs(a - b) for a, b in zip(pose, self.pose)) > 0.5
+        self.pose, self.assumed = tuple(round(v, 1) for v in pose), assumed
+        if moved:
+            try:
+                POSE_FILE.write_text(json.dumps(self.pose))
+            except OSError:
+                pass
 
     def _turned(self, deg):
         """Where the marker ends up after turning in place by deg (about the turning centre)."""
@@ -92,15 +107,14 @@ class MateLink:
             cx, cy = self.centre(self.pose)
             h = self.pose[2] + deg
             a = math.radians(h)
-            self.pose = (cx - CENTRE[0] * math.cos(a) + CENTRE[1] * math.sin(a),
-                         cy - CENTRE[0] * math.sin(a) - CENTRE[1] * math.cos(a), (h + 180) % 360 - 180)
-            self.assumed = True
+            self._keep((cx - CENTRE[0] * math.cos(a) + CENTRE[1] * math.sin(a),
+                        cy - CENTRE[0] * math.sin(a) - CENTRE[1] * math.cos(a), (h + 180) % 360 - 180), True)
 
     def _drove(self, mm):
         if self.pose:
             x, y, h = self.pose
             a = math.radians(h)
-            self.pose, self.assumed = (x + mm * math.cos(a), y + mm * math.sin(a), h), True
+            self._keep((x + mm * math.cos(a), y + mm * math.sin(a), h), True)
 
     @staticmethod
     def centre(pose):
