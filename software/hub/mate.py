@@ -31,6 +31,8 @@ class MateLink:
         self.status = None        # last /status reply, or None while unreachable
         self.seen_at = None
         self.busy = False         # a goto is running
+        self.pose = None          # where Mate's marker is (x, y, heading): last seen, plus moves since
+        self.assumed = False      # True while that's only worked out from the moves
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
@@ -80,6 +82,26 @@ class MateLink:
         n = round(abs(mm) / MM_PER_HALFSTEP)
         self._step(-n, n) if mm > 0 else self._step(n, -n)
 
+    def seen(self, pose):
+        """The camera saw Mate here: that's where it is now."""
+        self.pose, self.assumed = pose, False
+
+    def _turned(self, deg):
+        """Where the marker ends up after turning in place by deg (about the turning centre)."""
+        if self.pose:
+            cx, cy = self.centre(self.pose)
+            h = self.pose[2] + deg
+            a = math.radians(h)
+            self.pose = (cx - CENTRE[0] * math.cos(a) + CENTRE[1] * math.sin(a),
+                         cy - CENTRE[0] * math.sin(a) - CENTRE[1] * math.cos(a), (h + 180) % 360 - 180)
+            self.assumed = True
+
+    def _drove(self, mm):
+        if self.pose:
+            x, y, h = self.pose
+            a = math.radians(h)
+            self.pose, self.assumed = (x + mm * math.cos(a), y + mm * math.sin(a), h), True
+
     @staticmethod
     def centre(pose):
         x, y, h = pose
@@ -91,16 +113,27 @@ class MateLink:
         """Put Mate's turning centre on (x, y), then face `heading` (degrees, None = any).
         `look()` returns Mate's marker pose (x, y, heading) from the camera, or None.
         Turns toward the target (driving backward if that's the shorter turn), drives, looks
-        again, and repeats until within CLOSE_MM / CLOSE_DEG."""
+        again, and repeats until within CLOSE_MM / CLOSE_DEG. When the camera can't see Mate
+        (glare, a cable over its marker), it carries on from where it last saw it plus the
+        moves since (`assumed` in the answer), and stops correcting once it's there."""
         if self.busy:
             return {"ok": False, "error": "Mate is already on its way somewhere"}
         self.busy = True
         moves = []
+
+        def where():
+            p = look()
+            if p is not None:
+                self.seen(p)
+            return self.pose
+
         try:
             for _ in range(tries):
-                p = look()
+                p = where()
                 if p is None:
-                    return {"ok": False, "error": "the camera can't see Mate's marker", "moves": moves}
+                    return {"ok": False, "error": "the camera can't see Mate's marker, and hasn't yet", "moves": moves}
+                if self.assumed and moves:
+                    break                                  # unseen: the moves got it there
                 cx, cy = self.centre(p)
                 dx, dy = x - cx, y - cy
                 dist = math.hypot(dx, dy)
@@ -113,22 +146,25 @@ class MateLink:
                     t = (t + 360) % 360 - 180
                 if abs(t) > 1:
                     self.turn(t)
+                    self._turned(t)
                 self.drive(-dist if back else dist)
+                self._drove(-dist if back else dist)
                 moves.append({"from": [round(cx, 1), round(cy, 1)], "turned": round(t, 1),
                               "drove": round(-dist if back else dist, 1)})
-            p = look()
-            if p is None:
-                return {"ok": False, "error": "lost sight of Mate", "moves": moves}
+            p = where()
             if heading is not None:
                 for _ in range(3):
                     t = (heading - p[2] + 180) % 360 - 180
                     if abs(t) <= CLOSE_DEG:
                         break
                     self.turn(t)
-                    p = look() or p
+                    self._turned(t)
+                    p = where()
+                    if self.assumed:
+                        break
             cx, cy = self.centre(p)
             return {"ok": True, "centre": [round(cx, 1), round(cy, 1)], "heading": round(p[2], 1),
-                    "off_mm": round(math.hypot(x - cx, y - cy), 1), "moves": moves}
+                    "off_mm": round(math.hypot(x - cx, y - cy), 1), "moves": moves, "assumed": self.assumed}
         except OSError as e:
             return {"ok": False, "error": f"Mate didn't answer: {e}", "moves": moves}
         finally:

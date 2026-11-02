@@ -524,7 +524,9 @@ def mate_pose(n=3):
         return None
     h0 = seen[0][2]
     hs = [h0 + ((h - h0 + 180) % 360 - 180) for _, _, h in seen]
-    return (sum(p[0] for p in seen) / len(seen), sum(p[1] for p in seen) / len(seen), sum(hs) / len(hs))
+    p = (sum(p[0] for p in seen) / len(seen), sum(p[1] for p in seen) / len(seen), sum(hs) / len(hs))
+    mate.seen(p)
+    return p
 
 
 def mate_home():
@@ -647,9 +649,9 @@ def mate_goto(x, y, heading, check=True, ignore=()):
     if travel is not None and z_now() < travel - 0.5:   # nothing low for Mate to run into
         if grbl.send(f"G90 G0 Z{travel:.3f}") != "ok" or grbl.send("G4 P0", 60) != "ok":
             return {"ok": False, "error": "couldn't raise the head first"}
-    p = mate_pose()
+    p = mate_pose() or mate.pose                         # unseen: where it was last seen, plus moves since
     if p is None:
-        return {"ok": False, "error": "the camera can't see Mate's marker"}
+        return {"ok": False, "error": "the camera can't see Mate's marker, and hasn't since the hub started"}
     if check:
         hit = _in_the_way(p, (x, y), heading, ignore)
         if isinstance(hit, str):
@@ -681,9 +683,9 @@ class MateLook(BaseModel):
 
 
 def mate_look(x, y, distance=150.0, side=None, check=True):
-    p = mate_pose()
+    p = mate_pose() or mate.pose
     if p is None:
-        return {"ok": False, "error": "the camera can't see Mate's marker"}
+        return {"ok": False, "error": "the camera can't see Mate's marker, and hasn't since the hub started"}
     cx, cy = mate.centre(p)
     a = math.radians(side) if side is not None else math.atan2(cy - y, cx - x)
     back = distance + MATE_EYE
