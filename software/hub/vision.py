@@ -110,6 +110,15 @@ def project(P, xyz):
     return x[:2] / x[2]
 
 
+def triangulate(Ps, pix):
+    """One point seen by two or more cameras -> its X, Y, Z (least squares)."""
+    A = []
+    for P, (u, v) in zip(Ps, pix):
+        A += [u * P[2] - P[0], v * P[2] - P[1]]
+    X = np.linalg.svd(np.array(A))[2][-1]
+    return X[:3] / X[3]
+
+
 def to_xy(P, pix, z):
     """Pixels -> gantry X/Y on the plane Z = z."""
     H = np.c_[P[:, 0], P[:, 1], P[:, 2] * z + P[:, 3]]
@@ -235,23 +244,49 @@ class Vision:
 
     # ---- calibration ----
 
-    def calibrate(self, room, span=60.0, steps=3, levels=3, feed=2000, settle=0.25):
+    def calibrate(self, room, span=60.0, steps=3, levels=3, feed=2000, settle=0.25, xy_feed=3000):
         """Move the head over a steps x steps grid (+-span mm) at its current height and at
         levels-1 lower heights, see the head marker at every stop, fit each camera.
 
-        Start high, with the cup over the middle of the board. `room` is how far (mm) the
-        cup is above the board there: the passes go down from the start but stay CLEARANCE
-        above the board, and the head goes back up before moving sideways home. Moves within a
-        level are rapid (the area under the grid must be clear); going down a level is at feed
-        mm/min. Any trouble aborts with no further moves."""
+        With board bounds set, the grid is centred on the board: the head first rises to the
+        travel height (if lower) and goes to the middle, whatever it started over, and every
+        stop must keep the cup inside the bounds and clear of Mate, or nothing moves at all.
+        Without bounds (a first calibration) the grid is around where the head is: start
+        high, with the cup over the middle of the board. `room` is how far (mm) the cup is
+        above the board at the start: the passes go down but stay CLEARANCE above it, and the
+        head goes back up before moving sideways. Sideways moves are at xy_feed, going down
+        a level at feed (mm/min). Any trouble aborts with no further moves."""
         if self.grbl.status.get("state") != "Idle":
             return {"ok": False, "error": f"GRBL is {self.grbl.status.get('state')}; unlock it and try again"}
+        if self.needs_reanchor:
+            return {"ok": False, "error": "GRBL was reset: re-anchor first"}
+        x0, y0, z0 = self._wpos()
+        b = (self.cal or {}).get("bounds")
+        lift = None
+        if b:
+            travel = self.cal.get("travel_z")
+            if travel is not None and z0 < travel:
+                lift, room = travel, room + travel - z0
+                z0 = travel
+            cx, cy = (b[0] + b[1]) / 2, (b[2] + b[3]) / 2          # the cup over the board's middle
+            x0, y0 = cx - TIP_OFFSET[0], cy - TIP_OFFSET[1]
+            fit = min(b[1] - cx, b[3] - cy)
+            if span > fit:
+                return {"ok": False, "error": f"a {span:.0f} mm grid would take the cup past the board; "
+                                              f"{fit:.0f} mm fits"}
+            m = self.scene.get("mate")
+            if m:
+                half = max(MATE_SIZE[:2]) / 2 + MATE_MARGIN
+                if abs(m["x"] - cx) < span + half and abs(m["y"] - cy) < span + half:
+                    return {"ok": False, "error": "Mate is under the grid: drive it home first"}
         if room - CLEARANCE < 20:
             return {"ok": False, "error": f"need at least {CLEARANCE + 20:.0f} mm between the cup and the board"}
         dz = (room - CLEARANCE) / (levels - 1)
         self.busy, self._abort = True, None
         try:
-            x0, y0, z0 = self._wpos()
+            if lift is not None:
+                self._move(f"G90 G1 Z{lift:.3f} F{feed:.0f}")
+            self._move(f"G90 G1 X{x0:.3f} Y{y0:.3f} F{xy_feed:.0f}")
             offs = np.linspace(-span, span, steps)
             pts = {i: {"world": [], "pix": []} for i in range(len(self.cameras))}
             last = {}
@@ -260,7 +295,7 @@ class Vision:
                 for j, dy in enumerate(offs):
                     row = offs if j % 2 == 0 else offs[::-1]
                     for dx in row:
-                        self._move(f"G90 G0 X{x0 + dx:.3f} Y{y0 + dy:.3f}")
+                        self._move(f"G90 G1 X{x0 + dx:.3f} Y{y0 + dy:.3f} F{xy_feed:.0f}")
                         time.sleep(settle)
                         w = self._wpos()
                         for cam in pts:
@@ -272,8 +307,8 @@ class Vision:
                             if HEAD_ID in found:
                                 pts[cam]["world"].append(w)
                                 pts[cam]["pix"].append(centre(found[HEAD_ID]).tolist())
-            self._move(f"G90 G0 Z{z0:.3f}")      # up first, then home
-            self._move(f"G90 G0 X{x0:.3f} Y{y0:.3f}")
+            self._move(f"G90 G1 Z{z0:.3f} F{feed:.0f}")      # up first, then back to the middle
+            self._move(f"G90 G1 X{x0:.3f} Y{y0:.3f} F{xy_feed:.0f}")
 
             # the board's Z from marker size until the cup touches it (set_table)
             cal = {"at": time.time(), "cams": {}, "table_source": "marker size",
@@ -649,13 +684,17 @@ class Vision:
         exact. The camera's view is reported alongside as a check, but at the edges of the
         calibration (high up, far out) it can be centimetres off, so it never overrides on
         its own. use_camera=True is for when the head really moved (skipped steps, moved by
-        hand): X/Y from the camera, Z still the saved value (the upright plate can't give Z)."""
+        hand): X/Y from the cameras, triangulated when two or more see the marker (one alone
+        reads it at GRBL's current Z), and Z stays GRBL's current count (Z rarely skips; the
+        triangulated Z is reported as a check)."""
         if not self.cal:
             return {"ok": False, "error": "not calibrated"}
         if not self.last_pos:
             return {"ok": False, "error": "no saved position; recalibrate"}
         x, y, z = self.last_pos
-        seen, cam_used = None, None
+        if use_camera:
+            z = self._wpos()[2]
+        seen, cam_used, views = None, None, []
         for cam in range(len(self.cameras)):
             P, cc = self._cam(cam)
             img = self._frame(cam) if P is not None else None
@@ -667,8 +706,13 @@ class Vision:
             H, _ = self._unbump(cc, found)
             c = found[HEAD_ID] if H is None else cv2.perspectiveTransform(
                 found[HEAD_ID].reshape(-1, 1, 2), H).reshape(-1, 2)
-            seen, cam_used = to_xy(P, [centre(c)], z)[0], cam
-            break
+            views.append((P, centre(c)))
+            if seen is None:
+                seen, cam_used = to_xy(P, [centre(c)], z)[0], cam
+        seen_z = None
+        if len(views) >= 2:
+            seen_x, seen_y, seen_z = triangulate(*zip(*views))
+            seen, cam_used = (seen_x, seen_y), "all"
         off = None if seen is None else float(np.hypot(seen[0] - x, seen[1] - y))
         if use_camera:
             if seen is None:
@@ -678,7 +722,8 @@ class Vision:
         if reply == "ok":
             self.needs_reanchor = False
         return {"ok": reply == "ok", "x": x, "y": y, "z": z, "used": "camera" if use_camera else "saved position",
-                "saved": self.last_pos, "camera_off_mm": off, "cam": cam_used, "reply": reply}
+                "saved": self.last_pos, "camera_off_mm": off, "cam": cam_used,
+                "camera_z": None if seen_z is None else round(float(seen_z), 1), "reply": reply}
 
     def run(self, hz=2.0):
         def loop():

@@ -452,6 +452,14 @@ async def calibrate(body: Calibrate):
     return await asyncio.to_thread(vision.calibrate, room, body.span, body.steps, body.levels, body.feed)
 
 
+@app.post("/api/calibrate/stop")
+def calibrate_stop():
+    """Stop a running calibration: the move under way finishes (a second or two), then no
+    more. GRBL keeps its position, so there's nothing to re-anchor (unlike STOP, which resets)."""
+    vision.stop()
+    return {"ok": True, "running": vision.busy}
+
+
 @app.get("/api/calibration")
 def calibration():
     """Is it calibrated, how well, and does it still agree with the gantry."""

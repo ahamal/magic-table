@@ -35,6 +35,8 @@
   button:disabled { opacity: .4; cursor: default; }
   /* buttons in a grid share their borders */
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; }
+  #calstop { grid-column: 1 / -1; color: var(--bad); font-weight: 600; }
+  #calstop[hidden] { display: none; }
   .grid2 button { margin: 0 -1px -1px 0; }
   .fold { flex: none; justify-content: flex-start; height: 34px; padding: 0 10px 0 12px; width: 100%; }
   .fold .state { margin-left: auto; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; }
@@ -93,7 +95,7 @@
       <div class="row"><span>Travel height</span><span id="travel" class="mono">–</span></div>
     </div>
     <div class="grid2">
-      <button id="calib"><svg class="ic " viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4"/><path d="M12 19v4"/><path d="M1 12h4"/><path d="M19 12h4"/></svg>Calibrate</button><button id="reanchor"><svg class="ic " viewBox="0 0 24 24"><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>Re-anchor</button>
+      <button id="calib"><svg class="ic " viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4"/><path d="M12 19v4"/><path d="M1 12h4"/><path d="M19 12h4"/></svg>Calibrate</button><button id="reanchor"><svg class="ic " viewBox="0 0 24 24"><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>Re-anchor</button><button id="calstop" hidden class="stop">Stop calibrating</button>
       <button id="table" title="The cup is touching the board: make that Z 0 (also fixes a Z that skipped steps)"><svg class="ic " viewBox="0 0 24 24"><path d="M12 3v14"/><path d="m6 11 6 6 6-6"/><path d="M5 21h14"/></svg>Zero Z</button><button id="travelset"><svg class="ic " viewBox="0 0 24 24"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></svg>Travel here</button>
     </div>
   </div>
@@ -491,9 +493,11 @@ $('calib').onclick = async () => {
   const touched = S?.table_source === 'touch';
   let room = touched ? S.head?.z : parseFloat(prompt('How far is the cup above the board right now (mm)?', ''));
   if (!(room > 35)) { say(room == null || isNaN(room) ? 'Calibration cancelled.' : 'Raise the cup first: it needs at least 35 mm above the board.', true); return; }
-  if (!confirm(`Calibrate: the head moves over most of the board (4 × 4 stops, 130 mm each way from here) with the cup at ${room.toFixed(0)}, ${((room + 15) / 2).toFixed(0)} and 15 mm above the board, then back here. Keep the board clear under it and Mate out of the way. About 1.5 minutes; STOP on the jog page stops it.`)) return;
+  const bounded = !!S?.bounds, top = bounded ? Math.max(room, S.travel_z ?? room) : room;
+  if (!confirm(`Calibrate: the head ${bounded ? `goes up to ${top.toFixed(0)} mm and over the middle of the board, then ` : ''}moves over most of the board (4 × 4 stops, 130 mm each way from ${bounded ? 'the middle' : 'here'}) with the cup at ${top.toFixed(0)}, ${((top + 15) / 2).toFixed(0)} and 15 mm above the board, then back to ${bounded ? 'the middle' : 'here'}. Keep the board clear under it and Mate out of the way. About 2 minutes.`)) return;
   $('calib').disabled = $('reanchor').disabled = $('table').disabled = true;
-  say('Calibrating… STOP on the jog page stops it.', true);
+  $('calstop').hidden = false;
+  say('Calibrating…', true);
   try {
     const r = await post('calibrate', touched ? { span: 130, steps: 4, levels: 3 } : { room, span: 130, steps: 4, levels: 3 });   // the whole board: a small grid was 20 mm off at its edges
     if (!r.ok) say('Calibration failed: ' + r.error, true);
@@ -504,7 +508,9 @@ $('calib').onclick = async () => {
     }
   } catch (e) { say('Calibration failed: ' + e.message, true); }
   $('calib').disabled = $('reanchor').disabled = $('table').disabled = false;
+  $('calstop').hidden = true;
 };
+$('calstop').onclick = () => { post('calibrate/stop'); say('Stopping after this move…', true); };
 $('travelset').onclick = async () => {
   if (!confirm('Use the current Z as the travel height? Below it, the head is kept off Mate.')) return;
   const r = await post('calibration/travel');
@@ -516,7 +522,13 @@ $('table').onclick = async () => {
   say(r.ok ? `Z is 0 at the board now (it read ${r.z_was.toFixed(1)}). Raise the cup before moving.` : 'Failed: ' + r.error, true);
 };
 $('reanchor').onclick = async () => {
-  const r = await post('calibration/reanchor');
+  let r = await post('calibration/reanchor');
+  if (r.ok && r.camera_off_mm > 10 && confirm(`The cameras see the head ${r.camera_off_mm.toFixed(0)} mm from the saved position: it may have skipped steps. Take X and Y from the cameras instead?`)) {
+    r = await post('calibration/reanchor?camera=true');
+    say(r.ok ? `Re-anchored from the cameras: ${r.x.toFixed(1)}, ${r.y.toFixed(1)}, Z ${r.z.toFixed(1)}` +
+               (r.camera_z == null ? '' : ` (cameras put Z at ${r.camera_z.toFixed(1)})`) : 'Re-anchor failed: ' + (r.error || r.reply), true);
+    return;
+  }
   say(r.ok ? `Re-anchored to the saved position ${r.x.toFixed(1)}, ${r.y.toFixed(1)}, ${r.z.toFixed(1)}` +
              (r.camera_off_mm == null ? '' : ` (camera sees it ${r.camera_off_mm.toFixed(1)} mm away)`)
            : 'Re-anchor failed: ' + (r.error || r.reply), true);

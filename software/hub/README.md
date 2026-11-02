@@ -132,12 +132,13 @@ Stop it (`sudo systemctl stop hub`) before running anything else that opens the 
 
 | Endpoint | |
 |---|---|
-| `POST /api/calibrate {room, span=60, steps=3, levels=3, feed=1500}` | `room` = mm between cup and board at the start (required) |
+| `POST /api/calibrate {room, span=60, steps=3, levels=3, feed=2000}` | Grid of stops at three heights. With bounds set: centred on the board (rises to the travel height and goes there first), refused before any move if the cup would leave the bounds or Mate is under it. `room` = mm between cup and board at the start (left out once the board's been touched: Z). Sideways at 3000 mm/min |
+| `POST /api/calibrate/stop` | Ends a calibration after the current move; GRBL keeps its position |
 | `GET /api/calibration` | calibrated, per-camera fit, `table_z`, `travel_z`, `needs_reanchor`, head check |
 | `POST /api/calibration/table` | the cup is touching the board now |
 | `POST /api/calibration/travel {z?}` | set the travel height (cup height safe over Mate); no `z` = the current Z |
 | `POST /api/calibration/bounds` | measure the board markers, save the cup's allowed X/Y (inside their inner edges), re-centre 0, 0 on it |
-| `POST /api/calibration/reanchor?camera=false` | after a reset: the saved position (or X/Y from the camera with `camera=true`). Until then `/api/move`, `/api/tip`, `/api/jog` and `/api/mate/goto` refuse (a reset loses the position the limits rely on). A reset counts when GRBL's banner arrives, or when GRBL is found in alarm on connecting (a Pi boot resets the Uno before the hub listens) |
+| `POST /api/calibration/reanchor?camera=false` | after a reset: the saved position (or X/Y from the cameras with `camera=true`: triangulated from both, Z kept). Until then `/api/move`, `/api/tip`, `/api/jog` and `/api/mate/goto` refuse (a reset loses the position the limits rely on). A reset counts when GRBL's banner arrives, or when GRBL is found in alarm on connecting (a Pi boot resets the Uno before the hub listens) |
 | `POST /api/tip {x, y, z?, feed?}` | put the **cup tip** at board X/Y (and Z mm above the board); same Mate rule as `/api/move` |
 | `GET /api/scene?fresh=false` | head (and cup tip), Mate, cards, board, cameras; also the `scene` WebSocket event |
 
