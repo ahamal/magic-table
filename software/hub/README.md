@@ -41,6 +41,8 @@ The body API for the whole table. Step 2.
 | `POST /api/realtime/{status,hold,resume,reset,jog_cancel}` | Sent immediately |
 | `GET /api/gripper` | `{pump, valve}` |
 | `GET /api/guide`, `/api/guide/{table,mate}` | the agent guides (repo `agent/`), plain text |
+| `POST /api/mate/goto {x, y, heading?}` | drive Mate's turning centre to (x, y) and face `heading`, with the camera checking (~5 mm, ~3°); raises the gantry head first |
+| `GET /api/mate/home`, `POST /api/mate/home`, `POST /api/mate/home/set {x?, y?, heading?}` | Mate's home spot: where, go there, save a new one (no body = here) |
 | `POST /api/say {text, wait?}` | speak on the table's Bluetooth speaker (espeak-ng); a `speaking` event goes to the pages |
 | `GET /api/notes`, `POST /api/notes {text, by}` | this build's notes: what agents and people learned about this particular table. Kept on the Pi (`~/hub/notes.md`), never deployed over or committed |
 | `POST /api/gripper/{pump_on,pump_off,valve_on,valve_off,grip,drop,stop}` (grip`?pump_s=N`: pump N s, then hold on vacuum ~20 s) | Runs after queued motion; returns `{pump, valve}`, plus `error` if GRBL refused (e.g. `error:9` in Alarm) |

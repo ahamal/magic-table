@@ -100,7 +100,7 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(300, 800
 
 const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: .8 });
 const group = name => { const g = new THREE.Group(); g.name = name; scene.add(g); return g; };
-const boardG = group('board'), cardsG = group('cards'), mateG = group('mate'), camsG = group('cams'), boundsG = group('bounds');
+const boardG = group('board'), cardsG = group('cards'), mateG = group('mate'), camsG = group('cams'), boundsG = group('bounds'), homeG = group('home');
 
 // head: built around the head marker's centre (the group's origin), from measured offsets
 const L = (dx, dy, dz) => new THREE.Vector3(dx, dz, -dy);           // gantry offset -> three offset
@@ -217,6 +217,22 @@ function drawBounds(b, tz) {
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineDashedMaterial({ color: 0xea580c, dashSize: 12, gapSize: 8 }));
   line.computeLineDistances(); boundsG.add(line);
+}
+
+// Mate's home: its footprint outline and a facing tick, where /api/mate/home parks it
+let shownHome = null;
+function drawHome(h, tz) {
+  const key = h ? h.join(',') + '@' + tz : null;
+  if (key === shownHome) return;
+  shownHome = key; homeG.clear();
+  if (!h) return;
+  const [x, y, hd] = h, a = hd * Math.PI / 180, r = 67;
+  const at = (fx, fy) => P(x + fx * Math.cos(a) - fy * Math.sin(a), y + fx * Math.sin(a) + fy * Math.cos(a), tz + 1.5);
+  const sq = [[-r, -r], [r, -r], [r, r], [-r, r], [-r, -r]].map(([u, v]) => at(u, v));
+  const mat2 = new THREE.LineDashedMaterial({ color: 0x22c55e, dashSize: 8, gapSize: 6 });
+  const box = new THREE.Line(new THREE.BufferGeometry().setFromPoints(sq), mat2); box.computeLineDistances(); homeG.add(box);
+  const tick = new THREE.Line(new THREE.BufferGeometry().setFromPoints([at(0, 0), at(r + 25, 0)]), new THREE.LineBasicMaterial({ color: 0x22c55e }));
+  homeG.add(tick);
 }
 
 function drawCards(cards, tz) {
@@ -375,7 +391,7 @@ function render(s) {
   if (tz !== lastTableZ || !table || Object.keys(s.board || {}).length !== table.n) {
     drawTable(tz, s.board); table.n = Object.keys(s.board || {}).length; lastTableZ = tz;
   }
-  drawHead(s.head, tz); drawCams(s.cameras, tz); drawBounds(s.bounds, tz);
+  drawHead(s.head, tz); drawCams(s.cameras, tz); drawBounds(s.bounds, tz); drawHome(s.mate_home, tz);
   if (cardsMoved(s.cards || [])) { drawCards(s.cards, tz); shownCards = s.cards || []; }
   if (mateMoved(s.mate)) { drawMate(s.mate, tz); shownMate = s.mate; }
   if (!framed) { frameView(false); framed = true; }

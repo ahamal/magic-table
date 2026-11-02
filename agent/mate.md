@@ -16,6 +16,9 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 
 ## Driving
 
+- **Easiest: let the hub drive it.** `POST hub/api/mate/goto {x, y, heading}` puts Mate's turning centre on (x, y) in board mm and turns it to `heading`, looking with the camera and correcting until it's within ~5 mm and ~3°. It raises the gantry head out of the way first and refuses spots off the board.
+- **Home:** `POST hub/api/mate/home` parks Mate at its home spot: the middle of the left margin, in line with the left board markers, facing into the board. `GET hub/api/mate/home` says where that is; `POST hub/api/mate/home/set` saves a new one (no body = where Mate is now). Send Mate home when it's done helping, and before calibrating the cameras.
+
 - **Signs:** forward = `s1` −, `s2` +. Backward = `s1` +, `s2` −. Turn left (anticlockwise from above) = `+, +`. Turn right = `−, −`.
 - **Where it is:** Mate doesn't know. The hub's camera does: `GET hub/api/scene` → `mate {x, y, heading}` (heading = the way its face points, degrees anticlockwise from the gantry's +X). Its marker is on the top, so it needs to be in cam 1's view.
 - **Calibrate it first** (each build differs): drive a known number of half-steps forward and turn in place, measure with `/api/scene` before and after (average a few reads), and write mm per half-step and degrees per half-step (left and right separately) to the notes. This build's numbers are in the notes.

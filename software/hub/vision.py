@@ -290,6 +290,8 @@ class Vision:
                 cal["bounds"] = self.cal["bounds"]
             if self.cal and self.cal.get("travel_z") is not None:   # a chosen travel height stays
                 cal["travel_z"] = self.cal["travel_z"]
+            if self.cal and self.cal.get("mate_home"):
+                cal["mate_home"] = self.cal["mate_home"]
             CAL_FILE.write_text(json.dumps(cal))
             self.needs_reanchor = False
             with self._lock:
@@ -316,6 +318,10 @@ class Vision:
                 "table_source": self.cal.get("table_source"), "needs_reanchor": self.needs_reanchor, "cams": cams,
                 "head_error_mm": self.scene.get("head", {}).get("error_mm"),
                 "camera_moved_px": self.scene.get("camera_moved_px")}
+
+    def save(self):
+        with self._lock:
+            CAL_FILE.write_text(json.dumps(self.cal))
 
     def set_table(self):
         """The cup is touching the board now: that's the board's height."""
@@ -397,6 +403,9 @@ class Vision:
                 if "P" in c:
                     c["P"] = (np.array(c["P"]) @ T).tolist()
                     c["camera"] = camera_position(np.array(c["P"])).tolist()
+            if self.cal.get("mate_home"):
+                h = self.cal["mate_home"]
+                self.cal["mate_home"] = [round(h[0] - cx, 1), round(h[1] - cy, 1), h[2]]
             if self.cal.get("bounds"):
                 b = self.cal["bounds"]
                 self.cal["bounds"] = [round(b[0] - cx, 1), round(b[1] - cx, 1), round(b[2] - cy, 1), round(b[3] - cy, 1)]
@@ -544,7 +553,7 @@ class Vision:
         tz = self.cal.get("table_z")
         scene = {"at": time.time(), "calibrated": True, "table_z": tz, "table_source": self.cal.get("table_source"),
                  "travel_z": self.cal.get("travel_z"), "bounds": self.cal.get("bounds"),
-                 "needs_reanchor": self.needs_reanchor,
+                 "mate_home": self.cal.get("mate_home"), "needs_reanchor": self.needs_reanchor,
                  "head": {"x": w[0], "y": w[1], "z": w[2], "tip_x": w[0] + TIP_OFFSET[0], "tip_y": w[1] + TIP_OFFSET[1],
                           "tip_z": w[2] - TIP_BELOW_MARKER, "seen_by": []},
                  "mate": None, "cards": [], "board": {}, "cameras": {}}

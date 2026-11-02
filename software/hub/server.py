@@ -311,6 +311,102 @@ async def scene(fresh: bool = False):
     return await asyncio.to_thread(vision.update) if fresh else vision.scene
 
 
+# ---- Mate: driving with the camera ----
+
+def mate_pose(n=3):
+    """Mate's marker pose (x, y, heading), averaged over a few fresh looks; None if unseen."""
+    seen = []
+    for _ in range(n):
+        m = vision.update().get("mate")
+        if m:
+            seen.append((m["x"], m["y"], m["heading"]))
+        time.sleep(0.15)
+    if not seen:
+        return None
+    h0 = seen[0][2]
+    hs = [h0 + ((h - h0 + 180) % 360 - 180) for _, _, h in seen]
+    return (sum(p[0] for p in seen) / len(seen), sum(p[1] for p in seen) / len(seen), sum(hs) / len(hs))
+
+
+def mate_home():
+    """Mate's home: saved in the calibration, or by default the middle of the left margin,
+    halfway between the left board markers, facing into the board (+X)."""
+    if vision.cal and vision.cal.get("mate_home"):
+        return vision.cal["mate_home"]
+    board = vision.update().get("board") or {}
+    pts = [(b["x"], b["y"]) for b in board.values()]
+    if len(pts) < 2:
+        return None
+    mid = sum(x for x, _ in pts) / len(pts)
+    left = [(x, y) for x, y in pts if x < mid]
+    if len(left) < 2:
+        return None
+    return [round(sum(x for x, _ in left) / len(left), 1), round(sum(y for _, y in left) / len(left), 1), 0.0]
+
+
+class MateGoto(BaseModel):
+    x: float
+    y: float
+    heading: float | None = None   # degrees, anticlockwise from +X; None = any
+
+
+def mate_goto(x, y, heading):
+    if not vision.cal:
+        return {"ok": False, "error": "not calibrated"}
+    b = vision.cal.get("bounds")
+    if b and not (b[0] - 80 <= x <= b[1] + 80 and b[2] - 80 <= y <= b[3] + 80):
+        return {"ok": False, "error": "that's off the board"}
+    travel = vision.cal.get("travel_z")
+    if travel is not None and z_now() < travel - 0.5:   # nothing low for Mate to run into
+        if grbl.send(f"G90 G0 Z{travel:.3f}") != "ok" or grbl.send("G4 P0", 60) != "ok":
+            return {"ok": False, "error": "couldn't raise the head first"}
+    return mate.goto(mate_pose, x, y, heading)
+
+
+@app.post("/api/mate/goto")
+async def mate_goto_api(body: MateGoto):
+    """Drive Mate so its turning centre ends on (x, y), then turn to `heading`. Turns, drives,
+    looks with the camera and corrects until within ~5 mm and ~3 deg. Raises the gantry head to
+    travel height first."""
+    return await asyncio.to_thread(mate_goto, body.x, body.y, body.heading)
+
+
+@app.get("/api/mate/home")
+def mate_home_get():
+    return {"home": mate_home()}
+
+
+@app.post("/api/mate/home")
+async def mate_home_go():
+    """Send Mate home (see GET /api/mate/home)."""
+    h = mate_home()
+    if not h:
+        return {"ok": False, "error": "no home yet: the camera needs the left board markers"}
+    return await asyncio.to_thread(mate_goto, *h)
+
+
+class MateHome(BaseModel):
+    x: float | None = None          # all None = where Mate is now
+    y: float | None = None
+    heading: float | None = None
+
+
+@app.post("/api/mate/home/set")
+async def mate_home_set(body: MateHome):
+    """Save Mate's home: a spot and heading, or (no body) where Mate is now."""
+    if body.x is None or body.y is None:
+        p = await asyncio.to_thread(mate_pose)
+        if p is None:
+            return {"ok": False, "error": "the camera can't see Mate"}
+        cx, cy = mate.centre(p)
+        home = [round(cx, 1), round(cy, 1), round(p[2], 1)]
+    else:
+        home = [body.x, body.y, body.heading if body.heading is not None else 0.0]
+    vision.cal["mate_home"] = home
+    vision.save()
+    return {"ok": True, "home": home}
+
+
 class Say(BaseModel):
     text: str
     wait: bool = False   # True: return once it has been spoken
