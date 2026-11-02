@@ -137,7 +137,7 @@
     <span><i>Z</i><span id="wz">–</span></span>
   </div>
   <span class="spacer"></span>
-  <a href="/" class="navlink">Home</a><a href="/scene" class="navlink">Scene</a><a href="/guide" class="navlink">Guide</a>
+  <a href="/" class="navlink">Home</a><a href="/scene" class="navlink">3D Scene</a><a href="/vision" class="navlink">Vision</a><a href="/talk" class="navlink">Talk</a>
   <button id="stop" title="Feed hold, then reset (Esc)">STOP</button>
 </header>
 
@@ -264,6 +264,7 @@ function connect() {
   ws.onmessage = e => {
     const ev = JSON.parse(e.data);
     if (ev.type === 'status') render(ev);
+    else if (ev.type === 'scene') boardFrom(ev);
     else if (ev.type === 'settings') applySettings(ev.settings);
     else if (ev.type === 'gripper') renderGripper(ev);
     else if (ev.type === 'log') log((ev.dir === 'out' ? '> ' : '') + ev.text,
@@ -298,9 +299,14 @@ function render(s) {
 }
 
 // ---- map ----
-// Work coordinates, X right, Y up (like the Robo Diner jog page). Z: up is up.
-const PAD = 12;
-let xyGeom = null;
+// The board, from above, in work coordinates: 0,0 is its middle, X right, Y up. The dot is the
+// head (what Go and the readout use); the cup hangs TIP from it, so the cup's reach is drawn as
+// where the head can be (shifted by TIP). Markers and Mate are where the cameras see them.
+const PAD = 12, TIP = [0.6, -24.7], ZMIN = -1, ZMAX = 150;
+let board = { bounds: [-210, 210, -191, 191], markers: {}, mate: null };
+const view = () => { const b = board.bounds, m = 50;          // the board: the cup's reach plus the marker margin
+  return [b[0] - m, b[1] + m, b[2] - m, b[3] - TIP[1] + m]; };
+const sx = x => x, sy = y => -y;                                // SVG y runs down
 
 function el(tag, attrs, parent) {
   const e = document.createElementNS(SVGNS, tag);
@@ -312,12 +318,26 @@ function el(tag, attrs, parent) {
 function drawMap() {
   const xy = $('xy'), zr = $('zrail');
   xy.innerHTML = zr.innerHTML = '';
-  const W = travel.X, H = travel.Y;
-  xy.setAttribute('viewBox', `${-PAD} ${-PAD} ${W + 2 * PAD} ${H + 2 * PAD}`);
-  el('rect', { x: 0, y: 0, width: W, height: H, fill: 'var(--table)', stroke: 'var(--line)' }, xy);
-  for (let x = 50; x < W; x += 50) el('line', { x1: x, y1: 0, x2: x, y2: H, stroke: 'var(--grid)' }, xy);
-  for (let y = 50; y < H; y += 50) el('line', { x1: 0, y1: H - y, x2: W, y2: H - y, stroke: 'var(--grid)' }, xy);
-  el('text', { x: 4, y: H - 4, 'font-size': 11, fill: 'var(--muted)' }, xy).textContent = '0,0';
+  const [x0, x1, y0, y1] = view(), b = board.bounds;
+  xy.setAttribute('viewBox', `${x0 - PAD} ${-y1 - PAD} ${x1 - x0 + 2 * PAD} ${y1 - y0 + 2 * PAD}`);
+  el('rect', { x: x0, y: -y1, width: x1 - x0, height: y1 - y0, rx: 4, fill: '#1b1b1b' }, xy);
+  for (let x = Math.ceil(x0 / 50) * 50; x < x1; x += 50) el('line', { x1: x, y1: -y1, x2: x, y2: -y0, stroke: '#2a2a2a' }, xy);
+  for (let y = Math.ceil(y0 / 50) * 50; y < y1; y += 50) el('line', { x1: x0, y1: -y, x2: x1, y2: -y, stroke: '#2a2a2a' }, xy);
+  // the cup's reach (head coordinates)
+  el('rect', { x: b[0] - TIP[0], y: -(b[3] - TIP[1]), width: b[1] - b[0], height: b[3] - b[2], fill: 'none',
+    stroke: '#d9822b', 'stroke-dasharray': '6 5', 'stroke-width': 1.2 }, xy);
+  for (const m of Object.values(board.markers)) {                 // board markers, ~30 mm
+    el('rect', { x: m.x - 19, y: -m.y - 19, width: 38, height: 38, fill: '#f4f4f2' }, xy);
+    el('rect', { x: m.x - 13, y: -m.y - 13, width: 26, height: 26, fill: '#1b1b1b' }, xy);
+  }
+  if (board.mate) {                                              // Mate's body, ~90 x 100 mm
+    const g = el('g', { transform: `translate(${board.mate.x} ${-board.mate.y}) rotate(${-board.mate.heading})` }, xy);
+    el('rect', { x: -50, y: -45, width: 100, height: 90, rx: 6, fill: '#c9a46c', opacity: .85 }, g);
+  }
+  // 0,0: the middle of the board
+  el('line', { x1: -10, y1: 0, x2: 10, y2: 0, stroke: '#888' }, xy);
+  el('line', { x1: 0, y1: -10, x2: 0, y2: 10, stroke: '#888' }, xy);
+  el('text', { x: 6, y: -6, 'font-size': 13, fill: '#999' }, xy).textContent = '0,0';
   el('line', { id: 'path', stroke: 'var(--target)', 'stroke-dasharray': '4 4', 'stroke-width': 1.5 }, xy);
   const t = el('g', { id: 'tmark', visibility: 'hidden' }, xy);
   el('circle', { r: 9, fill: 'none', stroke: 'var(--target)', 'stroke-width': 2 }, t);
@@ -325,17 +345,19 @@ function drawMap() {
   el('line', { y1: -14, y2: 14, stroke: 'var(--target)', 'stroke-width': 1.5 }, t);
   const h = el('g', { id: 'head' }, xy);
   el('circle', { r: 8, fill: 'var(--accent)' }, h);
-  el('circle', { r: 3, fill: 'var(--card)' }, h);
+  el('circle', { r: 3, fill: '#fff' }, h);
 
-  zr.setAttribute('viewBox', `-22 ${-PAD} 44 ${travel.Z + 2 * PAD}`);
+  zr.setAttribute('viewBox', `-22 ${-PAD} 44 ${ZMAX - ZMIN + 2 * PAD}`);
   zr.setAttribute('preserveAspectRatio', 'none');
-  el('rect', { x: -6, y: 0, width: 12, height: travel.Z, fill: 'var(--table)', stroke: 'var(--line)' }, zr);
+  el('rect', { x: -6, y: 0, width: 12, height: ZMAX - ZMIN, fill: 'var(--table)', stroke: 'var(--line)' }, zr);
+  el('rect', { x: -10, y: ZMAX - 0 - 1, width: 20, height: 2, fill: 'var(--muted)' }, zr);   // the board: Z 0
   el('rect', { id: 'ztarget', x: -18, width: 36, height: 3, fill: 'var(--target)', visibility: 'hidden' }, zr);
   el('rect', { id: 'zhead', x: -14, width: 28, height: 6, rx: 3, fill: 'var(--accent)' }, zr);
   updateHead(); updateTarget();
 }
 
-const clampXY = (v, max) => Math.min(Math.max(v, 0), max);
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+const zy = z => ZMAX - clamp(z, ZMIN, ZMAX);                   // Z rail: 150 at the top, the board near the bottom
 
 function updateHead() {
   if (!$('head')) return;
@@ -343,8 +365,8 @@ function updateHead() {
   $('head').setAttribute('visibility', w ? 'visible' : 'hidden');
   $('zhead').setAttribute('visibility', w ? 'visible' : 'hidden');
   if (!w) return updatePath();
-  $('head').setAttribute('transform', `translate(${clampXY(w[0], travel.X)} ${travel.Y - clampXY(w[1], travel.Y)})`);
-  $('zhead').setAttribute('y', travel.Z - clampXY(w[2], travel.Z) - 3);
+  $('head').setAttribute('transform', `translate(${sx(w[0])} ${sy(w[1])})`);
+  $('zhead').setAttribute('y', zy(w[2]) - 3);
   updatePath();
 }
 
@@ -354,8 +376,8 @@ function updateTarget() {
   $('tmark').setAttribute('visibility', show ? 'visible' : 'hidden');
   $('ztarget').setAttribute('visibility', show ? 'visible' : 'hidden');
   if (show) {
-    $('tmark').setAttribute('transform', `translate(${target.x} ${travel.Y - target.y})`);
-    $('ztarget').setAttribute('y', travel.Z - target.z - 1.5);
+    $('tmark').setAttribute('transform', `translate(${sx(target.x)} ${sy(target.y)})`);
+    $('ztarget').setAttribute('y', zy(target.z) - 1.5);
     $('tx').value = target.x.toFixed(1); $('ty').value = target.y.toFixed(1); $('tz').value = target.z.toFixed(1);
   }
   $('go').disabled = !show || (st.state || '') !== 'Idle';
@@ -366,8 +388,8 @@ function updatePath() {
   const p = $('path'), w = st.WPos; if (!p) return;
   if (!target || !w) { p.setAttribute('visibility', 'hidden'); return; }
   p.setAttribute('visibility', 'visible');
-  p.setAttribute('x1', clampXY(w[0], travel.X)); p.setAttribute('y1', travel.Y - clampXY(w[1], travel.Y));
-  p.setAttribute('x2', target.x); p.setAttribute('y2', travel.Y - target.y);
+  p.setAttribute('x1', sx(w[0])); p.setAttribute('y1', sy(w[1]));
+  p.setAttribute('x2', sx(target.x)); p.setAttribute('y2', sy(target.y));
 }
 
 function svgPoint(svg, e) {
@@ -378,14 +400,13 @@ function svgPoint(svg, e) {
 function currentOr0() { const w = st.WPos || [0, 0, 0]; return { x: w[0], y: w[1], z: w[2] }; }
 
 $('xy').addEventListener('pointerdown', e => {
-  const p = svgPoint($('xy'), e);
-  target = { ...(target || currentOr0()),
-    x: +clampXY(p.x, travel.X).toFixed(1), y: +clampXY(travel.Y - p.y, travel.Y).toFixed(1) };
+  const p = svgPoint($('xy'), e), [x0, x1, y0, y1] = view();
+  target = { ...(target || currentOr0()), x: +clamp(p.x, x0, x1).toFixed(1), y: +clamp(-p.y, y0, y1).toFixed(1) };
   updateTarget();
 });
 $('zrail').addEventListener('pointerdown', e => {
   const p = svgPoint($('zrail'), e);
-  target = { ...(target || currentOr0()), z: +clampXY(travel.Z - p.y, travel.Z).toFixed(1) };
+  target = { ...(target || currentOr0()), z: +clamp(ZMAX - p.y, ZMIN, ZMAX).toFixed(1) };
   updateTarget();
 });
 ['tx', 'ty', 'tz'].forEach(id => $(id).addEventListener('change', () => {
@@ -395,6 +416,17 @@ $('zrail').addEventListener('pointerdown', e => {
 $('here').onclick = () => { target = currentOr0(); updateTarget(); };
 $('go').onclick = () => target && api('move', { ...target, feed: feed() });
 $('gozero').onclick = $('padzero').onclick = () => api('move', { x: 0, y: 0, feed: feed() });
+
+// the board from the cameras: reach, markers, Mate (refreshed with each scene)
+function boardFrom(s) {
+  if (!s || !s.calibrated) return;
+  const mate = s.mate ? { x: s.mate.x, y: s.mate.y, heading: s.mate.heading } : null;
+  const same = JSON.stringify(s.bounds) === JSON.stringify(board.bounds) && Object.keys(s.board || {}).length === Object.keys(board.markers).length
+    && (!mate === !board.mate) && (!mate || Math.hypot(mate.x - board.mate.x, mate.y - board.mate.y) < 3);
+  board = { bounds: s.bounds || board.bounds, markers: s.board || {}, mate };
+  if (!same) drawMap();
+}
+fetch('/api/scene').then(r => r.json()).then(boardFrom).catch(() => {});
 
 // ---- jog ----
 STEPS.forEach((s, i) => {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Table Scene</title>
+<title>3D Scene</title>
 <style>
   :root { --bg: #f4f4f2; --panel: rgba(255,255,255,.92); --ink: #161616; --muted: #74746f; --line: #dcdcd8;
     --accent: #1d4ed8; --ok: #15803d; --warn: #a16207; --bad: #dc2626; }
@@ -15,45 +15,96 @@
   html, body { height: 100%; margin: 0; }
   body { background: var(--bg); color: var(--ink); font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Inter", sans-serif; overflow: hidden; }
   #view { position: fixed; inset: 0; }
-  .hud { position: fixed; top: 12px; left: 12px; width: 260px; max-width: calc(100vw - 24px); background: var(--panel);
-    border: 1px solid var(--line); padding: 10px 12px; backdrop-filter: blur(6px); }
-  .hud b { font-size: 13px; letter-spacing: .08em; }
-  .row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
-  .row span:first-child { color: var(--muted); }
+  .hud { position: fixed; top: 12px; left: 12px; width: 270px; max-width: calc(100vw - 24px); background: var(--panel);
+    border: 1px solid var(--line); padding: 16px; backdrop-filter: blur(6px); display: flex; flex-direction: column; gap: 14px; }
+  .hud .top { display: flex; align-items: center; gap: 8px; }
+  .hud .top b { font-size: 12px; letter-spacing: .08em; white-space: nowrap; }
+  .hud .links { margin-left: auto; display: flex; gap: 10px; white-space: nowrap; }
+  .hud .links a { color: var(--accent); text-decoration: none; }
+  .hud .links a:hover { text-decoration: underline; }
   .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
   .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
-  .seg { display: flex; margin-top: 8px; }
-  .seg button + button { margin-left: -1px; }
-  button { flex: 1; font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); height: 26px; cursor: pointer; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .rows { display: flex; flex-direction: column; gap: 4px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+  .row span:first-child { color: var(--muted); }
+  .ic { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  button { flex: 1; font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); height: 32px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
   button:hover { background: rgba(127,127,127,.12); }
   button:disabled { opacity: .4; cursor: default; }
-  #msg { margin-top: 8px; color: var(--muted); }
+  /* buttons in a grid share their borders */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; }
+  .grid2 button { margin: 0 -1px -1px 0; }
+  .fold { flex: none; justify-content: flex-start; height: 34px; padding: 0 10px 0 12px; width: 100%; }
+  .fold .state { margin-left: auto; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; }
+  .fold .chev { transition: transform .15s; }
+  .fold.open .chev { transform: rotate(180deg); }
+  #calbox { display: flex; flex-direction: column; gap: 14px; margin-top: -4px; }
+  #calbox[hidden] { display: none; }
+  /* scan: a button of its own, top right; what it found under it */
+  .scan { position: fixed; top: 12px; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  #scan { flex: none; height: 40px; padding: 0 16px 0 14px; gap: 9px; border-radius: 9px; font-weight: 600; letter-spacing: .01em;
+    color: #f4f4f2; border: 1px solid #0d0d0d; background: linear-gradient(#3d3d3d, #222);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 2px 10px rgba(0,0,0,.22); }
+  #scan:hover { background: linear-gradient(#474747, #2a2a2a); }
+  #scan:active { background: linear-gradient(#262626, #303030); box-shadow: inset 0 1px 2px rgba(0,0,0,.4); }
+  #scan .ic { width: 17px; height: 17px; color: #f5a524; }
+  #poly { flex: none; padding: 0 12px; background: var(--panel); }
+  #poly:hover { background: linear-gradient(rgba(127,127,127,.12), rgba(127,127,127,.12)), var(--panel); }
+  #poly.busy .ic { animation: spin 1.4s linear infinite; }
+  #poly[hidden] { display: none; }
+  #scan .ver { font-weight: 500; font-size: 11px; color: #bdbdb8; padding: 1px 6px; border-radius: 5px; background: rgba(255,255,255,.09); }
+  #scan.busy .ic { animation: spin 1.4s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #scaninfo { display: flex; align-items: center; gap: 7px; padding-right: 4px; color: var(--muted); text-shadow: 0 0 4px var(--bg); }
+  #scaninfo .dot { color: var(--warn); }
+  #scaninfo.bad .dot { color: var(--bad); }
+  #scaninfo[hidden] { display: none; }
+  /* the last scan: what it found */
+  #last { width: 220px; text-align: right; color: var(--muted); text-shadow: 0 0 4px var(--bg); }
+  #last[hidden] { display: none; }
+  #lasttext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 600px) { .scan { top: auto; bottom: 12px; } }
+  #msg { color: var(--muted); }
   #msg:empty { display: none; }
-  .legend { position: fixed; right: 12px; bottom: 12px; background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; color: var(--muted); }
-  @media (max-width: 600px) { .legend { display: none; } }
 </style>
 </head>
 <body>
 <div id="view"></div>
 
 <div class="hud">
-  <div class="row"><b>TABLE SCENE</b><span id="conn" class="bad">offline</span></div>
-  <div class="row"><span><a href="/" style="color:var(--accent)">Home</a> · <a href="/jog" style="color:var(--accent)">Jog</a> · <a href="/guide" style="color:var(--accent)">Guide</a></span></div>
-  <div class="row"><span>Calibration</span><span id="cal" class="mono">–</span></div>
-  <div class="row"><span>Head</span><span id="head" class="mono">–</span></div>
-  <div class="row"><span>Head check (camera)</span><span id="herr" class="mono">–</span></div>
-  <div class="row"><span>Camera moved</span><span id="moved" class="mono">–</span></div>
-  <div class="row"><span>Mate</span><span id="mate" class="mono">–</span></div>
-  <div class="row"><span>Cards</span><span id="cards" class="mono">–</span></div>
-  <div class="row"><span>Board markers</span><span id="board" class="mono">–</span></div>
-  <div class="row"><span>Board height</span><span id="tz" class="mono">–</span></div>
-  <div class="row"><span>Travel height (over Mate)</span><span id="travel" class="mono">–</span></div>
-  <div class="seg"><button id="calib">Calibrate</button><button id="table">Board is here</button><button id="reanchor">Re-anchor</button></div>
-  <div class="seg"><button id="travelset">Travel height = here</button></div>
-  <div class="seg"><button id="top">Top view</button><button id="side">Side view</button></div>
+  <div class="top"><b>3D SCENE</b><span id="conn" class="dot bad" title="offline"></span><span class="links"><a href="/">Home</a><a href="/jog">Jog</a><a href="/vision">Vision</a><a href="/talk">Talk</a></span></div>
+  <div class="rows">
+    <div class="row"><span>Head</span><span id="head" class="mono">–</span></div>
+    <div class="row"><span>Mate</span><span id="mate" class="mono">–</span></div>
+    <div class="row"><span>Cards</span><span id="cards" class="mono">–</span></div>
+  </div>
+  <div class="grid2"><button id="top"><svg class="ic " viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/><path d="M12 3v18"/></svg>Top</button><button id="side"><svg class="ic " viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Side</button></div>
   <div id="msg"></div>
+  <button id="calbtn" class="fold"><svg class="ic " viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></svg><span>Calibration</span><span id="calstat" class="state"></span><svg class="ic chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+  <div id="calbox" hidden>
+    <div class="rows">
+      <div class="row"><span>Calibrated</span><span id="cal" class="mono">–</span></div>
+      <div class="row"><span>Head check (camera)</span><span id="herr" class="mono">–</span></div>
+      <div class="row"><span>Camera moved</span><span id="moved" class="mono">–</span></div>
+      <div class="row"><span>Board markers</span><span id="board" class="mono">–</span></div>
+      <div class="row"><span>Board height</span><span id="tz" class="mono">–</span></div>
+      <div class="row"><span>Travel height</span><span id="travel" class="mono">–</span></div>
+    </div>
+    <div class="grid2">
+      <button id="calib"><svg class="ic " viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4"/><path d="M12 19v4"/><path d="M1 12h4"/><path d="M19 12h4"/></svg>Calibrate</button><button id="reanchor"><svg class="ic " viewBox="0 0 24 24"><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>Re-anchor</button>
+      <button id="table" title="The cup is touching the board: make that Z 0 (also fixes a Z that skipped steps)"><svg class="ic " viewBox="0 0 24 24"><path d="M12 3v14"/><path d="m6 11 6 6 6-6"/><path d="M5 21h14"/></svg>Zero Z</button><button id="travelset"><svg class="ic " viewBox="0 0 24 24"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></svg>Travel here</button>
+    </div>
+  </div>
 </div>
-<div class="legend">Drag to orbit · scroll to zoom · right-drag to pan · gantry mm</div>
+
+<div class="scan">
+  <button id="scan"><svg class="ic" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></svg>Scan with SAM<span class="ver">3.1</span></button>
+  <div id="scaninfo" hidden><span class="dot"></span><span id="scanmsg"></span></div>
+  <div id="last" hidden><div id="lasttext"></div></div>
+  <button id="poly" hidden><svg class="ic" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Render poly</button>
+</div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -77,10 +128,11 @@ const FLIP = { fromAxle: 42, at: 45, seg1: 73, seg2: 146, width: 14, rest: 20, l
 const WHEEL_FORWARD = 5;   // the axle is 5 mm ahead of the box's middle
 // The head, relative to the head marker's centre (what GRBL positions). Measured: the cup tip is at
 // (0.6, -24.7) and 57 mm below (vision.TIP_OFFSET / TIP_BELOW_MARKER; checked against card centres).
-// The cup sits in front of (-Y from) the 2020 Z extrusion, 18 mm from its centre. The marker plate is
-// drawn on the side toward cam 1, pushed out just far enough not to cut into the extrusion.
-const TIP = { dx: 0.6, dy: -24.7, dz: -57 }, CUP_IN_FRONT = 18;
-const PLATE = [38, 64, 4], HEAD_MARKER = 25, HEAD_MARKER_CUT = 33;
+// The marker is on thin card glued to the 2020 Z extrusion's left face (-X, facing left, toward
+// cam 1), ~1 mm out, so the extrusion's centre is EXT_RIGHT mm to its right (+X). Everything else
+// hangs off the measured marker -> cup offset (TIP), not off the extrusion.
+const TIP = { dx: 0.6, dy: -24.7, dz: -57 }, EXT_RIGHT = 10 + 1 + .5;
+const PLATE = [38, 64, .5], HEAD_MARKER = 25, HEAD_MARKER_CUT = 33; // card thickness approximated for display
 const WHEEL = { d: 70, w: 8 };
 
 // Gantry: X right, Y away, Z+ up (mm; $3 inverts the Z motor). three.js: y up. So (X, Y, Z) -> (X, Z, -Y).
@@ -101,41 +153,37 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(300, 800
 
 const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: .8 });
 const group = name => { const g = new THREE.Group(); g.name = name; scene.add(g); return g; };
-const boardG = group('board'), cardsG = group('cards'), mateG = group('mate'), camsG = group('cams'), boundsG = group('bounds'), homeG = group('home');
+const boardG = group('board'), itemsG = group('items'), cardsG = group('cards'), mateG = group('mate'), camsG = group('cams'), boundsG = group('bounds'), homeG = group('home');
 
 // head: built around the head marker's centre (the group's origin), from measured offsets
 const L = (dx, dy, dz) => new THREE.Vector3(dx, dz, -dy);           // gantry offset -> three offset
 const head = new THREE.Group(); head.visible = false; scene.add(head);
 const metal = mat(0xb8bcc2), steel = mat(0x8d9096), dark2 = mat(0x2a2a2a);
 const tipL = L(TIP.dx, TIP.dy, TIP.dz);
-// 2020 Z extrusion with its four slots; placed (and turned) behind the plate in drawHead
+// 2020 Z extrusion with its four slots, right of the marker
 const railG = new THREE.Group(); head.add(railG);
 railG.add(new THREE.Mesh(new THREE.BoxGeometry(20, 320, 20), metal));
 for (const [sx, sz] of [[10, 0], [-10, 0], [0, 10], [0, -10]]) {
   const slot = new THREE.Mesh(new THREE.BoxGeometry(sx ? 1 : 6, 320, sz ? 1 : 6), dark2);
   slot.position.set(sx, 0, sz); railG.add(slot);
 }
-// marker plate, upright; turned toward cam 1 in drawHead
+// marker card, upright on the extrusion's left face
 const plateG = new THREE.Group(); head.add(plateG);
 plateG.add(new THREE.Mesh(new THREE.BoxGeometry(PLATE[0], PLATE[1], PLATE[2]), mat(0xe8e2d6)));
-const paper = new THREE.Mesh(new THREE.BoxGeometry(HEAD_MARKER_CUT, HEAD_MARKER_CUT, .4), mat(0xffffff));
-paper.position.z = PLATE[2] / 2 + .3; plateG.add(paper);
-const ink = new THREE.Mesh(new THREE.BoxGeometry(HEAD_MARKER, HEAD_MARKER, .4), mat(0x111111));
-ink.position.z = PLATE[2] / 2 + .6; plateG.add(ink);
+const paper = new THREE.Mesh(new THREE.PlaneGeometry(HEAD_MARKER_CUT, HEAD_MARKER_CUT), mat(0xffffff));
+paper.position.z = PLATE[2] / 2 + .2; plateG.add(paper);
+const ink = new THREE.Mesh(new THREE.PlaneGeometry(HEAD_MARKER, HEAD_MARKER), mat(0x111111));
+ink.position.z = PLATE[2] / 2 + .4; plateG.add(ink);
 // bracket from the extrusion out to the cup, then nut, threaded stem, spring, bellows cup
 const bracketY = TIP.dz + 34;
-const bracket = new THREE.Mesh(new THREE.BoxGeometry(14, 5, 1), mat(0x3a3a3a)); head.add(bracket);
-const ext = L(TIP.dx, TIP.dy + CUP_IN_FRONT, 0);                   // extrusion centre: right behind the cup
+const ext = L(EXT_RIGHT, 0, 0);                                   // extrusion centre
 railG.position.set(ext.x, -30 + 160, ext.z);
-bracket.scale.z = CUP_IN_FRONT + 12;
-bracket.position.set(tipL.x, bracketY, (ext.z + tipL.z) / 2);
-function placePlate(toCam) {     // flat on the extrusion face that looks most toward the camera
-  const n = Math.abs(toCam.x) > Math.abs(toCam.z) ? new THREE.Vector3(Math.sign(toCam.x), 0, 0)
-                                                  : new THREE.Vector3(0, 0, Math.sign(toCam.z) || 1);
-  plateG.rotation.y = Math.atan2(n.x, n.z);
-  plateG.position.set(ext.x + n.x * (10 + PLATE[2] / 2), 0, ext.z + n.z * (10 + PLATE[2] / 2));
-}
-placePlate(new THREE.Vector3(-1, 0, 0));
+const reach = Math.hypot(tipL.x - ext.x, tipL.z - ext.z);           // bracket: extrusion to the cup's stem
+const bracket = new THREE.Mesh(new THREE.BoxGeometry(14, 5, reach + 7), mat(0x3a3a3a)); head.add(bracket);
+bracket.position.set((ext.x + tipL.x) / 2, bracketY, (ext.z + tipL.z) / 2);
+bracket.rotation.y = Math.atan2(tipL.x - ext.x, tipL.z - ext.z);
+plateG.rotation.y = -Math.PI / 2;                                  // left face (-X), facing left
+plateG.position.set(-1, 0, 0);       // the marker's centre is the origin; drawn 1 mm further out so it doesn't flicker
 const nut = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 5, 6), steel); nut.position.set(tipL.x, bracketY + 5, tipL.z); head.add(nut);
 const stem = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 40, 12), steel);
 stem.position.set(tipL.x, bracketY - 8, tipL.z); head.add(stem);
@@ -179,12 +227,6 @@ function drawHead(h, tz) {
   if (!h) return;
   head.visible = ring.visible = true;
   head.position.copy(P(h.x, h.y, h.z));
-  // the marker plate faces the camera that tracks it
-  const cam = S && S.cameras && (S.cameras['1'] || Object.values(S.cameras)[0]);
-  if (cam) {
-    const c = P(...cam.position);
-    placePlate(new THREE.Vector3(c.x - head.position.x, 0, c.z - head.position.z));
-  }
   ring.position.copy(P(h.x + TIP.dx, h.y + TIP.dy, tz + 1));
   const e = h.error_mm;
   ring.material.color.set(e == null ? 0x888888 : e < 2 ? 0x22c55e : e < 5 ? 0xeab308 : 0xef4444);
@@ -370,6 +412,8 @@ function frameView(top) {
   camera.position.copy(top ? c.clone().add(new THREE.Vector3(0, d * 1.2, 1)) : c.clone().add(new THREE.Vector3(0, d * .7, d)));
   controls.update();
 }
+function setCal(open) { $('calbox').hidden = !open; $('calbtn').classList.toggle('open', open); }
+$('calbtn').onclick = () => setCal($('calbox').hidden);
 $('top').onclick = () => frameView(true);
 $('side').onclick = () => frameView(false);
 
@@ -382,6 +426,7 @@ function render(s) {
   $('cal').className = 'mono ' + (s.calibrated ? 'ok' : 'warn');
   if (!s.calibrated) {
     $('msg').textContent = 'Not calibrated. Park the head over the middle of the board with the cup a few cm up, then press Calibrate.';
+    setCal(true); $('calstat').innerHTML = 'not yet<span class="dot warn"></span>';
     return;
   }
   const tz = s.table_z ?? 0;
@@ -408,23 +453,29 @@ function render(s) {
   $('tz').className = 'mono ' + (s.table_source === 'touch' ? 'ok' : 'warn');
   $('travel').textContent = s.travel_z == null ? 'not set' : `Z ${s.travel_z.toFixed(1)}`;
   $('reanchor').style.borderColor = s.needs_reanchor ? 'var(--warn)' : '';
+  const calOk = !s.needs_reanchor && !(mv >= 3) && s.table_source === 'touch';
+  const why = s.needs_reanchor ? 're-anchor' : mv >= 3 ? 'camera moved' : s.table_source !== 'touch' ? 'board not touched' : '';
+  $('calstat').innerHTML = `${why}<span class="dot ${calOk ? 'ok' : 'warn'}" title="${calOk ? 'all good' : why}"></span>`;
+  if (!calOk && !$('calbox').dataset.seen) { setCal(true); $('calbox').dataset.seen = 1; }
   if (s.needs_reanchor && !$('msg').dataset.keep) say('GRBL was reset: unlock it, then press Re-anchor before trusting positions.');
   if (!$('msg').dataset.keep && !s.needs_reanchor) $('msg').textContent = '';
 }
 
 function connect() {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-  ws.onopen = () => { $('conn').textContent = 'live'; $('conn').className = 'ok'; };
+  ws.onopen = () => { $('conn').className = 'dot ok'; $('conn').title = 'connected'; };
   ws.onmessage = e => {
     const ev = JSON.parse(e.data);
     if (ev.type === 'scene') render(ev);
+    else if (ev.type === 'vision' && ev.kind === 'find' && ev.by !== 'scene' && ev.items.some(i => i.board)) drawItems(ev);   // others' finds too (not Mate's: no board places)
+    else if (ev.type === 'vision' && ev.kind === 'shape' && ev.by !== 'scene') drawPolys(ev);
     else if (ev.type === 'status' && S && S.calibrated && ev.WPos) {     // move the head between scene updates
       S.head = { ...S.head, x: ev.WPos[0], y: ev.WPos[1], z: ev.WPos[2], tip_z: ev.WPos[2] - 57 };
       drawHead(S.head, S.table_z ?? 0);
       $('head').textContent = ev.WPos.map(v => v.toFixed(1)).join(', ');
     }
   };
-  ws.onclose = () => { $('conn').textContent = 'offline'; $('conn').className = 'bad'; setTimeout(connect, 1500); };
+  ws.onclose = () => { $('conn').className = 'dot bad'; $('conn').title = 'offline'; setTimeout(connect, 1500); };
   setInterval(() => ws.readyState === 1 && ws.send('ping'), 10000);
 }
 
@@ -436,18 +487,19 @@ async function post(path, body) {
 function say(text, keep) { $('msg').textContent = text; if (keep) $('msg').dataset.keep = 1; else delete $('msg').dataset.keep; }
 
 $('calib').onclick = async () => {
-  const room = parseFloat(prompt('Start with Z at its TOP, over the middle of the board, and Mate NOT under the 120 mm square around it.\n\nHow far is the cup above the board right now (mm)?', localStorage.getItem('room') || ''));
-  if (!(room > 35)) { if (!isNaN(room)) say('Need at least 35 mm between the cup and the board.', true); return; }
-  try { localStorage.setItem('room', room); } catch (e) {}
-  if (!confirm(`The head will move around a 120 mm square (60 mm each way from here) at 3 heights: here, then down to ${(room - 15).toFixed(0)} mm lower (15 mm above the board), then back up and home. Any problem stops it with no further moves. This height becomes the travel height over Mate. Go?`)) return;
+  // once the board's been touched, Z is the cup's height above it: no need to ask
+  const touched = S?.table_source === 'touch';
+  let room = touched ? S.head?.z : parseFloat(prompt('How far is the cup above the board right now (mm)?', ''));
+  if (!(room > 35)) { say(room == null || isNaN(room) ? 'Calibration cancelled.' : 'Raise the cup first: it needs at least 35 mm above the board.', true); return; }
+  if (!confirm(`Calibrate: the head moves over most of the board (4 × 4 stops, 130 mm each way from here) with the cup at ${room.toFixed(0)}, ${((room + 15) / 2).toFixed(0)} and 15 mm above the board, then back here. Keep the board clear under it and Mate out of the way. About 1.5 minutes; STOP on the jog page stops it.`)) return;
   $('calib').disabled = $('reanchor').disabled = $('table').disabled = true;
-  say('Calibrating… (about a minute). STOP on the jog page stops it.', true);
+  say('Calibrating… STOP on the jog page stops it.', true);
   try {
-    const r = await post('calibrate', { room, span: 60, steps: 3, levels: 3 });
+    const r = await post('calibrate', touched ? { span: 130, steps: 4, levels: 3 } : { room, span: 130, steps: 4, levels: 3 });   // the whole board: a small grid was 20 mm off at its edges
     if (!r.ok) say('Calibration failed: ' + r.error, true);
     else {
       const cams = Object.entries(r.cams).map(([k, c]) => c.rms_px != null ? `cam ${k}: ${c.seen}/${c.of} stops, ${c.rms_px.toFixed(2)} px` : `cam ${k}: ${c.error}`);
-      say('Calibrated. ' + cams.join(' · ') + '. Next: lower the cup until it just touches the board, press Board is here.', true);
+      say('Calibrated. ' + cams.join(' · ') + (touched ? '.' : '. Next: lower the cup until it just touches the board, press Zero Z.'), true);
       framed = false;
     }
   } catch (e) { say('Calibration failed: ' + e.message, true); }
@@ -459,9 +511,9 @@ $('travelset').onclick = async () => {
   say(r.ok ? `Travel height set: Z ${r.travel_z.toFixed(1)}` : 'Failed: ' + r.error, true);
 };
 $('table').onclick = async () => {
-  if (!confirm('Is the cup just touching the board right now?')) return;
+  if (!confirm('Is the cup just touching the board right now? Z becomes 0 here (also the fix when Z has skipped steps).')) return;
   const r = await post('calibration/table');
-  say(r.ok ? `Board height set: Z ${r.table_z.toFixed(1)}` : 'Failed: ' + r.error, true);
+  say(r.ok ? `Z is 0 at the board now (it read ${r.z_was.toFixed(1)}). Raise the cup before moving.` : 'Failed: ' + r.error, true);
 };
 $('reanchor').onclick = async () => {
   const r = await post('calibration/reanchor');
@@ -470,13 +522,152 @@ $('reanchor').onclick = async () => {
            : 'Re-anchor failed: ' + (r.error || r.reply), true);
 };
 
+// ---- scan items: what the eyes found (/api/see, /api/find), as ghosts at half strength until rendered ----
+const GHOST = .5, ITEM_COLORS = [0x4fc3f7, 0xffb74d, 0x81c784, 0xf06292, 0xba68c8, 0xfff176, 0x4db6ac, 0xff8a65];
+let radar = null, lastFind = null;
+function drawItems(res) {
+  itemsG.clear();
+  lastFind = res.n;
+  const tz = S?.table_z ?? 0, items = (res.items || []).filter(i => i.board && i.on_board !== false);
+  const kinds = [...new Set(items.map(i => i.what))];
+  for (const it of items) {
+    const b = it.board, h = Math.max(b.top ?? 2, 1.5), col = ITEM_COLORS[kinds.indexOf(it.what) % ITEM_COLORS.length];
+    const g = new THREE.Group();
+    g.position.copy(P(b.x, b.y, tz));
+    g.rotation.y = b.angle * Math.PI / 180;
+    const box = new THREE.Mesh(new THREE.BoxGeometry(b.h, h, b.w),
+      new THREE.MeshStandardMaterial({ color: col, transparent: true, opacity: .45, roughness: .6, depthWrite: false }));
+    box.position.y = h / 2; g.add(box);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({ color: col, transparent: true }));
+    edges.position.y = h / 2; g.add(edges);
+    itemsG.add(g);
+    if (it.pick) {                                     // where the cup would go
+      const t = new THREE.Mesh(new THREE.RingGeometry(4, 7.5, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide }));
+      t.rotation.x = -Math.PI / 2; t.position.copy(P(it.pick.x, it.pick.y, tz + h + .5)); itemsG.add(t);
+    }
+    const label = makeLabel(it.answer || it.what, col);
+    label.position.copy(P(b.x, b.y, tz + h + 22)); itemsG.add(label);
+  }
+  const t = new Date((res.at || Date.now() / 1000) * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  $('lasttext').textContent = `${items.length} ${items.length === 1 ? 'item' : 'items'} · ${t}`;
+  itemsG.traverse(o => { if (o.material) o.material.opacity = (o.material.opacity ?? 1) * GHOST; });
+  $('last').hidden = false;
+  $('poly').hidden = !items.length;
+}
+function sweep() {
+  if (!radar) return;                                 // a sweep growing out from the board's middle
+  const t = (performance.now() - radar.at) / 1600 % 1;
+  radar.mesh.scale.setScalar(.05 + t); radar.mesh.material.opacity = .5 * (1 - t);
+}
+
+// ---- low-poly models: /api/find/shapes gives each thing as a few solids; its footprint places them ----
+function solid(kind, len, tall, wide, along) {
+  // one part, centred, its length on x (lying) or y (standing); cones and wedges narrow towards +;
+  // a ring is a band around that axis
+  let g;
+  if (kind === 'box') g = new THREE.BoxGeometry(1, 1, 1);
+  else if (kind === 'sphere') g = new THREE.SphereGeometry(.5, 8, 6);
+  else if (kind === 'wedge') {
+    const sh = new THREE.Shape([new THREE.Vector2(-.5, -.5), new THREE.Vector2(.5, -.5), new THREE.Vector2(-.5, .5)]);
+    g = new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false }).translate(0, 0, -.5);
+    if (!along) g.rotateZ(Math.PI / 2);
+  } else {
+    g = kind === 'ring' ? new THREE.TorusGeometry(.375, .125, 6, 16).rotateX(Math.PI / 2).scale(1, 4, 1)
+                        : new THREE.CylinderGeometry(kind === 'cone' ? 0 : .5, .5, 1, 8);
+    if (along) g.rotateZ(-Math.PI / 2);
+  }
+  return along ? g.scale(len, tall, wide) : g.scale(tall, len, wide);
+}
+function topText(text, w, l) {
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
+  const g = cv.getContext('2d');
+  g.fillStyle = /[♥♦]/.test(text) ? '#c62828' : '#111'; g.font = 'bold 110px -apple-system, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 132);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w, l), Math.min(w, l)),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true }));
+  m.rotation.x = -Math.PI / 2; m.rotation.z = Math.PI / 2;
+  return m;
+}
+function drawPolys(res) {
+  itemsG.clear();
+  const tz = S?.table_z ?? 0;
+  for (const it of res.items) {
+    const b = it.board, s = it.shape, g = new THREE.Group();
+    g.position.copy(P(b.x, b.y, tz));
+    g.rotation.y = b.angle * Math.PI / 180;
+    const parts = s?.parts?.length ? s.parts : [{ shape: 'box', from: 0, to: 1, size: 1, color: '#888888' }];
+    const L = b.h, W = b.w, H = s ? s.height_mm : 4;
+    // round footprint, all cylinders, yet "along": Muse means discs seen from above (a plate), not a log
+    const discs = s?.axis !== 'up' && W / L > .85 && parts.every(p => p.shape === 'cylinder' || p.shape === 'cone');
+    const along = !discs && (!s || s.axis !== 'up');
+    let top = 0;
+    for (const p of parts) {
+      const span = Math.max(p.to - p.from, .02), mid = (p.from + p.to) / 2 - .5;
+      const mat = new THREE.MeshStandardMaterial({ color: p.color, flatShading: true, roughness: .75 });
+      let m;
+      if (discs) {
+        const tall = H * p.size;
+        m = new THREE.Mesh(solid('cylinder', tall, span * L, span * W, false), mat);
+        m.position.set(0, tall / 2, 0);
+        top = Math.max(top, tall);
+      } else if (along) {
+        const tall = H * (p.tall ?? p.size), lift = H * (p.lift ?? 0);
+        m = new THREE.Mesh(solid(p.shape, span * L, tall, W * p.size, true), mat);
+        m.position.set(mid * L, lift + tall / 2, (p.side ?? 0) * W);
+        top = Math.max(top, lift + tall);
+      } else {
+        m = new THREE.Mesh(solid(p.shape, span * H, L * p.size, W * p.size, false), mat);
+        m.position.set(0, (mid + .5) * H, (p.side ?? 0) * W);
+        top = Math.max(top, p.to * H);
+      }
+      g.add(m);
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 30), new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: .25 }));
+      e.position.copy(m.position); g.add(e);
+    }
+    if (s?.top) { const t = topText(s.top, W, L); t.position.y = top + .2; g.add(t); }
+    itemsG.add(g);
+  }
+  $('poly').hidden = false;
+}
+$('poly').onclick = async () => {
+  $('poly').disabled = true; $('poly').classList.add('busy'); scanSay('Modelling');
+  try {
+    const r = await fetch('/api/find/shapes?by=scene' + (lastFind ? '&n=' + lastFind : '')).then(r => r.json());
+    if (!r.items) throw new Error(r.detail || 'no answer');
+    drawPolys(r);
+    scanSay(r.items.some(i => i.error) ? 'Some came back as plain blocks' : '', r.items.some(i => i.error));
+  } catch (e) { scanSay('Render failed: ' + e.message, true); }
+  finally { $('poly').disabled = false; $('poly').classList.remove('busy'); }
+};
+function startRadar() {
+  const tz = S?.table_z ?? 0, r = table ? table.size * .7 : 300;
+  const m = new THREE.Mesh(new THREE.RingGeometry(r * .92, r, 64), new THREE.MeshBasicMaterial({ color: 0xf5a524, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.copy(P(table?.cx ?? 0, table?.cy ?? 0, tz + 1)); scene.add(m);
+  radar = { mesh: m, at: performance.now() };
+}
+function stopRadar() { if (radar) { scene.remove(radar.mesh); radar = null; } }
+const scanSay = (t, bad) => { $('scanmsg').textContent = t; $('scaninfo').hidden = !t; $('scaninfo').classList.toggle('bad', !!bad); };   // a dot and a word, no box
+$('scan').onclick = async () => {
+  $('scan').disabled = true; $('scan').classList.add('busy'); itemsG.clear(); $('last').hidden = true; $('poly').hidden = true; scanSay('Looking'); startRadar();
+  try {
+    let r = await fetch('/api/see?by=scene').then(r => r.json());
+    if (!r.things) throw new Error(r.detail || 'no answer');
+    if (!r.things.length) { scanSay('Nothing on the board', true); return; }
+    r = await fetch('/api/find?by=scene&what=' + encodeURIComponent(r.things.map(t => t.find).join(','))).then(r => r.json());
+    if (!r.items) throw new Error(r.detail || 'no answer');
+    drawItems(r);
+    scanSay('');
+  } catch (e) { scanSay('Scan failed: ' + e.message, true); }
+  finally { stopRadar(); $('scan').disabled = false; $('scan').classList.remove('busy'); }
+};
+
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
 camera.position.set(0, 600, 800); controls.update();
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => { controls.update(); sweep(); renderer.render(scene, camera); });
 
 fetch('/api/scene').then(r => r.json()).then(render).catch(() => {});
 connect();

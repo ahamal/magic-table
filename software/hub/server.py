@@ -7,21 +7,26 @@ Run on the Pi:  python serve.py   (HTTP and HTTPS both on :8000; see serve.py)
 import asyncio
 import contextlib
 import json
+import math
 import os
 import time
+import urllib.request
 from pathlib import Path
 
+import cv2
+import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import camera
+import eyes
 from grbl import REALTIME, Grbl
 from mate import MateLink
 from gripper import SEQUENCES, Gripper
 from talk import Chat, TranscribeError
-from vision import Vision
+from vision import MATE_SIZE, Vision
 from voice import Voice
 
 HERE = Path(__file__).parent
@@ -246,6 +251,168 @@ async def capture(cam: int = 0):
     return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
+history = eyes.History()   # every see, find and check, kept on disk
+
+
+async def _picture(cam):
+    """A fresh JPEG from cam 0, 1 or "mate", and that camera's model (None for Mate)."""
+    if cam == "mate":
+        try:
+            return await asyncio.to_thread(lambda: urllib.request.urlopen(f"{mate.url}/capture", timeout=5).read()), None
+        except OSError as e:
+            raise HTTPException(503, f"Mate's camera didn't answer: {e}")
+    c = get_camera(int(cam))
+    jpg = await asyncio.to_thread(c.capture)
+    if jpg is None:
+        raise HTTPException(503, f"camera {cam} stopped")
+    P, _ = vision._cam(int(cam))
+    return jpg, P
+
+
+def _eyes_done(kind, result, jpegs, by):
+    rec = history.add({"kind": kind, "at": time.time(), "by": by, **result}, jpegs)
+    broadcast({"type": "vision", **rec})
+    return rec
+
+
+async def _meta(coro):
+    try:
+        return await coro
+    except eyes.EyesError as e:
+        raise HTTPException(502, str(e))
+    except HTTPException:
+        raise
+    except Exception as e:  # network trouble reaching Meta
+        raise HTTPException(502, f"couldn't reach Meta: {e}")
+
+
+@app.get("/api/see")
+async def see(cam: str = "1", ask: str | None = None, effort: str = "minimal", by: str = "agent"):
+    """What's on the board (Muse Spark, one fresh picture): {things: [{name, count}]}, names that
+    work with /api/find. With `ask`, Muse Spark answers that question about the picture
+    instead: {answer}. ~2-3 s."""
+    if effort not in eyes.EFFORTS:
+        raise HTTPException(400, f"effort is one of {', '.join(eyes.EFFORTS)}")
+    jpg, _ = await _picture(cam)
+    t0 = time.time()
+    if ask:
+        res = {"answer": await _meta(eyes.ask(jpg, ask, effort))}
+    else:
+        res = {"things": await _meta(eyes.see(jpg, effort))}
+    return _eyes_done("see", {"cam": cam, "ask": ask, **res, "took_ms": round((time.time() - t0) * 1000)},
+                      {cam: jpg}, by)
+
+
+def _robot_boxes():
+    """The head and Mate as boxes of work-coordinate corners, where they're tracked now, so find
+    can tell a match that is the robot from a loose thing (eyes.robot_masks)."""
+    sc, tz = vision.scene, (vision.cal or {}).get("table_z")
+    if tz is None or not sc.get("head"):
+        return None
+    box = lambda cx, cy, hx, hy, z0, z1, a=0.0: [
+        (cx + sx * hx * math.cos(a) - sy * hy * math.sin(a), cy + sx * hx * math.sin(a) + sy * hy * math.cos(a), z)
+        for sx in (-1, 1) for sy in (-1, 1) for z in (z0, z1)]
+    h = sc["head"]
+    out = {"cup": box(h["tip_x"], h["tip_y"], 12, 12, h["tip_z"], h["z"]),
+           "head": box(h["x"] + 11, h["y"], 12, 19, h["z"] - 35, h["z"] + 250)}   # Z extrusion, marker card on its left face
+    m = sc.get("mate")
+    if m:
+        half = max(MATE_SIZE[:2]) / 2 + 8
+        out["mate"] = box(m["x"], m["y"], half, half, tz, tz + MATE_SIZE[2], math.radians(m["heading"]))
+    return out
+
+
+@app.get("/api/find")
+async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = "minimal", by: str = "agent"):
+    """Where things are, for picking (SAM 3.1, one fresh picture from `cam`: 1 by default, 0, or
+    "mate"). what: one or more names, comma-separated (from /api/see, or your own); fallbacks
+    after "|" are tried in order when a name finds nothing: what=earbuds case|white object
+    (/api/see gives them). Each item: what, matched, box and outline (pixels), and from a
+    calibrated camera its footprint on the board {x, y, w, h, angle}, on_board, and pick
+    {x, y, clear_mm}: put the cup at x, y; clear_mm is how much room the cup (15 mm) has.
+    Mate's camera gives pixels only. ask: a question Muse Spark answers about each item from
+    its crop (answer). ~2-3 s."""
+    phrases = [p.strip() for p in what.split(",") if p.strip()][:6]
+    if not phrases:
+        raise HTTPException(400, "say what to find, e.g. what=playing card")
+    if effort not in eyes.EFFORTS:
+        raise HTTPException(400, f"effort is one of {', '.join(eyes.EFFORTS)}")
+    jpg, P = await _picture(cam)
+    tz = (vision.cal or {}).get("table_z")
+    if tz is None:
+        P = None
+    res = await _meta(eyes.find(jpg, phrases, P, tz, (vision.cal or {}).get("bounds"), ask, effort, _robot_boxes()))
+    return _eyes_done("find", {"cam": cam, "what": phrases, "ask": ask, **res}, {cam: jpg}, by)
+
+
+@app.get("/api/find/shapes")
+async def find_shapes(n: int | None = None, effort: str = "minimal", by: str = "agent"):
+    """The things of a find (`n`, the last by default) as low-poly models for the 3D scene: Muse
+    Spark describes each from find's picture as a few solids; the footprint gives place, size and
+    turn. items: [{id, what, board, shape: {height_mm, axis, top, parts}}]. ~1-2 s."""
+    res = history.get(n) if n else history.last("find")
+    if not res or res["kind"] != "find":
+        raise HTTPException(404, "no such find: GET /api/find first")
+    P, _ = vision._cam(int(res["cam"])) if res["cam"] in ("0", "1") else (None, None)
+    jpg = history.picture(res["n"], res["cam"])
+    on = [i for i in res["items"] if i.get("board") and i.get("on_board") is not False][:12]
+    if P is None or jpg is None or not on:
+        raise HTTPException(400, "that find has nothing on the board to model")
+    t0 = time.time()
+    img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+    tz = vision.cal["table_z"]
+    got = await asyncio.gather(*(_meta(eyes.shape(eyes.straight(img, i, P, tz), i["what"], effort)) for i in on),
+                               return_exceptions=True)
+    items = [{"id": i["id"], "what": i["what"], "board": i["board"],
+              **({"error": str(getattr(g, "detail", g))} if isinstance(g, Exception) else {"shape": g})}
+             for i, g in zip(on, got)]
+    return _eyes_done("shape", {"find": res["n"], "cam": res["cam"], "items": items,
+                                "took_ms": round((time.time() - t0) * 1000)}, {}, by)
+
+
+@app.get("/api/find/check")
+async def find_check(id: int, by: str = "agent"):
+    """Did item `id` of the last find leave its spot? A fresh picture from the same camera,
+    compared with find's inside the item's outline: {gone, changed}. Use it with the thing
+    lifted: gone false means the pick didn't take. No API call, ~0.5 s."""
+    res = history.last("find")
+    if not res:
+        raise HTTPException(404, "no find to compare with: GET /api/find first")
+    it = next((i for i in res["items"] if i["id"] == id), None)
+    if it is None:
+        raise HTTPException(404, f"no item {id} in the last find")
+    cam = res["cam"]
+    now, _ = await _picture(cam)
+    dec = lambda j: cv2.imdecode(np.frombuffer(j, np.uint8), cv2.IMREAD_GRAYSCALE)
+    c = eyes.changed(dec(history.picture(res["n"], cam)), dec(now), it["outline"])
+    return _eyes_done("check", {"id": id, "find": res["n"], "what": it["what"], "cam": cam,
+                                "gone": c is not None and c > eyes.GONE, "changed": c}, {}, by)
+
+
+@app.get("/api/vision/history")
+def vision_history(limit: int = 50):
+    """The latest see, find and check actions, newest first (kept on the Pi: the last 100).
+    Each has n (its number), kind, at, by, its results, and pictures (cameras with a picture:
+    GET /api/vision/image?n=&cam=)."""
+    return history.recent(max(1, min(limit, 100)))
+
+
+@app.get("/api/vision/last")
+def vision_last():
+    """The last see, find or check (null before the first)."""
+    return history.last()
+
+
+@app.get("/api/vision/image")
+def vision_image(n: int | None = None, cam: str = "1"):
+    """The picture action n used (the last see or find when n is left out)."""
+    rec = history.get(n) if n is not None else next((r for r in reversed(history.items) if cam in r.get("pictures", [])), None)
+    jpg = rec and history.picture(rec["n"], cam)
+    if not jpg:
+        raise HTTPException(404, f"no picture from cam {cam}" + (f" for action {n}" if n is not None else ""))
+    return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400" if n is not None else "no-store"})
+
+
 @app.get("/api/stream")
 async def stream(cam: int = 0, fps: float = 10):
     """Live MJPEG view of one camera, 820 px wide. Open it in a browser tab or an <img>."""
@@ -264,7 +431,8 @@ async def stream(cam: int = 0, fps: float = 10):
 
 
 class Calibrate(BaseModel):
-    room: float         # how far the cup is above the board at the start (mm); required
+    room: float | None = None   # how far the cup is above the board at the start (mm); left out: the
+                                # current Z, once the board has been touched off (Z is then the cup's height)
     span: float = 60    # grid half-width, mm, around where the head is now (a 120 mm square)
     steps: int = 3      # steps x steps stops per height
     levels: int = 3     # heights, from the start down to 15 mm above the board
@@ -276,7 +444,12 @@ async def calibrate(body: Calibrate):
     """Move the head marker over a grid at several heights and fit every camera. Takes ~2-3 min.
     Start with Z at its top (that becomes the travel height) over the middle of the board, Mate
     out from under the square; it goes down from there, never closer than 15 mm to the board."""
-    return await asyncio.to_thread(vision.calibrate, body.room, body.span, body.steps, body.levels, body.feed)
+    room = body.room
+    if room is None:
+        if (vision.cal or {}).get("table_source") != "touch":
+            return {"ok": False, "error": "say how far the cup is above the board (room): the board hasn't been touched off"}
+        room = (grbl.status.get("WPos") or [0, 0, 0])[2]
+    return await asyncio.to_thread(vision.calibrate, room, body.span, body.steps, body.levels, body.feed)
 
 
 @app.get("/api/calibration")
@@ -287,7 +460,8 @@ def calibration():
 
 @app.post("/api/calibration/table")
 async def calibration_table():
-    """The cup is touching the board right now: record the board's height."""
+    """The cup is touching the board right now: Z becomes 0 there. Also the fix when Z has
+    skipped steps (a lift that stalled)."""
     return await asyncio.to_thread(vision.set_table)
 
 
@@ -621,7 +795,7 @@ async def ws(ws: WebSocket):
 
 
 @app.get("/")
-def home():
+def home_page():
     """The home page: every page and tool on the table, in one list."""
     return FileResponse(HERE / "static" / "home.html", headers={"Cache-Control": "no-cache"})
 
@@ -678,6 +852,16 @@ def add_note(body: Note):
     with NOTES.open("a") as f:
         f.write(f"- {time.strftime('%Y-%m-%d %H:%M')} ({body.by}): {line}\n")
     return {"ok": True}
+
+
+@app.get("/vision")
+def vision_page():
+    return FileResponse(HERE / "static" / "vision.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/eyes")
+def eyes_page():
+    return RedirectResponse("/vision")   # the old name
 
 
 @app.get("/scene")

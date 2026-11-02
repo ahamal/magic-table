@@ -25,6 +25,9 @@
     font: 16px/1.45 "Manrope", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; font-weight: 500;
     -webkit-tap-highlight-color: transparent; }
 
+  header nav { display: flex; gap: 12px; margin-right: 6px; }
+  header nav a { color: inherit; opacity: .7; text-decoration: none; font-size: 13px; }
+  header nav a:hover { opacity: 1; }
   header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
     background: var(--panel); border-bottom: 1px solid var(--line); flex: none; }
   header b { font-size: 15px; font-weight: 800; letter-spacing: .02em; }
@@ -86,6 +89,7 @@
   <b>Table Talk</b>
   <span id="conn" class="tag">connecting</span>
   <span class="spacer"></span>
+  <nav><a href="/">Home</a><a href="/jog">Jog</a><a href="/scene">3D Scene</a><a href="/vision">Vision</a></nav>
   <button id="clear" title="Delete the whole chat">Clear</button>
 </header>
 

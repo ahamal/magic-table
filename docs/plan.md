@@ -2,6 +2,8 @@
 
 Hackathon: Oct 26 – Nov 4, 2026. **Submissions due Nov 4, 9:00 PM ET.**
 
+> **Status, Nov 2 evening:** the checklist below is from the start and is out of date. Working now: the crane picks, places and stacks cards; Mate drives, goes home and flips cards; the hub's voice, chat and live transcription; Mate's gestures; vision (see, find, check, with the robot filtered out); the 3D scene and calibration. Left: run a full poker hand with Claude driving and fix what it shows; record the backup video; a Muse Spark agent loop on the same API; rehearse; submit. Dropped: Ghost, Go/chess.
+
 ## Build steps
 
 ### Step 1 — Mate + human ◀ now

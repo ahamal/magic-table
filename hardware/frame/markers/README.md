@@ -37,6 +37,11 @@ Tested on the black board (Nov 1): cam 1 found all four 40 mm corners, the far o
 
 ## Head plate (ID 10)
 
+**Actual build:** the marker is on thin card glued to the Z extrusion's left face (facing −X,
+toward cam 1, ~1 mm out), not on the 4 mm printed mount described below. The hub measures
+everything from the marker's centre, and the cup offset (`TIP_OFFSET`) was measured from it,
+so the mounting needs no correction.
+
 - Bolts flat along a 20×20 extrusion on the head with two M5 bolts into T-nuts (holes 6 mm, sized for this printer). The extrusion backs it along its length; two bolts keep it from turning.
 - The 33 mm marker drops between the four corner guides; glue it down.
 - Put it on the face cam 1 sees best, on a part that moves with the cup.

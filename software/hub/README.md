@@ -54,6 +54,12 @@ The body API for the whole table. Step 2.
 | `POST /api/chat {text, by?}` | add a typed message (default `by: player`); spoken lines go through `/api/say`, Mate's through `/api/mate/gesture`, which add their own |
 | `DELETE /api/chat` | clear it. (`GET /api/transcripts?since=` is the old name for the chat) |
 | `GET /api/cameras` | `[{cam, model, ok, error}]` |
+| `GET /api/see?cam=1&ask=&effort=minimal` | The eyes (`eyes.py`), step 1: Muse Spark (`muse-spark-1.3`) names the kinds of things on the board in a fresh picture: `{things: [{name, look, count, find}]}` (`find` = name plus a backup "<colour> object" after `|`). With `ask`, answers that question about the picture instead: `{answer}`. `cam` 0, 1 or `mate`. ~2 s |
+| `GET /api/find?what=a|b,c&cam=1&ask=&effort=minimal` | Step 2: where each thing is, in one fresh picture from `cam` (1 default, 0, `mate`), by SAM 3.1; each name's fallbacks after `|` are tried in order. Items: `{id, what, matched, box, outline}`, and from a calibrated camera `board {x, y, w, h, angle}`, `on_board`, `pick {x, y, clear_mm}` (the footprint centre); plus `answer` with `ask`. No height (one camera). ~3 s |
+| `GET /api/find/check?id=` | After a pick: has item `id` of the last find left its spot? A fresh picture from the same camera compared with find's inside the item's outline: `{gone, changed}` (gone above 0.35). No API call |
+| `GET /api/find/shapes?n=` | A find's things (`n`, the last by default) as low-poly models: Muse Spark describes each, from its crop turned lengthwise, as 4–12 solids, body then details (`{height_mm, axis, top, parts: [{shape, from, to, size, side, tall, lift, color}]}`; shapes: box, cylinder, cone, sphere, wedge, ring); the footprint places them. The 3D scene's "Render poly" draws them. ~7 s |
+| `GET /api/vision/history?limit=50`, `GET /api/vision/last`, `GET /api/vision/image?n=&cam=1` | Every see, find and check is kept on the Pi (`~/hub/vision/`: `history.jsonl` and each action's pictures, the last 100; not in git), numbered `n`, and broadcast as a `vision` event. History newest first; the last one; an action's picture (`n` left out: the last picture from that camera). Check compares with the last find's saved picture, so it works after a restart |
+| `GET /vision` | the vision page: the three steps (see, find, check) on the left; on the right every action (anyone's), one line each, newest first, opening on a click to its parameters, both pictures with outlines, and the results |
 | `GET /api/capture?cam=0` | A fresh full-size JPEG from one camera; 404 if there's no such camera |
 | `GET /api/stream?cam=0&fps=10` | Live MJPEG view, 820 px wide (~7 fps, ~40 KB a frame); open it in a browser tab or an `<img>` |
 | `WS /ws` | `status`, `settings`, `gripper`, `chat`, `chat_cleared`, `speaking`, `scene` and `log` events |
@@ -72,7 +78,7 @@ Medium voices make ~5 s of speech in ~1.5 s on the Pi 5; "high" ones (e.g. ryan-
 **Run it on the Pi:**
 
 ```bash
-rsync -a --exclude .venv --exclude __pycache__ --exclude certs --exclude .env --exclude chat.jsonl --exclude voices --exclude voice.json \
+rsync -a --exclude .venv --exclude __pycache__ --exclude certs --exclude .env --exclude chat.jsonl --exclude voices --exclude voice.json --exclude vision \
   software/hub/ ash@raspberrypi.local:hub/
 rsync -a agent/ ash@raspberrypi.local:hub/agent/                 # the guides and Mate's gestures
 rsync -a --include '*/' --include '*.bin' --exclude '*' software/mate/faces/ ash@raspberrypi.local:hub/faces/   # Mate's faces
@@ -106,17 +112,19 @@ Stop it (`sudo systemctl stop hub`) before running anything else that opens the 
 
 ## Vision and the 3D page
 
+**Find checks SAM's matches.** SAM is fussy and sometimes names the machine: the suction cup as a plate, a wheel as a knife. So Muse Spark sees SAM's matches numbered on the whole picture, with the robot outlined, and keeps only the loose things that fit the first name (a fallback like "white object" must still be the plate). The robot's outlines aren't segmented: they're boxes around the cup, the head's Z extrusion and Mate, where the hub tracks them now, projected into the picture (no API call). A match at least 60% inside them is dropped unless Muse keeps it (a card lying on Mate). If Muse can't answer, that rule alone decides; the check never fails a find. Each item says `robot: {inside, near}`; near the robot it still gets its pick point. Costs one Muse call per name (~1 s). The vision page draws the robot boxes dashed.
+
 [`vision.py`](vision.py): where things are, from the cameras, with OpenCV only (no cloud AI). The gantry is the reference: calibration moves the head marker (ArUco ID 10) over a grid at three heights and fits each camera's 3D projection in gantry coordinates (X/Y mm, Z GRBL units, Z+ up). Twice a second it then finds the head (and checks it against GRBL, in mm), Mate (ID 20: position, heading, height), cards on the dark board (center, angle, face up/down) and the board markers (IDs 0–3; if they move in the picture, `camera_moved_px` warns; nothing is corrected automatically, since a moved board looks the same as a moved camera). Marker sizes and offsets are constants at the top.
 
-**Page:** `http://raspberrypi.local:8000/scene`, a live three.js view: board, head and cup, Mate, cards, the cup's bounds, and each camera module posed from its calibration with its picture's footprint on the board; buttons for Calibrate, Board is here, Re-anchor, Travel height = here.
+**Page:** `http://raspberrypi.local:8000/scene`, a live three.js view: board, head and cup, Mate, cards, the cup's bounds, and each camera module posed from its calibration with its picture's footprint on the board; buttons for Calibrate, Zero Z, Re-anchor, Travel height = here.
 
 **Order of use:**
 1. Z at its **top** over the middle of the board, Mate not under the 120 mm square around it, GRBL unlocked.
 2. **Calibrate** asks how far the cup is above the board (mm), then goes down from there in three passes, never closer than 15 mm. Any reset, pause, alarm or STOP aborts it with no further moves. The start height becomes the **travel height**.
-3. Lower the cup until it just touches the board, press **Board is here** (board height from the gantry, not from marker size).
+3. Lower the cup until it just touches the board, press **Zero Z**: Z becomes 0 there (G10), so Z is the cup's height above the board. The same button fixes a Z that skipped steps (a lift that stalled): touch the board, press it, raise the cup.
 4. After any GRBL reset (or hub restart), unlock, then **Re-anchor**: if the camera agrees with the last saved position (within 3 mm) that position is restored exactly; if it disagrees, X/Y come from the camera and Z from the saved value; if no camera sees the head, the saved position is used (right as long as nobody moved the head by hand). Don't use Work zero on the jog page; it shifts every position.
 
-**The cup isn't under the head marker:** it sits in front of the Z extrusion, 24.7 mm from the marker plate's center in −Y (`TIP_OFFSET`, measured by camera). Head positions (GRBL, `/api/move`) are the marker's; use `/api/tip` to put the cup somewhere. Tested: cup within ~2–3 mm of a card center 110 mm from the calibration grid's center.
+**The cup isn't under the head marker:** the marker is on the Z extrusion's left face (facing −X); the cup is 24.7 mm from the marker's centre in −Y and 0.6 mm in +X (`TIP_OFFSET`, measured by camera). Head positions (GRBL, `/api/move`) are the marker's; use `/api/tip` to put the cup somewhere. Tested: cup within ~2–3 mm of a card center 110 mm from the calibration grid's center.
 
 **Z limits:** work Z is the cup's height above the board. Moves and `/api/tip` outside −1 to 150 are refused; Z jogs are shortened to stop at them (150 is the top of the Z travel; −1 is the 1 mm squeeze a grip needs). `/api/send` isn't checked.
 

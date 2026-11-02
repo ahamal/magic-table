@@ -6,7 +6,7 @@ Running log. Newest at the bottom of each section.
 
 - **Body / agent split.** The body is game-agnostic; everything clever is in the agent. *Why:* "learns any game" must be true — nothing below the agent changes per game.
 - **Ghost and real share identical I/O,** including images. *Why:* develop the agent without hardware, test the whole perception pipeline in simulation, demo fallback.
-- **Images out, raw actions in.** The labeler (SAM + ArUco) is agent-side. *Why:* the body stays dumb and uniform; the agent decides when to spend tokens on labeling.
+- **Images out, raw actions in.** The labeler (SAM + ArUco) is agent-side. *Why:* the body stays dumb and uniform; the agent decides when to spend tokens on labeling. *(Changed Nov 2: the eyes run in the hub on request, `/api/see` and `/api/find`, since the hub knows the camera calibration; see below.)*
 - **No abstraction in the body.** Raw steps and angles; the agent learns calibration. *Why:* the robot learning its own body is the core of the brain and a strong "push the frontier" story.
 - **Safety stays in the body.** Limits, Mate no-go zone, stop. *Why:* falling off the table or crashing the gantry is not something to learn by trying.
 - **The agent can be human.** Same API through a web page. *Why:* hardware testing without AI, demo fallback, human-vs-AI on the same interface.
@@ -50,3 +50,4 @@ Running log. Newest at the bottom of each section.
 ## Build order
 
 - **Step 1: Mate + human.** Then Frame + human, then ghost, then the AI agent.
+- **Vision runs in the hub, on request: `see` (what) and `find` (where)** (Nov 2). `see` asks Muse Spark to name what's on the board; `find` has SAM 3.1 outline each named thing in one chosen camera and returns its footprint and a pick point in board mm. The fast, free OpenCV card finder in `/api/scene` stays for the live view. *Why:* an agent needs a short list and pick points, not pictures, so its chat stays small (a see is a few tokens). SAM can't say which card or what colour, and Muse Spark can't say where in mm, so each does its half. Both take seconds and an API call, too slow for a live loop. The hub does the geometry, since only it knows the camera calibration. One camera per find, chosen, rather than both: simpler to reason about; the height that two cameras gave (AirPods case 21.0 mm vs 21) is left out until it's needed.

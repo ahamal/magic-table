@@ -39,8 +39,11 @@ BOARD_IDS, HEAD_ID, MATE_ID = (0, 1, 2, 3), 10, 20
 # size. The head plate stands upright, so its size says nothing about height.
 SIZE = {"board": 30.0, "head": 25.0, "mate": 30.0}
 TIP_BELOW_MARKER = 57.0   # cup tip is this far below the head marker's centre (mm)
-# the cup isn't under the Z extrusion's centre but in front of it: tip X/Y = head X/Y + this.
-# Measured by camera on Nov 1 (head over a card centre, cup seen 24.7 mm off in -Y).
+# Every head position is the marker's centre: calibration fits the cameras to it, GRBL's work
+# X/Y/Z are it. The marker is on thin card on the Z extrusion's left face (facing -X, ~1 mm out),
+# so the extrusion's centre is ~11.5 mm to its +X. The cup is found from the marker, not the
+# extrusion: tip X/Y = head X/Y + this. Measured by camera on Nov 1 (head over a card centre,
+# cup seen 24.7 mm off in -Y).
 TIP_OFFSET = (0.6, -24.7)
 CLEARANCE = 15.0          # calibration keeps the cup at least this far above the board (mm)
 MATE_MARGIN = 40.0        # mm around Mate's footprint that counts as "over Mate"
@@ -338,16 +341,33 @@ class Vision:
             CAL_FILE.write_text(json.dumps(self.cal))
 
     def set_table(self):
-        """The cup is touching the board now: that's the board's height."""
+        """The cup is touching the board now: make that Z 0 (G10). Z is the cup's height above
+        the board everywhere (limits, travel height, picks).
+        Board already touched off: the cameras were fitted with Z 0 at the board, so this is the
+        fix for a Z that skipped steps (a lift that stalled), and they stay as they are.
+        Not yet (a fresh calibration, board height from marker size): the cameras were fitted
+        in the old Z, so they're shifted to the new one along with the travel height."""
         if not self.cal:
             return {"ok": False, "error": "calibrate first"}
         if self.grbl.status.get("state") != "Idle":
             return {"ok": False, "error": f"GRBL is {self.grbl.status.get('state')}"}
-        z = self._wpos()[2] - TIP_BELOW_MARKER
+        was = self._wpos()[2]
+        reply = self.grbl.send("G10 L20 P1 Z0")
+        if reply != "ok":
+            return {"ok": False, "error": f"GRBL said {reply}"}
         with self._lock:
-            self.cal["table_z"], self.cal["table_source"] = z, "touch"
+            if self.cal.get("table_source") != "touch":
+                shift = np.eye(4)
+                shift[2, 3] = was                      # old Z = new Z + was
+                for c in self.cal["cams"].values():
+                    if "P" in c:
+                        c["P"] = (np.array(c["P"]) @ shift).tolist()
+                        c["camera"] = [c["camera"][0], c["camera"][1], c["camera"][2] - was]
+                if self.cal.get("travel_z") is not None:
+                    self.cal["travel_z"] -= was
+            self.cal["table_z"], self.cal["table_source"] = -TIP_BELOW_MARKER, "touch"
             CAL_FILE.write_text(json.dumps(self.cal))
-        return {"ok": True, "table_z": z}
+        return {"ok": True, "table_z": self.cal["table_z"], "z_was": round(was, 2)}
 
     def set_travel(self, z=None):
         """Set the travel height: the cup height (work Z) that's safe over Mate. Default: here."""
@@ -583,9 +603,9 @@ class Vision:
             H, shift = self._unbump(cc, found)
             fix = (lambda pts: cv2.perspectiveTransform(np.asarray(pts, float).reshape(-1, 1, 2), H).reshape(-1, 2)) \
                 if H is not None else (lambda pts: np.asarray(pts, float).reshape(-1, 2))
-            h, w = img.shape[:2]
+            ih, iw = img.shape[:2]          # not h, w: w is the head's position
             scene["cameras"][str(cam)] = {"position": cc["camera"], "moved_px": shift, "markers": sorted(found),
-                                          "model": self.cameras[cam].model, **camera_view(P, (w, h))}
+                                          "model": self.cameras[cam].model, **camera_view(P, (iw, ih))}
             if shift is not None:
                 scene["camera_moved_px"] = max(scene.get("camera_moved_px") or 0, shift)
 
