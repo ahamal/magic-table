@@ -20,7 +20,7 @@ The body API for the whole table. Step 2.
 [`server.py`](server.py) + [`grbl.py`](grbl.py) + [`gripper.py`](gripper.py) + [`camera.py`](camera.py) + [`static/index.html`](static/index.html): GRBL, the gripper and the cameras over HTTP, and a jog page. The first piece of the hub.
 
 - **One serial connection, kept open.** Opening the port resets the Uno, so the server owns it. Lines go one at a time and wait for `ok`/`error`; real-time bytes (status, hold, resume, reset, jog cancel) skip the queue. Status is polled 5× a second and pushed to every page over a WebSocket.
-- **Jog page** at `http://raspberrypi.local:8000/`, after the Robo Diner jog page (click the XY table and the Z rail to set a target, then go), plus:
+- **Jog page** at `http://raspberrypi.local:8000/jog` (the home page `/` lists every page), after the Robo Diner jog page (click the XY table and the Z rail to set a target, then go), plus:
   - Live work and machine position, state and homed badges, a STOP button (feed hold, then reset).
   - Jog pad with diagonals and Z: tap for one step (0.1–100 mm), hold to keep moving until release (GRBL `$J` + jog cancel). Arrow keys and PgUp/PgDn do the same; 1–5 pick the step; Esc stops.
   - Zero buttons (`G10 L20 P1`), Home, Unlock, Pause/Resume/Reset, and a console with the GRBL command list and history.

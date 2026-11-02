@@ -23,10 +23,10 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 
 ## Flipper
 
-- A bent black plastic knife on a servo on Mate's front. It sweeps in the plane of the front face.
-- **20° is rest** (it lies on the table along the front edge). **It can't go below 20°** (it's on the table); up is fine. ~60° sticks out sideways at mid-height; ~110° reaches over the top.
+- A bent black plastic knife on a servo on Mate's **right side**, just ahead of the right wheel. It sweeps beside that wheel.
+- **20° is rest** (down at the table). **It can't go below 20°**; up is fine. ~60° lies back over the wheel; ~110° reaches up and over the top.
 - **Gestures:** wave = up to ~80°, then swing 60↔110 a few times fast (`speed=600`), back to 20 at `speed=300`. Salute = sweep to ~110 and hold a moment, back down. A slow sweep reads as a shrug or a "hmm".
-- At rest it's flat on the table in front of Mate: it can slide under a thin edge.
+- At rest it's down at the table beside Mate: it can slide under a thin edge there.
 
 ## Face
 

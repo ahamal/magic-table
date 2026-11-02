@@ -215,14 +215,15 @@ class Vision:
 
     # ---- calibration ----
 
-    def calibrate(self, room, span=60.0, steps=3, levels=3, feed=1500, settle=0.4):
+    def calibrate(self, room, span=60.0, steps=3, levels=3, feed=2000, settle=0.25):
         """Move the head over a steps x steps grid (+-span mm) at its current height and at
         levels-1 lower heights, see the head marker at every stop, fit each camera.
 
         Start high, with the cup over the middle of the board. `room` is how far (mm) the
         cup is above the board there: the passes go down from the start but stay CLEARANCE
-        above the board, and the head goes back up before moving sideways home. Moves are
-        slow (feed mm/min) and any trouble aborts with no further moves."""
+        above the board, and the head goes back up before moving sideways home. Moves within a
+        level are rapid (the area under the grid must be clear); going down a level is at feed
+        mm/min. Any trouble aborts with no further moves."""
         if self.grbl.status.get("state") != "Idle":
             return {"ok": False, "error": f"GRBL is {self.grbl.status.get('state')}; unlock it and try again"}
         if room - CLEARANCE < 20:
@@ -235,11 +236,11 @@ class Vision:
             pts = {i: {"world": [], "pix": []} for i in range(len(self.cameras))}
             last = {}
             for z in [z0 - k * dz for k in range(levels)]:   # Z+ is up: each pass is lower
-                self._move(f"G90 G1 Z{z:.3f} F{feed / 2:.0f}")
+                self._move(f"G90 G1 Z{z:.3f} F{feed:.0f}")
                 for j, dy in enumerate(offs):
                     row = offs if j % 2 == 0 else offs[::-1]
                     for dx in row:
-                        self._move(f"G90 G1 X{x0 + dx:.3f} Y{y0 + dy:.3f} F{feed:.0f}")
+                        self._move(f"G90 G0 X{x0 + dx:.3f} Y{y0 + dy:.3f}")
                         time.sleep(settle)
                         w = self._wpos()
                         for cam in pts:
@@ -251,8 +252,8 @@ class Vision:
                             if HEAD_ID in found:
                                 pts[cam]["world"].append(w)
                                 pts[cam]["pix"].append(centre(found[HEAD_ID]).tolist())
-            self._move(f"G90 G1 Z{z0:.3f} F{feed / 2:.0f}")      # up first, then home
-            self._move(f"G90 G1 X{x0:.3f} Y{y0:.3f} F{feed:.0f}")
+            self._move(f"G90 G0 Z{z0:.3f}")      # up first, then home
+            self._move(f"G90 G0 X{x0:.3f} Y{y0:.3f}")
 
             # the board's Z from marker size until the cup touches it (set_table)
             cal = {"at": time.time(), "cams": {}, "table_source": "marker size",
@@ -278,6 +279,12 @@ class Vision:
                 return {"ok": False, "error": "no camera saw the head marker at enough points", "cams": cal["cams"]}
             tz = [c["table_z"] for c in cal["cams"].values() if c.get("table_z") is not None]
             cal["table_z"] = float(np.median(tz)) if tz else None
+            # a board touch-off is in GRBL's Z, which recalibrating the cameras doesn't change
+            # (only Work zero would; don't use it after calibrating): keep it, and the bounds
+            if self.cal and self.cal.get("table_source") == "touch":
+                cal["table_z"], cal["table_source"] = self.cal["table_z"], "touch"
+            if self.cal and self.cal.get("bounds"):
+                cal["bounds"] = self.cal["bounds"]
             CAL_FILE.write_text(json.dumps(cal))
             self.needs_reanchor = False
             with self._lock:

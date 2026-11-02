@@ -38,7 +38,7 @@
 
 <div class="hud">
   <div class="row"><b>TABLE SCENE</b><span id="conn" class="bad">offline</span></div>
-  <div class="row"><span><a href="/" style="color:var(--accent)">Jog</a> · <a href="/guide" style="color:var(--accent)">Guide</a></span></div>
+  <div class="row"><span><a href="/" style="color:var(--accent)">Home</a> · <a href="/jog" style="color:var(--accent)">Jog</a> · <a href="/guide" style="color:var(--accent)">Guide</a></span></div>
   <div class="row"><span>Calibration</span><span id="cal" class="mono">–</span></div>
   <div class="row"><span>Head</span><span id="head" class="mono">–</span></div>
   <div class="row"><span>Head check (camera)</span><span id="herr" class="mono">–</span></div>
@@ -68,10 +68,11 @@ const CARD = [63, 88], BOARD_MARKER = 30;
 // Mate: a 130 x 130 x 100 plywood box, 3 mm off the ground on its wheels, black printed corner caps that
 // stand 2 mm proud of every face (so 105 to the top of the caps); the marker is on the plywood top (103)
 const MATE = { w: 130, d: 130, body: 100, lift: 3, proud: 2, corner: 24 };
-// Flipper: a bent black plastic knife on a servo on Mate's front, 42 mm in from the right wheel. It
-// sweeps in the plane of the front face: 20 deg (rest) lies on the table, ~60 deg sticks out sideways,
-// ~110 deg reaches over the top. Approximate, from photos: 73 mm, a bend, 27 mm more.
-const FLIP = { fromWheel: 42, pivotUp: 45, seg1: 73, seg2: 27, bend: 40, width: 14, flatAt: 60 };
+// Flipper: a bent black plastic knife on a servo on Mate's right side, 42 mm ahead of the right wheel.
+// It sweeps beside that wheel: 20 deg (rest) down at the table, ~60 deg lying back over the wheel,
+// ~110 deg up and over the top. Approximate: 73 mm, a bend, 27 mm more.
+const FLIP = { aheadOfWheel: 42, pivotUp: 45, seg1: 73, seg2: 27, bend: 40, width: 14, flatAt: 60 };
+const WHEEL_FORWARD = 5;   // the axle is 5 mm ahead of the box's middle
 // The head, relative to the head marker's centre (what GRBL positions). Measured: the cup tip is at
 // (0.6, -24.7) and 57 mm below (vision.TIP_OFFSET / TIP_BELOW_MARKER; checked against card centres).
 // The cup sits in front of (-Y from) the 2020 Z extrusion, 18 mm from its centre. The marker plate is
@@ -126,13 +127,13 @@ const ext = L(TIP.dx, TIP.dy + CUP_IN_FRONT, 0);                   // extrusion 
 railG.position.set(ext.x, -30 + 160, ext.z);
 bracket.scale.z = CUP_IN_FRONT + 12;
 bracket.position.set(tipL.x, bracketY, (ext.z + tipL.z) / 2);
-function placePlate(normal) {    // normal: the plate's outward direction (toward the camera), head-local
-  // how far the extrusion reaches along the normal, from the marker; the plate goes just beyond it
-  const reach = (ext.x * normal.x + ext.z * normal.z) + 10 * (Math.abs(normal.x) + Math.abs(normal.z));
-  const t = Math.max(0, reach + PLATE[2] / 2 + .5);
-  plateG.position.set(normal.x * t, 0, normal.z * t);
+function placePlate(toCam) {     // flat on the extrusion face that looks most toward the camera
+  const n = Math.abs(toCam.x) > Math.abs(toCam.z) ? new THREE.Vector3(Math.sign(toCam.x), 0, 0)
+                                                  : new THREE.Vector3(0, 0, Math.sign(toCam.z) || 1);
+  plateG.rotation.y = Math.atan2(n.x, n.z);
+  plateG.position.set(ext.x + n.x * (10 + PLATE[2] / 2), 0, ext.z + n.z * (10 + PLATE[2] / 2));
 }
-placePlate(new THREE.Vector3(0, 0, 1));
+placePlate(new THREE.Vector3(-1, 0, 0));
 const nut = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 5, 6), steel); nut.position.set(tipL.x, bracketY + 5, tipL.z); head.add(nut);
 const stem = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 40, 12), steel);
 stem.position.set(tipL.x, bracketY - 8, tipL.z); head.add(stem);
@@ -180,8 +181,7 @@ function drawHead(h, tz) {
   const cam = S && S.cameras && (S.cameras['1'] || Object.values(S.cameras)[0]);
   if (cam) {
     const c = P(...cam.position);
-    plateG.rotation.y = Math.atan2(c.x - head.position.x, c.z - head.position.z);
-    placePlate(new THREE.Vector3(Math.sin(plateG.rotation.y), 0, Math.cos(plateG.rotation.y)));
+    placePlate(new THREE.Vector3(c.x - head.position.x, 0, c.z - head.position.z));
   }
   ring.position.copy(P(h.x + TIP.dx, h.y + TIP.dy, tz + 1));
   const e = h.error_mm;
@@ -253,19 +253,20 @@ function drawMate(m, tz) {
       hole.position.set(Math.cos(a) * 17, 0, Math.sin(a) * 17); wheel.add(hole);
     }
     wheel.rotation.x = Math.PI / 2;
-    wheel.position.set(0, WHEEL.d / 2, sz * (D / 2 + proud + WHEEL.w / 2 + 1));
+    wheel.position.set(WHEEL_FORWARD, WHEEL.d / 2, sz * (D / 2 + proud + WHEEL.w / 2 + 1));
     g.add(wheel);
   }
-  // flipper: pivot on the front face; blade angle phi from horizontal (toward Mate's left), up = +
+  // flipper: blade angle phi from horizontal, pointing back over the right wheel; up = +
   const flip = new THREE.Group();
-  flip.position.set(W / 2 + proud + 3, lift + FLIP.pivotUp, D / 2 - FLIP.fromWheel);
+  // pivot just outside the right wheel, ahead of it; the blade sweeps in that side plane
+  flip.position.set(WHEEL_FORWARD + FLIP.aheadOfWheel, lift + FLIP.pivotUp, D / 2 + proud + WHEEL.w + 3 + FLIP.width / 2);
   const horn = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 4, 16), mat(0x2b2b2b));
-  horn.rotation.z = Math.PI / 2; flip.add(horn);
+  horn.rotation.x = Math.PI / 2; flip.add(horn);
   const phi = ((m.flipper ?? 20) - FLIP.flatAt) * Math.PI / 180;
-  const blade = (len, a, from) => {                  // a box along its own +y, turned to angle a
+  const blade = (len, a, from) => {                  // a box along its own +y; a = 0 points back, + = up
     const b = new THREE.Mesh(new THREE.BoxGeometry(2.5, len, FLIP.width), mat(0x101010));
-    b.rotation.x = a - Math.PI / 2;
-    const dir = new THREE.Vector3(0, Math.sin(a), -Math.cos(a));
+    b.rotation.z = Math.PI / 2 - a;
+    const dir = new THREE.Vector3(-Math.cos(a), Math.sin(a), 0);
     b.position.copy(from).addScaledVector(dir, len / 2); flip.add(b);
     return from.clone().addScaledVector(dir, len);
   };
@@ -420,11 +421,11 @@ $('calib').onclick = async () => {
   const room = parseFloat(prompt('Start with Z at its TOP, over the middle of the board, and Mate NOT under the 120 mm square around it.\n\nHow far is the cup above the board right now (mm)?', localStorage.getItem('room') || ''));
   if (!(room > 35)) { if (!isNaN(room)) say('Need at least 35 mm between the cup and the board.', true); return; }
   try { localStorage.setItem('room', room); } catch (e) {}
-  if (!confirm(`The head will move slowly around a 120 mm square (60 mm each way from here) at 3 heights: here, then down to ${(room - 15).toFixed(0)} mm lower (15 mm above the board), then back up and home. Any problem stops it with no further moves. This height becomes the travel height over Mate. Go?`)) return;
+  if (!confirm(`The head will move around a 120 mm square (60 mm each way from here) at 3 heights: here, then down to ${(room - 15).toFixed(0)} mm lower (15 mm above the board), then back up and home. Any problem stops it with no further moves. This height becomes the travel height over Mate. Go?`)) return;
   $('calib').disabled = $('reanchor').disabled = $('table').disabled = true;
-  say('Calibrating… (2–3 minutes). STOP on the jog page stops it.', true);
+  say('Calibrating… (about a minute). STOP on the jog page stops it.', true);
   try {
-    const r = await post('calibrate', { room, span: 60, steps: 3, levels: 3, feed: 1500 });
+    const r = await post('calibrate', { room, span: 60, steps: 3, levels: 3 });
     if (!r.ok) say('Calibration failed: ' + r.error, true);
     else {
       const cams = Object.entries(r.cams).map(([k, c]) => c.rms_px != null ? `cam ${k}: ${c.seen}/${c.of} stops, ${c.rms_px.toFixed(2)} px` : `cam ${k}: ${c.error}`);

@@ -15,6 +15,7 @@ You're an agent (AI or person) about to use the Magic Table: a gantry that picks
 | **Microphone** | hub `GET /api/transcripts` | What people said on the talk page (`https://raspberrypi.local:8443/talk`, any phone). |
 | **Notes** | hub `GET/POST /api/notes` | What's been learned about this build. Read first, add as you go. |
 | **3D view** | `http://raspberrypi.local:8000/scene` | Live picture of everything, for people watching. |
+| **Home** | `http://raspberrypi.local:8000/` | Every page in one list, with a live status line. |
 
 ## How to behave
 

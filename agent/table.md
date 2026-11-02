@@ -59,4 +59,4 @@ Any hub restart, Uno reset or power cycle loses GRBL's position. Unlock (`$X`), 
 
 ## Calibrating
 
-Only when a camera moved or the head marker changed. Start with the cup at Z 110 or higher over the middle of the board, Mate out from under the 120 mm square around it. Calibrate (scene page or `POST /api/calibrate {room}`), then touch the cup to the board and press **Board is here**. Any reset, pause or STOP aborts calibration with no further moves.
+Only when a camera moved (`camera_moved_px` climbing past a few px) or the head marker changed. It takes ~40 s and keeps the board touch-off and bounds. Start with the cup at Z 110 or higher over the middle of the board, Mate out from under the 120 mm square around it. Calibrate (scene page or `POST /api/calibrate {room}`), then touch the cup to the board and press **Board is here**. Any reset, pause or STOP aborts calibration with no further moves.

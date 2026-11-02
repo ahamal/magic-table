@@ -259,7 +259,7 @@ class Calibrate(BaseModel):
     span: float = 60    # grid half-width, mm, around where the head is now (a 120 mm square)
     steps: int = 3      # steps x steps stops per height
     levels: int = 3     # heights, from the start down to 15 mm above the board
-    feed: float = 1500  # mm/min; slow on purpose
+    feed: float = 2000  # mm/min for going down a level; moves within a level are rapid
 
 
 @app.post("/api/calibrate")
@@ -373,8 +373,14 @@ async def ws(ws: WebSocket):
 
 
 @app.get("/")
-def index():
-    return FileResponse(HERE / "static" / "index.html", headers={"Cache-Control": "no-cache"})
+def home():
+    """The home page: every page and tool on the table, in one list."""
+    return FileResponse(HERE / "static" / "home.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/jog")
+def jog_page():
+    return FileResponse(HERE / "static" / "jog.html", headers={"Cache-Control": "no-cache"})
 
 
 GUIDES = HERE / "agent"   # the repo's agent/ folder, deployed next to the hub

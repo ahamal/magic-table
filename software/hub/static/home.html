@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Magic Table</title>
+<style>
+  :root { --bg: #f4f4f2; --panel: #fff; --ink: #161616; --muted: #74746f; --line: #dcdcd8; --accent: #1d4ed8; --ok: #15803d; --warn: #a16207; --bad: #dc2626; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0e0e0e; --panel: #161616; --ink: #e8e8e6; --muted: #8a8a86; --line: #2c2c2a; --accent: #3b82f6; --ok: #4ade80; --warn: #facc15; --bad: #f87171; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Inter", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; letter-spacing: .08em; margin: 8px 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .status { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 20px; font-size: 13px; }
+  .status b { font-weight: 600; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 22px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  a.card { display: block; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); color: inherit; text-decoration: none; }
+  a.card:hover { border-color: var(--accent); }
+  a.card b { display: block; color: var(--accent); margin-bottom: 2px; }
+  a.card span { color: var(--muted); font-size: 13px; }
+  code { font: 12px ui-monospace, "SF Mono", Menlo, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>MAGIC TABLE</h1>
+  <p class="sub">Everything on the table, in one place. Agents: start with the <a href="/guide">guide</a> (plain text at <code>/api/guide</code>).</p>
+
+  <div class="status">
+    <span>Gantry <b id="grbl">…</b></span>
+    <span>Calibration <b id="cal">…</b></span>
+    <span>Gripper <b id="grip">…</b></span>
+    <span>Mate <b id="mate">…</b></span>
+    <span>Cameras <b id="cams">…</b></span>
+  </div>
+
+  <h2>Run the table</h2>
+  <div class="grid">
+    <a class="card" href="/jog"><b>Jog</b><span>Drive the gantry, the gripper, live camera views, the GRBL console</span></a>
+    <a class="card" href="/scene"><b>3D scene</b><span>Live 3D of the board, head, cards, Mate and cameras; calibrate, re-anchor</span></a>
+    <a class="card" id="talk" href="/talk"><b>Talk</b><span>Speak instructions from any phone; see what was transcribed</span></a>
+  </div>
+
+  <h2>Mate</h2>
+  <div class="grid">
+    <a class="card" href="http://mate.local/"><b>Mate's control page</b><span>Drive it, the flipper, faces, its camera (on Mate itself)</span></a>
+    <a class="card" href="http://mate.local:81/stream"><b>Mate's camera, live</b><span>What Mate sees (slows its Wi-Fi; close when done)</span></a>
+    <a class="card" href="/guide?doc=mate"><b>Mate guide</b><span>How to drive, calibrate and express with Mate</span></a>
+  </div>
+
+  <h2>Read</h2>
+  <div class="grid">
+    <a class="card" href="/guide"><b>Start here</b><span>What's available and how to behave (for agents and people)</span></a>
+    <a class="card" href="/guide?doc=table"><b>Table guide</b><span>Gantry, gripper, limits, pick-and-place recipes</span></a>
+    <a class="card" href="/api/notes"><b>Build notes</b><span>What's been learned about this table: numbers, what failed</span></a>
+    <a class="card" href="/api/transcripts"><b>Transcripts</b><span>Everything said on the talk page (JSON)</span></a>
+  </div>
+
+  <h2>Cameras and data</h2>
+  <div class="grid">
+    <a class="card" href="/api/stream?cam=1"><b>Cam 1 live</b><span>Angled overview (finds cards, Mate, markers)</span></a>
+    <a class="card" href="/api/stream?cam=0"><b>Cam 0 live</b><span>Low side view (watches picks)</span></a>
+    <a class="card" href="/api/scene"><b>Scene (JSON)</b><span>Where everything is, in board mm</span></a>
+    <a class="card" href="/docs"><b>API reference</b><span>Every hub endpoint, with a try-it page</span></a>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const set = (id, text, cls) => { $(id).textContent = text; $(id).className = cls || ''; };
+// the talk page needs HTTPS (the mic); point the link there
+$('talk').href = `https://${location.hostname}:8443/talk`;
+
+async function refresh() {
+  const j = u => fetch(u).then(r => r.ok ? r.json() : null).catch(() => null);
+  const [st, cal, g, cams, scene] = await Promise.all([j('/api/status'), j('/api/calibration'), j('/api/gripper'), j('/api/cameras'), j('/api/scene')]);
+  const state = st ? st.state : 'offline';
+  set('grbl', state, state === 'Idle' ? 'ok' : state === 'Alarm' || state === 'offline' || state === 'Disconnected' ? 'bad' : 'warn');
+  if (!cal || !cal.calibrated) set('cal', 'not calibrated', 'warn');
+  else set('cal', cal.needs_reanchor ? 'needs re-anchor' : 'ok', cal.needs_reanchor ? 'warn' : 'ok');
+  set('grip', g ? (g.pump ? 'pump on' : 'idle') : '–', '');
+  const m = scene && scene.mate;
+  set('mate', m ? `seen at ${m.x.toFixed(0)}, ${m.y.toFixed(0)}` : 'not in view', m ? 'ok' : 'warn');
+  set('cams', cams ? cams.map(c => `${c.cam} ${c.model}${c.ok ? '' : ' (off)'}`).join(', ') : '–', '');
+}
+refresh(); setInterval(refresh, 3000);
+</script>
+</body>
+</html>

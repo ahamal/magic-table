@@ -91,6 +91,9 @@ What happened, when, and what we learned. Newest at the bottom. Times are ET and
 - **agent/ folder:** one place for agents to start: [agent/README.md](../agent/README.md) (what's available, how to behave, ask the humans), [table.md](../agent/table.md) (moved from the hub's GUIDE.md), [mate.md](../agent/mate.md). Served at `/api/guide`, `/api/guide/{table,mate}`, `/guide`.
 - **Voice:** `POST /api/say` speaks on the SoundCore 2 (espeak-ng; the hub service now has the user's audio session, linger on).
 - **Mate driven and calibrated with the overhead camera:** forward 0.048 mm/half-step, turning 0.0351 deg/half-step left and 0.0373 right, ~30 mm/s at speed 800. Flipper checked: it sweeps in the plane of Mate's front face (20 rest, 60 sideways, 110 over the top); drawn in 3D at its live angle (the hub polls Mate's `/status`).
+- **Home page** at `/` lists every page (jog moved to `/jog`), with a live status line.
+- **Cam 1 drifted 57 px**; recalibrated (cup within ~1-2 mm of a card centre after). Calibration sped up to ~41 s (rapid moves within a level, 0.25 s settle) and keeps the board touch-off and bounds.
+- **3D:** marker plate flush on the extrusion face; Mate's wheels 5 mm forward; the flipper moved to the right side by the wheel (it isn't on the front face).
 - **3D fixes:** the head's extrusion now stands behind the marker plate (it was drawn through it), camera modules 2.5x so they're visible.
 - **Board bounds:** the cup now stays inside the rectangle between the board markers' inner edges (X ±216, Y ±195), measured from the markers (`/api/calibration/bounds`); X/Y 0, 0 moved to its centre (a pure shift of GRBL's work coordinates and the camera models, no recalibration).
 - **3D page:** camera modules drawn where calibration puts them (cam 1 ~39 cm up at the front-left, cam 0 lower at the front-left corner), with each picture's footprint on the board; the cup bounds as a dashed line; the cup is 15 mm across (sold as 12 mm).
