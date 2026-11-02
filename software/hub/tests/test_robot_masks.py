@@ -42,6 +42,20 @@ class RobotMasks(unittest.IsolatedAsyncioTestCase):
             kept = await eyes.verify(self.img, [self.inside, self.clear], 'card', robots=self.robots)
         self.assertEqual(kept, [self.clear])
 
+    async def test_away_from_robot_not_asked(self):
+        ask = AsyncMock(return_value='{"keep": []}')
+        with patch.object(eyes, 'ask', ask):
+            kept = await eyes.verify(self.img, [self.clear], 'card', robots=self.robots, everything=False)
+        self.assertEqual(kept, [self.clear])
+        ask.assert_not_called()
+
+    async def test_only_the_doubtful_asked_about(self):
+        ask = AsyncMock(return_value='{"keep": []}')
+        with patch.object(eyes, 'ask', ask):
+            kept = await eyes.verify(self.img, [self.inside, self.clear], 'card', robots=self.robots, everything=False)
+        self.assertEqual(kept, [self.clear])     # Muse dropped the one on Mate; the clear one wasn't in question
+        ask.assert_called_once()
+
     async def test_fallback_checked_against_first_name(self):
         seg = AsyncMock(side_effect=[[self.inside], [self.clear]])
         ask = AsyncMock(side_effect=['{"keep": []}', '{"keep": [0]}'])

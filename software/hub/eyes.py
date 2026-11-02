@@ -328,12 +328,21 @@ def robot_overlap(box, mask, robots):
     return {"inside": round(float((cand & union).sum()) / n, 3), "near": near}
 
 
-async def verify(img, matches, wanted, effort="minimal", robots=None):
+async def verify(img, matches, wanted, effort="minimal", robots=None, everything=True):
     """Muse Spark looks at SAM's matches, numbered on the whole picture, and drops the ones that
     aren't a loose `wanted` (the suction cup as a plate, a wheel as a knife). Matches mostly
     inside the robot are kept only if it says they're a separate thing there (a card on Mate).
-    If it can't answer, the robot rule alone decides: a check failing never fails find."""
+    If it can't answer, the robot rule alone decides: a check failing never fails find.
+    everything=False: only matches touching or near the robot are in doubt; the rest are kept
+    without asking (Muse takes ~25 s over a picture of a dozen cards; SAM's own name is right
+    away from the robot)."""
     over = [robot_overlap(b, m, robots) for b, m in matches] if robots else [None] * len(matches)
+    if not everything and robots:
+        doubt = [n for n, o in enumerate(over) if o["inside"] > 0 or o["near"]]
+        if not doubt:
+            return matches
+        sure = [m for n, m in enumerate(matches) if n not in doubt]
+        return sure + await verify(img, [matches[n] for n in doubt], wanted, effort, robots)
     k = min(1.0, CHECK_PX / img.shape[1])
     marked = cv2.resize(img, None, fx=k, fy=k) if k < 1 else img.copy()
     for r in (robots or {}).values():
@@ -363,11 +372,12 @@ async def verify(img, matches, wanted, effort="minimal", robots=None):
 
 async def _first(jpeg, img, names, effort="minimal", robots=None):
     """SAM with each name in turn until a match survives the check (always checked against the
-    first name: "white object" must still be a plate): (matches, the name that found them)."""
+    first name: "white object" must still be a plate): (matches, the name that found them).
+    Matches by the first name are only checked near the robot; by a fallback, all of them."""
     for n in names:
         m = await segment(jpeg, n)
         if m:
-            m = await verify(img, m, names[0], effort, robots)
+            m = await verify(img, m, names[0], effort, robots, everything=n != names[0])
             if m:
                 return m, n
     return [], None
