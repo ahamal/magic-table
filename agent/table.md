@@ -36,8 +36,10 @@ How to drive the gantry and the gripper safely and well. The hub enforces the ha
 **Pick a card** (thin, flat, smooth)
 1. `GET /api/scene` → the card's `x, y`.
 2. `POST /api/tip {x, y, z: 3}`: rapid to just above it (stay at travel height first if Mate is anywhere near the path).
-3. `G1 Z-0.8 F1200`: the cup touches and squeezes a little. On a stack of n cards add 0.3 × (n − 1). If the card stays behind, go deeper: on this build some spots need Z −1.5 to −2 (the cup is sprung; −2 only via `/api/send`) and a 2 s pump.
-4. `grip?pump_s=1`. One second of pumping is enough; the vacuum then holds ~20 s.
+3. `G1 Z-1.5 F600`: the cup touches and squeezes (its top is soft: 2 mm in is fine). On a stack of n cards add 0.3 × (n − 1). If the card stays behind, go to −2 (only via `/api/send`), and suspect Z: see below.
+4. `grip?pump_s=1`. One second of pumping is enough; the sealed line holds ~20 s (a domino held 15 s after 4 s of pumping).
+
+**If cards stop coming up, check Z first.** Nov 2 Z 0 had crept ~1 mm above the board, so −1.5 barely touched and cards stayed behind. Lower the cup over a card 0.5 mm at a time until a person says it touches, then `POST /api/calibration/table` (Zero Z). That fixed it at once.
 5. **Peel off at F1500** (`G1 Z5 F1500`), then rapid up to **Z 40** and move. A faster peel (F2000) left every card behind: the seal isn't strong enough yet to yank it.
 
 **Place a card**
