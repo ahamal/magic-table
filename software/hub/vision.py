@@ -38,7 +38,11 @@ BOARD_IDS, HEAD_ID, MATE_ID = (0, 1, 2, 3), 10, 20
 # Mate ones also give their height, by finding where the camera would see them at that
 # size. The head plate stands upright, so its size says nothing about height.
 SIZE = {"board": 30.0, "head": 25.0, "mate": 30.0}
-TIP_BELOW_MARKER = 57.0   # cup tip is this far below the head marker's centre (mm)
+# The cup tip is this far below the head marker's centre, in the cameras' frame. A ruler says 77
+# (Nov 2), but with 77 the board came out ~7% too big against a tape measure, so something else
+# is off too (likely the gantry's steps/mm). 57 is what the board, the cup offset and the picks
+# were all tuned with: keep them together, or redo all three.
+TIP_BELOW_MARKER = 57.0
 # Every head position is the marker's centre: calibration fits the cameras to it, GRBL's work
 # X/Y/Z are it. The marker is on thin card on the Z extrusion's left face (facing -X, ~1 mm out),
 # so the extrusion's centre is ~11.5 mm to its +X. The cup is found from the marker, not the

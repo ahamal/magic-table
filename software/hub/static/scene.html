@@ -475,7 +475,7 @@ function connect() {
     else if (ev.type === 'vision' && ev.kind === 'find' && ev.by !== 'scene' && ev.items.some(i => i.board)) drawItems(ev);   // others' finds too (not Mate's: no board places)
     else if (ev.type === 'vision' && ev.kind === 'shape' && ev.by !== 'scene') drawPolys(ev);
     else if (ev.type === 'status' && S && S.calibrated && ev.WPos) {     // move the head between scene updates
-      S.head = { ...S.head, x: ev.WPos[0], y: ev.WPos[1], z: ev.WPos[2], tip_z: ev.WPos[2] - 57 };
+      S.head = { ...S.head, x: ev.WPos[0], y: ev.WPos[1], z: ev.WPos[2], tip_z: ev.WPos[2] + TIP.dz };
       drawHead(S.head, S.table_z ?? 0);
       $('head').textContent = ev.WPos.map(v => v.toFixed(1)).join(', ');
     }
