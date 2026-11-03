@@ -21,6 +21,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import camera
+import cards as cardlib
+import chips as chiplib
 import eyes
 from grbl import REALTIME, Grbl
 from mate import CENTRE as MATE_CENTRE, CLOSE_MM as MATE_CLOSE, MateLink
@@ -67,6 +69,9 @@ async def startup():
     cameras.extend(await asyncio.to_thread(camera.start_all))
     global vision
     vision = Vision(cameras, grbl, broadcast, mate)
+    vision.cards = cardlib.Cards()
+    vision.chips = chiplib.Chips()
+    asyncio.create_task(vision.cards.watch(eyes.ask))
     vision.run()
 
 
@@ -324,7 +329,7 @@ def _robot_boxes():
 
 @app.get("/api/find")
 async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = "minimal", height: bool = False,
-               by: str = "agent"):
+               diameter: float | None = None, by: str = "agent"):
     """Where things are, for picking (SAM 3.1, one fresh picture from `cam`: 1 by default, 0, or
     "mate"). what: one or more names, comma-separated (from /api/see, or your own); fallbacks
     after "|" are tried in order when a name finds nothing: what=earbuds case|white object
@@ -335,7 +340,13 @@ async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = 
     its crop (answer). height=true (cam 1): cam 0, low at the side, looks at the same moment
     and each item gets height_mm, how tall it stands (None where cam 0 can't see it whole).
     Off by default: on this build cam 0's board level is off (Nov 2), so it finds nothing yet.
-    ~2-3 s, ~3-5 s with height."""
+    Known things (cards, decks, poker chips, by name) come placed for their height: an angled
+    camera sees a tall thing's side, which stretches its flat footprint away from it and pulls the
+    centre along, so find fits the solid of known size that matches the outline instead. Their
+    board is where they really stand, with height_mm, count (chips in a stack), fit (0-1) and the
+    stretched footprint in flat. A fit under 0.85 (touching stacks, cut off) leaves board flat.
+    diameter=<mm> does the same for any other round upright thing (a can, a cup). A low fit:
+    touching things seen as one, or not a cylinder. ~2-3 s, ~3-5 s with height."""
     phrases = [p.strip() for p in what.split(",") if p.strip()][:6]
     if not phrases:
         raise HTTPException(400, "say what to find, e.g. what=playing card")
@@ -348,9 +359,29 @@ async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = 
     if tz is None:
         P = None
     res = await _meta(eyes.find(jpg, phrases, P, tz, (vision.cal or {}).get("bounds"), ask, effort, _robot_boxes(),
-                                shots[1] if side else None))
+                                shots[1] if side else None, diameter))
     return _eyes_done("find", {"cam": cam, "what": phrases, "ask": ask, **res},
                       {cam: jpg, **({"0": shots[1][0]} if side else {})}, by)
+
+
+@app.get("/api/cards")
+async def read_cards(effort: str = "minimal"):
+    """The face-up cards on the board, named, from cam 1 (the scene's last look): the cache on
+    the Pi names a card it has seen before in a few ms, no API; any other is read by Muse Spark
+    from its flattened face (~1-2 s, all at once) and, if Muse is sure, cached. Each: {x, y,
+    angle, card ("5♣"), by ("cache" or "muse"), score (the cache's match, 0-1), confidence
+    (Muse's)}. /api/scene's cards carry the cached names too. Face-down cards aren't named."""
+    if effort not in eyes.EFFORTS:
+        raise HTTPException(400, f"effort is one of {', '.join(eyes.EFFORTS)}")
+    await asyncio.to_thread(vision.update)
+    return {"cards": await _meta(vision.cards.read(eyes.ask, effort)), "cached": len(vision.cards.index)}
+
+
+@app.delete("/api/cards")
+async def forget_cards():
+    """Empties the card cache (a new deck)."""
+    vision.cards.forget()
+    return {"ok": True}
 
 
 @app.get("/api/find/shapes")
@@ -445,6 +476,7 @@ class Calibrate(BaseModel):
     steps: int = 3      # steps x steps stops per height
     levels: int = 3     # heights, from the start down to 15 mm above the board
     feed: float = 2000  # mm/min for going down a level; moves within a level are rapid
+    from_zero: bool = False   # the cup touches the board at Work zero X, Y, Z = 0 (see vision.calibrate)
 
 
 @app.post("/api/calibrate")
@@ -452,6 +484,8 @@ async def calibrate(body: Calibrate):
     """Move the head marker over a grid at several heights and fit every camera. Takes ~2-3 min.
     Start with Z at its top (that becomes the travel height) over the middle of the board, Mate
     out from under the square; it goes down from there, never closer than 15 mm to the board."""
+    if body.from_zero:
+        return await asyncio.to_thread(vision.calibrate, 0.0, body.span, body.steps, body.levels, body.feed, from_zero=True)
     room = body.room
     if room is None:
         if (vision.cal or {}).get("table_source") != "touch":
@@ -506,7 +540,10 @@ async def reanchor(camera: bool = False):
 
 @app.get("/api/scene")
 async def scene(fresh: bool = False):
-    """Where everything is, in gantry coordinates: head, Mate, cards, board markers, cameras."""
+    """Where everything is, in gantry coordinates: head, Mate, cards (face-up ones named: card,
+    from the card cache), chip stacks (chips: [{x, y, height_mm, count, count_raw, colour, fit}]; count_raw unrounded, 7.4 is a shaky 7; from cam 1's
+    colours, where they really stand), decks ([{x, y, angle, height_mm, cards, fit}], likewise),
+    board markers, cameras."""
     return await asyncio.to_thread(vision.update) if fresh else vision.scene
 
 
@@ -987,7 +1024,7 @@ def guide():
 def guide_page_text(name: str):
     path = GUIDES / f"{name}.md"
     if not name.isidentifier() or not path.exists():
-        raise HTTPException(404, f"no guide {name}; try table or mate")
+        raise HTTPException(404, f"no guide {name}; try table, mate or poker")
     return path.read_text()
 
 

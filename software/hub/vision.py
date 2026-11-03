@@ -43,6 +43,8 @@ SIZE = {"board": 30.0, "head": 25.0, "mate": 30.0}
 # is off too (likely the gantry's steps/mm). 57 is what the board, the cup offset and the picks
 # were all tuned with: keep them together, or redo all three.
 TIP_BELOW_MARKER = 57.0
+PARK = (190.0, 150.0)  # head X/Y out of cam 1's way: the back right (Nov 2; the notes say why)
+KEEPOUT = 10.0     # mm around a board marker's square the cup keeps off (its own radius is 7.5)
 # Every head position is the marker's centre: calibration fits the cameras to it, GRBL's work
 # X/Y/Z are it. The marker is on thin card on the Z extrusion's left face (facing -X, ~1 mm out),
 # so the extrusion's centre is ~11.5 mm to its +X. The cup is found from the marker, not the
@@ -50,7 +52,10 @@ TIP_BELOW_MARKER = 57.0
 # two chips 90 mm apart by eye (both needed the same +3 X, -5 Y on the old (0.6, -24.7)); the Y
 # matches a ruler (20 mm). The X isn't physical (the cup is in line with the extrusion, ~11 mm +X
 # of the card): it's what lands, so it absorbs some of vision's error. Re-measure after calibrating.
-TIP_OFFSET = (-2.4, -19.7)
+# Nov 3 evening, after the head marker was replaced and the cameras recalibrated: centring the cup
+# by eye over a chip from 2 mm up said X 2.1, but picks then landed 3 mm left, so -0.9 (+1.5 on the
+# old -2.4, what the first look said). Y stays: what looked off in Y was the chip fit's bias (chips.SHIFT).
+TIP_OFFSET = (-0.9, -19.7)
 CLEARANCE = 15.0          # calibration keeps the cup at least this far above the board (mm)
 MATE_MARGIN = 40.0        # mm around Mate's footprint that counts as "over Mate"
 MATE_TOP = 103.0          # cup height that touches Mate's plywood top (where a card lies; the corner caps stand 2 mm above it)
@@ -186,6 +191,8 @@ class Vision:
         self.scene = {"calibrated": bool(self.cal)}
         self.busy = False
         self._abort = None
+        self.cards = None    # cards.Cards: names face-up cards from its cache
+        self.chips = None    # chips.Chips: chip stacks by colour
         # GRBL reset since the last known position: a banner seen, or GRBL found in alarm on
         # connecting (see grbl.py). Kept on disk so a hub restart doesn't forget it. Opening the
         # port doesn't reset the Uno (`stty -hupcl` in hub.service).
@@ -250,18 +257,25 @@ class Vision:
 
     # ---- calibration ----
 
-    def calibrate(self, room, span=60.0, steps=3, levels=3, feed=2000, settle=0.25, xy_feed=6000):
-        """Move the head over a steps x steps grid (+-span mm) at its current height and at
-        levels-1 lower heights, see the head marker at every stop, fit each camera.
+    def calibrate(self, room, span=60.0, steps=3, levels=3, feed=2000, settle=0.25, from_zero=False):
+        """Move the head over a steps x steps grid (+-span mm) around where it is, at its current
+        height and at levels-1 lower heights, see the head marker at every stop, fit each camera,
+        then measure the board markers (set_bounds): the bounds, and X/Y 0, 0 at their middle.
+        One press does it all; it works after the camera, the board or Work zero moved.
 
-        With board bounds set, the grid is centred on the board: the head first rises to the
-        travel height (if lower) and goes to the middle, whatever it started over, and every
-        stop must keep the cup inside the bounds and clear of Mate, or nothing moves at all.
-        Without bounds (a first calibration) the grid is around where the head is: start
-        high, with the cup over the middle of the board. `room` is how far (mm) the cup is
-        above the board at the start: the passes go down but stay CLEARANCE above it, and the
-        head goes back up before moving sideways. Sideways moves are at xy_feed, going down
-        a level at feed (mm/min). Any trouble aborts with no further moves."""
+        Start with the head roughly over the middle of the board and the cup high. With bounds
+        known, the head first rises to the travel height (if lower) and the grid shrinks to keep
+        the cup inside them (refused below 40 mm: move the head toward the middle). Mate under
+        the grid refuses it, when the camera can still tell where Mate is. `room` is how far (mm)
+        the cup is above the board at the start: the passes go down but stay CLEARANCE above it,
+        and the head goes back up before moving sideways. Sideways moves are rapids (GRBL's top
+        speed and acceleration, $110-$121), going down a level at feed (mm/min). Any trouble
+        aborts with no further moves.
+
+        from_zero: the person has just touched the cup to the board in the middle and set Work
+        zero there (X, Y, Z all 0; refused otherwise). That fixes the board's height (as Zero Z)
+        and the grid's middle, whatever was saved before: old bounds are ignored, new ones measured
+        without moving X/Y 0, 0. The head rises to the travel height (110 if none) first."""
         if self.grbl.status.get("state") != "Idle":
             return {"ok": False, "error": f"GRBL is {self.grbl.status.get('state')}; unlock it and try again"}
         if self.needs_reanchor:
@@ -269,22 +283,29 @@ class Vision:
         x0, y0, z0 = self._wpos()
         b = (self.cal or {}).get("bounds")
         lift = None
+        travel = (self.cal or {}).get("travel_z")
+        if from_zero:
+            if max(abs(x0), abs(y0), abs(z0)) > 0.05:
+                return {"ok": False, "error": f"the head is at {x0:.1f}, {y0:.1f}, {z0:.1f}: jog the cup down until it "
+                                              "just touches the board in the middle, Work zero X, Y and Z there, then calibrate"}
+            b, room, travel = None, 0.0, travel if travel is not None else 110.0
+        if travel is not None and z0 < travel:
+            lift, room = travel, room + travel - z0
+            z0 = travel
         if b:
-            travel = self.cal.get("travel_z")
-            if travel is not None and z0 < travel:
-                lift, room = travel, room + travel - z0
-                z0 = travel
-            cx, cy = (b[0] + b[1]) / 2, (b[2] + b[3]) / 2          # the cup over the board's middle
-            x0, y0 = cx - TIP_OFFSET[0], cy - TIP_OFFSET[1]
-            fit = min(b[1] - cx, b[3] - cy)
-            if span > fit:
-                return {"ok": False, "error": f"a {span:.0f} mm grid would take the cup past the board; "
-                                              f"{fit:.0f} mm fits"}
-            m = self.scene.get("mate")
-            if m:
-                half = max(MATE_SIZE[:2]) / 2 + MATE_MARGIN
-                if abs(m["x"] - cx) < span + half and abs(m["y"] - cy) < span + half:
-                    return {"ok": False, "error": "Mate is under the grid: drive it home first"}
+            cx, cy = x0 + TIP_OFFSET[0], y0 + TIP_OFFSET[1]       # the cup, over the grid's middle
+            fit = min(cx - b[0], b[1] - cx, cy - b[2], b[3] - cy)
+            if fit < 40:
+                return {"ok": False, "error": f"the head is too near the board's edge for a grid ({fit:.0f} mm "
+                                              "of room): move it toward the middle"}
+            span = min(span, fit)
+        moved = (self.scene or {}).get("camera_moved_px") or 0
+        m = self.scene.get("mate") if moved < 30 else None    # a moved camera puts Mate in the wrong place
+        if m and not m.get("assumed"):
+            half = max(MATE_SIZE[:2]) / 2 + MATE_MARGIN
+            cx, cy = x0 + TIP_OFFSET[0], y0 + TIP_OFFSET[1]
+            if abs(m["x"] - cx) < span + half and abs(m["y"] - cy) < span + half:
+                return {"ok": False, "error": "Mate is under the grid: drive it home first"}
         if room - CLEARANCE < 20:
             return {"ok": False, "error": f"need at least {CLEARANCE + 20:.0f} mm between the cup and the board"}
         dz = (room - CLEARANCE) / (levels - 1)
@@ -292,16 +313,18 @@ class Vision:
         try:
             if lift is not None:
                 self._move(f"G90 G1 Z{lift:.3f} F{feed:.0f}")
-            self._move(f"G90 G1 X{x0:.3f} Y{y0:.3f} F{xy_feed:.0f}")
+            self._move(f"G90 G0 X{x0:.3f} Y{y0:.3f}")
             offs = np.linspace(-span, span, steps)
             pts = {i: {"world": [], "pix": []} for i in range(len(self.cameras))}
+            done, total = 0, steps * steps * levels
+            self.emit({"type": "calibrate", "stop": 0, "of": total})
             seen = {}    # board markers at every stop: the head hides one now and then
             for z in [z0 - k * dz for k in range(levels)]:   # Z+ is up: each pass is lower
                 self._move(f"G90 G1 Z{z:.3f} F{feed:.0f}")
                 for j, dy in enumerate(offs):
                     row = offs if j % 2 == 0 else offs[::-1]
                     for dx in row:
-                        self._move(f"G90 G1 X{x0 + dx:.3f} Y{y0 + dy:.3f} F{xy_feed:.0f}")
+                        self._move(f"G90 G0 X{x0 + dx:.3f} Y{y0 + dy:.3f}")   # rapid: GRBL's top speed, its acceleration
                         time.sleep(settle)
                         w = self._wpos()
                         for cam in pts:
@@ -314,11 +337,14 @@ class Vision:
                             if HEAD_ID in found:
                                 pts[cam]["world"].append(w)
                                 pts[cam]["pix"].append(centre(found[HEAD_ID]).tolist())
+                        done += 1
+                        self.emit({"type": "calibrate", "stop": done, "of": total,
+                                   "seen": {str(k): len(v["world"]) for k, v in pts.items()}})
             # each board marker where it usually was (median of its corners over the stops)
             last = {cam: {k: np.median(v, axis=0) for k, v in ms.items() if len(v) * 2 >= steps * steps * levels}
                     for cam, ms in seen.items()}
             self._move(f"G90 G1 Z{z0:.3f} F{feed:.0f}")      # up first, then back to the middle
-            self._move(f"G90 G1 X{x0:.3f} Y{y0:.3f} F{xy_feed:.0f}")
+            self._move(f"G90 G0 X{x0:.3f} Y{y0:.3f}")
 
             # the board's Z from marker size until the cup touches it (set_table)
             cal = {"at": time.time(), "cams": {}, "table_source": "marker size",
@@ -346,19 +372,24 @@ class Vision:
             cal["table_z"] = float(np.median(tz)) if tz else None
             # a board touch-off is in GRBL's Z, which recalibrating the cameras doesn't change
             # (only Work zero would; don't use it after calibrating): keep it, and the bounds
-            if self.cal and self.cal.get("table_source") == "touch":
+            if from_zero:                                       # the cup touched the board at Z 0
+                cal["table_z"], cal["table_source"] = -TIP_BELOW_MARKER, "touch"
+            elif self.cal and self.cal.get("table_source") == "touch":
                 cal["table_z"], cal["table_source"] = self.cal["table_z"], "touch"
-            if self.cal and self.cal.get("bounds"):
-                cal["bounds"] = self.cal["bounds"]
             if self.cal and self.cal.get("travel_z") is not None:   # a chosen travel height stays
                 cal["travel_z"] = self.cal["travel_z"]
-            if self.cal and self.cal.get("mate_home"):
+            if self.cal and self.cal.get("mate_home") and not from_zero:   # after a new zero it's in the old X/Y
                 cal["mate_home"] = self.cal["mate_home"]
             CAL_FILE.write_text(json.dumps(cal))
             self.needs_reanchor = False
             with self._lock:
                 self.cal = cal
-            return {"ok": True, **self.summary()}
+            # the head out of cam 1's way (over the middle it hides markers, and a half-hidden one is
+            # recorded off: bad bounds, and a "camera moved" warning that never goes away), then the board
+            self._move(f"G90 G0 X{PARK[0]:.3f} Y{PARK[1]:.3f}")
+            time.sleep(0.5)
+            bounds = self.set_bounds(center=not from_zero)   # the board's edges (from zero: 0, 0 stays where it was set)
+            return {"ok": True, **self.summary(), "grid_span": span, "bounds_measured": bounds}
         except Aborted as e:
             return {"ok": False, "error": f"calibration stopped: {e}. Nothing else was moved; check the head "
                                           "before going on (the position may be off if it hit something)"}
@@ -427,8 +458,8 @@ class Vision:
     # ---- where the cup may go ----
 
     def set_bounds(self, border=5.0, center=True):
-        """Measure the board markers now and save the cup's allowed X/Y: the rectangle between
-        their inner edges (white border included), so the cup never goes over a marker. Needs
+        """Measure the board markers now and save the cup's allowed X/Y: out to the markers' outer
+        edges, the whole margin, less a keep-out around each marker (the cup never goes over one). Needs
         markers on opposite sides; two diagonal corners are enough. center: also move X/Y 0, 0
         to the middle of that rectangle (see shift_origin)."""
         if not self.cal or self.cal.get("table_z") is None:
@@ -448,11 +479,18 @@ class Vision:
         high = [q for q in quads.values() if q.mean(axis=0)[1] >= mid[1]]
         if not (left and right and low and high):
             return {"ok": False, "error": "the markers it sees aren't on opposite corners"}
-        b = [max(q[:, 0].max() for q in left) + border, min(q[:, 0].min() for q in right) - border,
-             max(q[:, 1].max() for q in low) + border, min(q[:, 1].min() for q in high) - border]
+        # the play area runs out to the markers' outer edges (the whole margin); the cup keeps off
+        # the markers themselves (KEEPOUT around each square)
+        b = [min(q[:, 0].min() for q in left), max(q[:, 0].max() for q in right),
+             min(q[:, 1].min() for q in low), max(q[:, 1].max() for q in high)]
         b = [round(float(v), 1) for v in b]
+        if b[1] - b[0] < 200 or b[3] - b[2] < 200:          # two markers on one side aren't opposite corners
+            return {"ok": False, "error": f"the markers it sees ({', '.join(map(str, sorted(quads)))}) don't span the board: "
+                                          "park the head out of the way and measure again"}
+        keep = [[round(float(q[:, 0].min()) - KEEPOUT, 1), round(float(q[:, 0].max()) + KEEPOUT, 1),
+                 round(float(q[:, 1].min()) - KEEPOUT, 1), round(float(q[:, 1].max()) + KEEPOUT, 1)] for q in quads.values()]
         with self._lock:
-            self.cal["bounds"] = b
+            self.cal["bounds"], self.cal["keepout"] = b, keep
             # the markers are where they are now: that's the new reference for "camera moved"
             self.cal["cams"][str(TABLE_CAM)]["board"] = {str(i): c.tolist() for i, c in found.items()}
             CAL_FILE.write_text(json.dumps(self.cal))
@@ -488,6 +526,8 @@ class Vision:
             if self.cal.get("bounds"):
                 b = self.cal["bounds"]
                 self.cal["bounds"] = [round(b[0] - cx, 1), round(b[1] - cx, 1), round(b[2] - cy, 1), round(b[3] - cy, 1)]
+            self.cal["keepout"] = [[round(k[0] - cx, 1), round(k[1] - cx, 1), round(k[2] - cy, 1), round(k[3] - cy, 1)]
+                                   for k in self.cal.get("keepout", [])]
             g = self.cal.get("grid", {}).get("start")
             if g:
                 g[0], g[1] = g[0] - cx, g[1] - cy
@@ -503,7 +543,8 @@ class Vision:
         if not b:
             return True
         cx, cy = hx + TIP_OFFSET[0], hy + TIP_OFFSET[1]
-        return b[0] <= cx <= b[1] and b[2] <= cy <= b[3]
+        return b[0] <= cx <= b[1] and b[2] <= cy <= b[3] and \
+            not any(k[0] <= cx <= k[1] and k[2] <= cy <= k[3] for k in self.cal.get("keepout", []))
 
     def clip_jog(self, dx, dy):
         """Shorten an X/Y jog so the cup stops at the board bounds. Returns (dx, dy)."""
@@ -518,6 +559,8 @@ class Vision:
                 t = min(t, max(0.0, (hi - c) / d))
             elif d < 0:
                 t = min(t, max(0.0, (lo - c) / d))
+        if t and any(k[0] <= cx + dx * t <= k[1] and k[2] <= cy + dy * t <= k[3] for k in self.cal.get("keepout", [])):
+            return 0.0, 0.0                              # it would end on a marker
         return dx * t, dy * t
 
     # ---- keeping the head off Mate ----
@@ -633,9 +676,10 @@ class Vision:
         scene = {"at": time.time(), "calibrated": True, "table_z": tz, "table_source": self.cal.get("table_source"),
                  "travel_z": self.cal.get("travel_z"), "bounds": self.cal.get("bounds"),
                  "mate_home": self.cal.get("mate_home"), "needs_reanchor": self.needs_reanchor,
+                 "saved_position": self.last_pos if self.needs_reanchor else None,
                  "head": {"x": w[0], "y": w[1], "z": w[2], "tip_x": w[0] + TIP_OFFSET[0], "tip_y": w[1] + TIP_OFFSET[1],
                           "tip_z": w[2] - TIP_BELOW_MARKER, "seen_by": []},
-                 "mate": None, "cards": [], "board": {}, "cameras": {}}
+                 "mate": None, "cards": [], "chips": [], "decks": [], "board": {}, "cameras": {}}
         errs = []
         for cam in range(len(self.cameras)):
             P, cc = self._cam(cam)
@@ -681,6 +725,13 @@ class Vision:
                                      "flipper": st.get("servo_now") if st else None,
                                      "moving": st.get("busy") if st else None}
             scene["cards"] = find_cards(img, P, tz, found, fix, cam)
+            if self.cards:
+                unfix = None if H is None else (lambda pts, Hi=np.linalg.inv(H): cv2.perspectiveTransform(
+                    np.asarray(pts, float).reshape(-1, 1, 2), Hi).reshape(-1, 2))
+                self.cards.label(img, P, tz, scene["cards"], unfix)
+            if self.chips:
+                scene["chips"] = self.chips.find(img, P, tz, scene["board"], scene["cards"])
+                scene["decks"] = self.chips.decks(img, P, tz, scene["board"], scene["cards"])   # takes out cards that are decks
         if self.mate:
             m = scene["mate"]
             if m:

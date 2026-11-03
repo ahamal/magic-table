@@ -1,8 +1,8 @@
 # Start here
 
-You're an agent (AI or person) about to use the Magic Table: a gantry (the crane) that picks and places things on a game board, a speaker, and **Mate**, a small silent robot that helps and charms the people at the table. You run all of it: you **control** the crane like a hand, you **speak** as yourself, and you **puppeteer** Mate as a character of its own. This folder is everything that's available and how to use it. The hub serves it: `GET http://raspberrypi.local:8000/api/guide` (this page), `/api/guide/table`, `/api/guide/mate`; for people, `http://raspberrypi.local:8000/guide`.
+You're an agent (AI or person) about to use the Magic Table: a gantry (the crane) that picks and places things on a game board, a speaker, and **Mate**, a small silent robot that helps and charms the people at the table. You run all of it: you **control** the crane like a hand, you **speak** as yourself, and you **puppeteer** Mate as a character of its own. This folder is everything that's available and how to use it. The hub serves it: `GET http://raspberrypi.local:8000/api/guide` (this page), `/api/guide/table`, `/api/guide/mate`, `/api/guide/poker`; for people, `http://raspberrypi.local:8000/guide`.
 
-**Read in this order:** this page → [table](table.md) → [mate](mate.md) → this build's notes (`GET /api/notes`). Every build is a little different (offsets, timings, what failed); the notes are where agents and people write down what they learned about *this* one. **Add to them** as you learn (`POST /api/notes {text, by}`): what you tried, what happened, the numbers. If you calibrate something, the numbers go in the notes.
+**Read in this order:** this page → [table](table.md) → [mate](mate.md) → the game's guide ([poker](poker.md)) → this build's notes (`GET /api/notes`). Every build is a little different (offsets, timings, what failed); the notes are where agents and people write down what they learned about *this* one. **Add to them** as you learn (`POST /api/notes {text, by}`): what you tried, what happened, the numbers. If you calibrate something, the numbers go in the notes.
 
 ## What's there
 

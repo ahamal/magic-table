@@ -39,6 +39,11 @@
   header { display: flex; align-items: center; gap: 14px; height: 40px; padding: 0 12px; flex: none;
     background: var(--panel); border-bottom: 1px solid var(--line); }
   header b { font-size: 13px; letter-spacing: .08em; }
+  .resetbar { display: flex; align-items: center; gap: 14px; padding: 8px 12px; flex: none; font-size: 12px;
+    background: color-mix(in srgb, var(--warn) 14%, var(--panel)); border-bottom: 1px solid var(--warn); }
+  .resetbar[hidden] { display: none; }
+  .resetbar span { flex: 1; }
+  .resetbar button { white-space: nowrap; }
   .tag { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .tag::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; background: currentColor; }
   .tag.Idle { color: var(--ok); }
@@ -140,6 +145,11 @@
   <a href="/" class="navlink">Home</a><a href="/scene" class="navlink">3D Scene</a><a href="/vision" class="navlink">Vision</a><a href="/talk" class="navlink">Talk</a>
   <button id="stop" title="Feed hold, then reset (Esc)">STOP</button>
 </header>
+
+<div id="resetbar" class="resetbar" hidden>
+  <span><b>GRBL was reset: it doesn't know where the head is.</b> This page still drives GRBL directly; agents and the hub's moves wait until the position is restored.</span>
+  <button id="reanchor">Head hasn't moved: restore <span id="savedpos" class="mono"></span></button>
+</div>
 
 <main>
   <div class="stage">
@@ -245,6 +255,10 @@ const api = (path, body) => fetch('/api/' + path, {
   body: body ? JSON.stringify(body) : undefined,
 }).then(r => r.json()).catch(e => ({ reply: 'error:' + e.message }));
 const send = line => api('send', { line });
+$('reanchor').onclick = async () => {
+  const r = await api('calibration/reanchor');
+  log(r.ok ? `position restored: ${[r.x, r.y, r.z].map(v => v.toFixed(1)).join(', ')}` : 'restore failed: ' + (r.error || r.reply), r.ok ? '' : 'err');
+};
 const rt = name => api('realtime/' + name);
 const feed = () => +$('feed').value;
 
@@ -414,12 +428,18 @@ $('zrail').addEventListener('pointerdown', e => {
   updateTarget();
 }));
 $('here').onclick = () => { target = currentOr0(); updateTarget(); };
-$('go').onclick = () => target && api('move', { ...target, feed: feed() });
-$('gozero').onclick = $('padzero').onclick = () => api('move', { x: 0, y: 0, feed: feed() });
+// this page talks to GRBL directly: plain G-code, none of the hub's checks (bounds, Z, Mate) in between
+const num = v => (+v).toFixed(3);
+$('go').onclick = () => target && send(`G90 G1 X${num(target.x)} Y${num(target.y)}${target.z != null ? ' Z' + num(target.z) : ''} F${feed().toFixed(0)}`);
+$('gozero').onclick = $('padzero').onclick = () => send(`G90 G1 X0 Y0 F${feed().toFixed(0)}`);
 
 // the board from the cameras: reach, markers, Mate (refreshed with each scene)
 function boardFrom(s) {
   if (!s || !s.calibrated) return;
+  $('resetbar').hidden = !s.needs_reanchor;
+  const p = s.saved_position;
+  $('savedpos').textContent = p ? `(${p.map(v => Math.round(v)).join(', ')})` : '';
+  $('reanchor').disabled = !p;
   const mate = s.mate ? { x: s.mate.x, y: s.mate.y, heading: s.mate.heading } : null;
   const same = JSON.stringify(s.bounds) === JSON.stringify(board.bounds) && Object.keys(s.board || {}).length === Object.keys(board.markers).length
     && (!mate === !board.mate) && (!mate || Math.hypot(mate.x - board.mate.x, mate.y - board.mate.y) < 3);
@@ -444,7 +464,8 @@ setStep(step);
 const zFeed = () => Math.min(feed(), 3000);
 function jog(dir, dist) {
   const [dx, dy, dz] = dir;
-  return api('jog', { x: dx * dist, y: dy * dist, z: dz * dist, feed: dz ? zFeed() : feed() });
+  const axes = [['X', dx], ['Y', dy], ['Z', dz]].filter(([, d]) => d).map(([a, d]) => a + num(d * dist)).join(' ');
+  return send(`$J=G91 G21 ${axes} F${(dz ? zFeed() : feed()).toFixed(0)}`);
 }
 
 // press: after HOLD_MS switch to a long jog that is cancelled on release

@@ -53,17 +53,9 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 - Gestures take ~4–12 s. Turns add up a little (~4° over a dozen gestures): re-square Mate with `/api/mate/goto` before precise work.
 - **Aim it:** `to` only names who it's for in the chat. To really face a player, turn Mate first (`/api/mate/goto` with a `heading`, or a turn), then gesture.
 
-## Peeking at your own cards
+## Peeking at cards
 
-Your hole cards lie face down, and no camera sees a face-down card's face. Mate peeks for you, the way a player lifts a corner:
-
-1. Mate square to the card's spot, flipper down (20). The crane puts the card face down in front of Mate's face, its long side along Mate's heading, ~130-135 mm ahead of Mate's marker (114, as for flipping, is too close: the camera sees one pip). Drop it from 2 mm.
-2. Flipper up **slowly** (`speed=60`) to ~50-60°: the card's near edge lifts toward Mate's camera. At 40° only the middle shows; at 50° the corner index shows (Nov 2: a 5♣, upside down, the flipper blade across the middle).
-3. `GET hub/api/see?cam=mate&effort=low&ask=...` and **read the corner index yourself if you can**: Muse misread 5♣ as 6♣ twice from this view (low light, upside down).
-4. Flipper back to 20 slowly. The card stays on the flipper; Mate backing up drags it along (Nov 2: 45 mm, turned 15°), so look with cam 1 and pick it where it is, then put it back in its place.
-5. Never say your cards out loud.
-
-Holding the card above Mate's camera with the cup instead: at Z 120 it's out of view; at Z 65 about 160 mm in front the whole face shows but too small to read reliably.
+Mate can lift a face-down card's near edge with its flipper so its camera reads the corner: the routine is in the [poker guide](poker.md) ("Peeking at your own cards").
 
 ## When Mate blacks out
 

@@ -216,6 +216,157 @@ def side_height(P0, mask, poly, tz, P1=None):
     return top, slide
 
 
+# Height from one camera, for round things of a known size (a chip stack, a can). Mapped flat
+# onto the board, an angled camera's outline of a tall thing is stretched away from the camera
+# (it sees the side, and the top lands too far) and its centre is pulled with it. An upright
+# cylinder's outline is the hull of its bottom and top circles, so with the diameter known, the
+# x, y and height whose outline best covers what the camera sees are where it stands and how tall.
+UPRIGHT_FIT = 0.85   # IoU: a worse best fit means it isn't one clean cylinder (touching stacks, cut off)
+
+
+def cylinder_outline(P, x, y, r, h, tz, n=48):
+    """The hull of an upright cylinder's bottom and top circles, in picture pixels."""
+    a = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    ring = np.c_[x + r * np.cos(a), y + r * np.sin(a)]
+    pts = np.r_[np.c_[ring, np.full(n, tz)], np.c_[ring, np.full(n, tz + h)]]
+    q = (P @ np.c_[pts, np.ones(len(pts))].T).T
+    return cv2.convexHull((q[:, :2] / q[:, 2:]).astype(np.float32)).reshape(-1, 2)
+
+
+def box_outline(P, x, y, w, l, angle, h, tz):
+    """The hull of an upright box's 8 corners (footprint w x l, its long side at angle deg), in pixels."""
+    a = np.radians(angle)
+    u, v = np.array([np.cos(a), np.sin(a)]) * l / 2, np.array([-np.sin(a), np.cos(a)]) * w / 2
+    xy = np.array([(x, y) + su * u + sv * v for su in (1, -1) for sv in (1, -1)])
+    pts = np.r_[np.c_[xy, np.full(4, tz)], np.c_[xy, np.full(4, tz + h)]]
+    q = (P @ np.c_[pts, np.ones(len(pts))].T).T
+    return cv2.convexHull((q[:, :2] / q[:, 2:]).astype(np.float32)).reshape(-1, 2)
+
+
+def _fit(outline, solid, starts, steps):
+    """Pattern search for the solid whose outline best matches `outline` (pixels). solid(p): its
+    hull in pixels for parameters p (the last is its height); starts: where to begin; steps: the
+    first step of each parameter, halved when stuck down to a fortieth. (best p, IoU)."""
+    outline = np.asarray(outline, np.float32)
+    l, t = np.floor(outline.min(axis=0)) - 40
+    w, h = (np.ceil(outline.max(axis=0)) - (l, t) + 40).astype(int)
+    S = 4                                              # subpixel bits for fillPoly
+    seen = np.zeros((h, w), np.uint8)
+    cv2.fillPoly(seen, [np.round((outline - (l, t)) * (1 << S)).astype(np.int32)], 1, cv2.LINE_8, S)
+    n_seen = seen.sum()
+
+    def iou(p):
+        if p[-1] < 0:
+            return 0.0
+        m = np.zeros_like(seen)
+        cv2.fillPoly(m, [np.round((solid(p) - (l, t)) * (1 << S)).astype(np.int32)], 1, cv2.LINE_8, S)
+        both = int((m & seen).sum())
+        return both / (n_seen + m.sum() - both)
+
+    steps = np.asarray(steps, float)
+    n = len(steps)
+    # each parameter alone, and every pair together: place and height trade off along the
+    # camera's line of sight, a diagonal that one-at-a-time steps get stuck on
+    ways = [np.eye(n)[k] for k in range(n)] + [np.eye(n)[i] + sj * np.eye(n)[j]
+                                                for i in range(n) for j in range(i + 1, n) for sj in (1, -1)]
+    ways = [w * steps for w in ways]
+
+    def search(p):
+        p, f = np.asarray(p, float), 1.0
+        s = iou(p)
+        while f > 1 / 40:                              # try each way, halve when stuck
+            moved = False
+            for w in ways:
+                for d in (f * w, -f * w):
+                    sq = iou(p + d)
+                    if sq > s:
+                        p, s, moved = p + d, sq, True
+            if not moved:
+                f /= 2
+        return p, s
+
+    return max((search(p0) for p0 in starts), key=lambda r: r[1])   # a few starting heights: no local trap
+
+
+def upright(P, outline, tz, diameter, at):
+    """The upright cylinder of this diameter (mm) whose outline best matches `outline` (pixels):
+    (x, y, height mm, IoU). at: where to start (the flat footprint's centre)."""
+    p, s = _fit(outline, lambda p: cylinder_outline(P, p[0], p[1], diameter / 2, p[2], tz),
+                [(at[0], at[1], h0) for h0 in (0.0, diameter / 4, diameter / 2, diameter)], (4, 4, 4))
+    return float(p[0]), float(p[1]), float(p[2]), s
+
+
+def upright_box(P, outline, tz, w, l, at, angle):
+    """The upright box with this footprint (mm) whose outline best matches `outline`:
+    (x, y, angle of its long side, height mm, IoU). at, angle: where to start (the flat footprint)."""
+    p, s = _fit(outline, lambda p: box_outline(P, p[0], p[1], w, l, p[2], p[3], tz),
+                [(at[0], at[1], angle, h0) for h0 in (0.0, w / 4, w / 2)], (4, 4, 4, 4))
+    return float(p[0]), float(p[1]), float(p[2]) % 180, float(p[3]), s
+
+
+# Things whose size is known (mm), by a word in their name, first match wins. A thing found by one
+# of these names gets its real place and height from cam 1 alone: the solid of this size whose
+# outline matches what SAM sees. unit: how much one adds to a stack's fitted height (a chip is 3.3 mm,
+# plus the gap between chips); short: how much lower the fit comes out, fixed. It depends on the
+# calibration (cam 1's sense of height): re-measure with a known stack or two after each one.
+# Nov 3 afternoon: 3.47 n - 1.04 (stacks of 1, 4, 5, 6). Nov 3 night, after the head marker swap and
+# recalibrating: 3.13 n - 1.74, a straight line through 1s (1.2-2.8 mm), 2s (3.4-4.9), 7s (19.5,
+# 20.5), a 9 (26.2) and a 10 (30.1): every one within 0.5 of its count (2.98 from the short ones alone
+# read big stacks 5% high).
+KNOWN = (("deck", {"box": (63, 88)}),
+         ("chip", {"diameter": 40, "unit": 3.13, "short": 1.74}),
+         ("card", {"flat": (63, 88), "height": 0.3}))
+
+
+def count(h, k=dict(KNOWN)["chip"]):
+    """How many in a stack this tall (mm)."""
+    return max(1, round(count_raw(h, k)))
+
+
+def count_raw(h, k=dict(KNOWN)["chip"]):
+    """The count before rounding (7.0 is sure; 7.4 or 7.5 could be 8)."""
+    return round((h + k.get("short", 0)) / k["unit"], 1)
+
+
+def known(name):
+    n = name.lower()
+    return next((dict(v, name=k) for k, v in KNOWN if k in n), None)
+
+
+def place(it, P, tz, diameter=None):
+    """Corrects a found item's board place for its height, from its outline: a known thing (KNOWN)
+    or anything with a given diameter. board becomes where it really stands; the flat footprint
+    stays in flat; height_mm, and count for a stack. A fit under UPRIGHT_FIT leaves it flat
+    (fit says how good it was)."""
+    b, k = it["board"], known(it["what"])
+    if diameter:
+        k = {"diameter": diameter, "name": None}
+    if not k:
+        return
+    it["known"] = k["name"]
+    if "flat" in k:                                    # thin: the flat footprint is already right
+        it["height_mm"] = k["height"]
+        return
+    if "diameter" in k:
+        d = k["diameter"]
+        x, y, h, fit = upright(P, it["outline"], tz, d, (b["x"], b["y"]))
+        new = {"x": x, "y": y, "w": d, "h": d, "angle": 0.0, "round": True}
+    else:
+        w, l = k["box"]
+        x, y, ang, h, fit = upright_box(P, it["outline"], tz, w, l, (b["x"], b["y"]), b["angle"])
+        new = {"x": x, "y": y, "w": w, "h": l, "angle": ang}
+    it["fit"] = round(fit, 2)
+    if fit < UPRIGHT_FIT:
+        return
+    it["flat"] = b
+    it["board"] = {**b, **{k2: round(v, 1) if isinstance(v, float) else v for k2, v in new.items()}}
+    it["height_mm"] = round(h, 1)
+    if k.get("unit"):
+        it["count"] = count(h, k)
+        it["count_raw"] = count_raw(h, k)
+    it["pick"] = {"x": it["board"]["x"], "y": it["board"]["y"], "clear_mm": round(min(new["w"], new["h"]) / 2, 1)}
+
+
 def side_match(P0, polys, side, tz):
     """Pair cam 1's items (their footprints, None for one off the board) with cam 0's outlines
     (picture-sized arrays): each outline's bottom middle against where the item's near edge
@@ -384,7 +535,7 @@ async def _first(jpeg, img, names, effort="minimal", robots=None):
 
 
 async def find(jpeg, wanted, P=None, tz=None, bounds=None, question=None, effort="minimal", robot=None,
-               side=None):
+               side=None, diameter=None):
     """Where things are in one camera's picture (SAM). wanted: names, each with fallbacks after
     "|" ("earbuds case|white object") tried in order. Each item: what (the first name), matched
     (the name SAM found it by), its box and outline in the picture, and for a calibrated camera
@@ -394,7 +545,9 @@ async def find(jpeg, wanted, P=None, tz=None, bounds=None, question=None, effort
     question, Muse Spark answers it about each item on the board, from its crop. robot: boxes
     of the head and Mate where they're tracked (see robot_masks); each item says how much of it
     is inside them and which it's near. side: (cam 0's JPEG, its P), taken at the same time:
-    each item it sees also gets height_mm (side_height; None where cam 0 can't see it whole)."""
+    each item it sees also gets height_mm (side_height; None where cam 0 can't see it whole).
+    Known things (KNOWN: cards, decks, chips) and, with diameter (mm), any upright cylinder get
+    their real place and height from the outline alone (place): board is where they stand."""
     t0 = time.time()
     chains = [[n.strip() for n in w.split("|") if n.strip()] for w in wanted]
     img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
@@ -418,6 +571,7 @@ async def find(jpeg, wanted, P=None, tz=None, bounds=None, question=None, effort
             b = it.get("board")
             if b:
                 it["pick"] = {"x": b["x"], "y": b["y"], "clear_mm": round(min(b["w"], b["h"]) / 2, 1)}
+                place(it, P, tz, diameter)
             items.append(it)
             boxes.append(box)
     if side_ms:
