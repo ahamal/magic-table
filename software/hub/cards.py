@@ -26,6 +26,8 @@ STILL_MM, STILL_DEG = 3.0, 4.0   # a card within this of where it was named is t
 ASK = ('This is a playing card seen from straight above. Which card is it? Look at the corner index and the pips. '
        'Reply with JSON only: {"card": "5♣", "confidence": 0.9}, or {"card": "face down", "confidence": 0.9}.')
 CACHE_SURE = 0.9  # Muse's own confidence needed to add its answer to the cache
+BACK_LEARN = 0.4  # a card this blue (share of its pixels) is surely a back: the first one teaches the back's look
+BACK_SURE = 0.6   # a card matching the back this well is face down (all backs look alike)
 
 
 def corners(c, tz):
@@ -64,6 +66,10 @@ class Cards:
         self.faces = {}          # file: (name, prepared face, its middle)
         self.named = []          # [{x, y, angle, card, score, by}]: cards named, where they lie
         self.last = None         # the scene's last look: (img, P, tz, unfix, cards)
+        self.back = None         # the card back, flattened and prepared (cards/back.png)
+        self.faced = []          # [{x, y, angle, face, back}]: face decided by the back, where cards lie
+        if (LIB / "back.png").exists():
+            self.back = _prep(cv2.imread(str(LIB / "back.png")))
         LIB.mkdir(exist_ok=True)
         idx = LIB / "index.json"
         self.index = json.loads(idx.read_text()) if idx.exists() else {}
@@ -105,17 +111,45 @@ class Cards:
             (LIB / "index.json").write_text(json.dumps(self.index, ensure_ascii=False, indent=1))
             self._add(f, name, face)
 
-    def _still(self, c):
-        for n in self.named:
+    def _still(self, c, among=None):
+        for n in (self.named if among is None else among):
             d = abs((n["angle"] - c["angle"] + 90) % 180 - 90)
             if np.hypot(n["x"] - c["x"], n["y"] - c["y"]) < STILL_MM and d < STILL_DEG:
                 return n
         return None
 
+    def _back_score(self, face):
+        p = _prep(face)
+        mid = _inner(self.back)
+        return max(float(cv2.matchTemplate(f, mid, cv2.TM_CCOEFF_NORMED).max()) for f in (p, cv2.rotate(p, cv2.ROTATE_180)))
+
+    def face_up(self, img, P, tz, cards, unfix=None):
+        """Face up or down by the card back's look (more sure than how blue a card is): learns the back
+        from the first clearly blue card, then each card is matched against it; one that hasn't moved
+        keeps its answer. Sets face and back (the match, 0-1) in place."""
+        if self.back is None:
+            blue = max((c for c in cards if c.get("blue", 0) >= BACK_LEARN), key=lambda c: c["blue"], default=None)
+            if blue is None:
+                return
+            f = flatten(img, P, tz, blue, unfix)
+            cv2.imwrite(str(LIB / "back.png"), f)
+            self.back = _prep(f)
+        faced = []
+        for c in cards:
+            was = self._still(c, self.faced)
+            if was:
+                c["face"], c["back"] = was["face"], was["back"]
+            else:
+                c["back"] = round(self._back_score(flatten(img, P, tz, c, unfix)), 2)
+                c["face"] = "down" if c["back"] >= BACK_SURE else "up"
+            faced.append({"x": c["x"], "y": c["y"], "angle": c["angle"], "face": c["face"], "back": c["back"]})
+        self.faced = faced
+
     def label(self, img, P, tz, cards, unfix=None):
         """Names the scene's face-up cards in place: card, score (and by: "cache"), from the
         cache; one that hasn't moved since it was named keeps its name without looking."""
         self.last = (img, P, tz, unfix, cards)
+        self.face_up(img, P, tz, cards, unfix)
         named = []
         for c in cards:
             if c.get("face") != "up":
@@ -189,6 +223,8 @@ class Cards:
 
     def forget(self):
         with self.lock:
+            (LIB / "back.png").unlink(missing_ok=True)
+            self.back, self.faced = None, []
             for f in self.index:
                 (LIB / f).unlink(missing_ok=True)
             self.index, self.faces, self.named = {}, {}, []

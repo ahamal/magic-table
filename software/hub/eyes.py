@@ -312,9 +312,12 @@ def upright_box(P, outline, tz, w, l, at, angle):
 # Nov 3 afternoon: 3.47 n - 1.04 (stacks of 1, 4, 5, 6). Nov 3 night, after the head marker swap and
 # recalibrating: 3.13 n - 1.74, a straight line through 1s (1.2-2.8 mm), 2s (3.4-4.9), 7s (19.5,
 # 20.5), a 9 (26.2) and a 10 (30.1): every one within 0.5 of its count (2.98 from the short ones alone
-# read big stacks 5% high).
+# read big stacks 5% high). Later, on counts the user confirmed: white stacks 3.20 n - 1.83 (1s, 2s, 7s,
+# an 8), red 3.45 n - 1.83 (a 9; this afternoon's red-heavy 3.47 agrees): a red chip's shaded side
+# stays red and counts in full, a white one's partly drops out as grey. red: that unit. sam: the same for SAM's outlines (unit, short), which come out a little
+# bigger than the colour patch the rule was fitted on (Nov 3: +0.5 mm on singles, +1.2 on 3s).
 KNOWN = (("deck", {"box": (63, 88)}),
-         ("chip", {"diameter": 40, "unit": 3.13, "short": 1.74}),
+         ("chip", {"diameter": 40, "unit": 3.20, "short": 1.83, "red": 3.45, "sam": (3.38, 1.38)}),
          ("card", {"flat": (63, 88), "height": 0.3}))
 
 
@@ -328,6 +331,24 @@ def count_raw(h, k=dict(KNOWN)["chip"]):
     return round((h + k.get("short", 0)) / k["unit"], 1)
 
 
+CHIP_MM = 3.3              # a chip, as the cup feels it: it touches a stack of n's top at about 3.3 n - 1.5
+PICK_IN, PLACE_ABOVE = 1.8, 0.6   # press this far below the top to lift; let go this far above it (agent/poker.md)
+SURE = 0.3                 # count_raw this near a whole number is that number; further, plan for the taller stack
+
+
+def cup_heights(raw):
+    """Where the cup goes for a stack whose count reads `raw`: pick_z to lift its top chip, place_z to
+    let go of one onto it. A borderline count (sure: false) is planned as the taller stack: the cup
+    then stops short of a lower one (the pick misses, try one chip lower) rather than pressing into
+    a taller one."""
+    n = max(1, round(raw))
+    sure = abs(raw - n) <= SURE
+    if not sure:
+        n = max(1, int(np.ceil(raw)))
+    top = CHIP_MM * n
+    return {"sure": sure, "pick_z": round(top - PICK_IN, 1), "place_z": round(top + CHIP_MM + PLACE_ABOVE, 1)}
+
+
 def known(name):
     n = name.lower()
     return next((dict(v, name=k) for k, v in KNOWN if k in n), None)
@@ -336,7 +357,7 @@ def known(name):
 def place(it, P, tz, diameter=None):
     """Corrects a found item's board place for its height, from its outline: a known thing (KNOWN)
     or anything with a given diameter. board becomes where it really stands; the flat footprint
-    stays in flat; height_mm, and count for a stack. A fit under UPRIGHT_FIT leaves it flat
+    stays in flat; height_mm, and for a stack count, count_raw and the cup's pick_z and place_z. A fit under UPRIGHT_FIT leaves it flat
     (fit says how good it was)."""
     b, k = it["board"], known(it["what"])
     if diameter:
@@ -362,8 +383,11 @@ def place(it, P, tz, diameter=None):
     it["board"] = {**b, **{k2: round(v, 1) if isinstance(v, float) else v for k2, v in new.items()}}
     it["height_mm"] = round(h, 1)
     if k.get("unit"):
+        if k.get("sam"):                               # place() fits SAM's outlines
+            k = {**k, "unit": k["sam"][0], "short": k["sam"][1]}
         it["count"] = count(h, k)
         it["count_raw"] = count_raw(h, k)
+        it.update(cup_heights(it["count_raw"]))
     it["pick"] = {"x": it["board"]["x"], "y": it["board"]["y"], "clear_mm": round(min(new["w"], new["h"]) / 2, 1)}
 
 

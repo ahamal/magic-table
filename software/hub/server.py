@@ -343,7 +343,8 @@ async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = 
     Known things (cards, decks, poker chips, by name) come placed for their height: an angled
     camera sees a tall thing's side, which stretches its flat footprint away from it and pulls the
     centre along, so find fits the solid of known size that matches the outline instead. Their
-    board is where they really stand, with height_mm, count (chips in a stack), fit (0-1) and the
+    board is where they really stand, with height_mm, count (chips in a stack; count_raw unrounded,
+    with the cup's pick_z and place_z for it, planned for the taller stack when not sure), fit (0-1) and the
     stretched footprint in flat. A fit under 0.85 (touching stacks, cut off) leaves board flat.
     diameter=<mm> does the same for any other round upright thing (a can, a cup). A low fit:
     touching things seen as one, or not a cylinder. ~2-3 s, ~3-5 s with height."""

@@ -16,8 +16,8 @@ CHIP = 40.0
 def fitted(n):
     """How tall cam 1's fit reads a stack of n (the count rule backwards): the height to draw a simulated
     stack at so that counting it tests the counting, not this calibration's sense of height."""
-    k = dict(eyes.KNOWN)["chip"]
-    return k["unit"] * n - k["short"]
+    unit, short = dict(eyes.KNOWN)["chip"]["sam"]     # these go through place(), SAM's path
+    return unit * n - short
 
 
 
@@ -80,6 +80,7 @@ class Known(unittest.TestCase):
     def test_chip_stack_counted(self):
         it = self.found("red poker chip", cylinder(CAM1, 60, 30, CHIP / 2, fitted(6)))
         self.assertEqual(it["count"], 6)
+        self.assertEqual(it["pick_z"], round(3.3 * 6 - 1.8, 1))
         self.assertEqual(it["pick"]["x"], it["board"]["x"])
 
     def test_card_stays_flat(self):

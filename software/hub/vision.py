@@ -724,7 +724,7 @@ class Vision:
                                      "height": float(z - tz), "cam": cam,
                                      "flipper": st.get("servo_now") if st else None,
                                      "moving": st.get("busy") if st else None}
-            scene["cards"] = find_cards(img, P, tz, found, fix, cam)
+            scene["cards"] = self._steady(find_cards(img, P, tz, found, fix, cam))
             if self.cards:
                 unfix = None if H is None else (lambda pts, Hi=np.linalg.inv(H): cv2.perspectiveTransform(
                     np.asarray(pts, float).reshape(-1, 1, 2), Hi).reshape(-1, 2))
@@ -744,6 +744,27 @@ class Vision:
         with self._lock:
             self.scene = scene
         return scene
+
+    CARD_HOLD_S = 1.0   # a card missed for up to this long is still there: one bad frame doesn't make it vanish
+
+    def _steady(self, cards):
+        """Cards over a few frames (2 a second): one missed for a moment is kept (held: true), and one
+        that was face down a moment ago stays face down through a one-frame "face up"."""
+        now, mem = time.time(), getattr(self, "_card_mem", [])
+        near = lambda a, b: math.hypot(a["x"] - b["x"], a["y"] - b["y"]) < 15
+        out, keep = [], []
+        for c in cards:
+            was = next((m for m in mem if near(m["card"], c)), None)
+            if was and c["face"] == "up" and now - was["down_at"] < self.CARD_HOLD_S:
+                c["face"] = "down"
+            keep.append({"card": c, "at": now, "down_at": now if c["face"] == "down" else (was or {}).get("down_at", 0)})
+            out.append(c)
+        for m in mem:
+            if now - m["at"] < self.CARD_HOLD_S and not any(near(m["card"], c) for c in cards):
+                out.append({**m["card"], "held": True})
+                keep.append(m)
+        self._card_mem = keep
+        return out
 
     def reanchor(self, use_camera=False):
         """After a GRBL reset: put the work coordinates back.
@@ -809,6 +830,70 @@ class Vision:
 
 # ---- cards ----
 
+BACK_HSV = ((95, 135), 35, 140)  # a card back's blue panel: hue, saturation over, brightness over (cam 1, Nov 3: backs read ~200; glare on the mat is bluish and ~97)
+BACK_MM = ((40, 70), (62, 92))   # its panel's size inside the white border (a card is 63 x 88; it reads 52 x 76, up to 64 x 84 when glare joins in)
+
+
+def _card_px(P, tz, c, grow=0.0):
+    """A lying card's outline in the picture (pixels), grown by `grow` mm."""
+    a = np.radians(c["angle"])
+    u = np.array([np.cos(a), np.sin(a)]) * (CARD[1] / 2 + grow)
+    v = np.array([-np.sin(a), np.cos(a)]) * (CARD[0] / 2 + grow)
+    m = np.array([c["x"], c["y"]])
+    return np.array([project(P, (*p, tz)) for p in (m - u - v, m - u + v, m + u + v, m + u - v)]).astype(np.int32)
+
+
+def _backs(hsv, P, tz, fix, cam):
+    """Face-down cards: each blue back panel of a card's size, even where cards touch."""
+    (h0, h1), smin, vmin = BACK_HSV
+    h, sat, val = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    m = ((h > h0) & (h < h1) & (sat > smin) & (val > vmin)).astype(np.uint8)
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))   # the back's printed pattern splits it
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    out = []
+    for cnt in cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]:
+        if cv2.contourArea(cnt) < 400:
+            continue
+        q = to_xy(P, fix(cnt.reshape(-1, 2)), tz).astype(np.float32)
+        (cx, cy), (w, hh), ang = cv2.minAreaRect(q)
+        short, long_ = sorted((w, hh))
+        if not (BACK_MM[0][0] < short < BACK_MM[0][1] and BACK_MM[1][0] < long_ < BACK_MM[1][1]):
+            continue
+        if cv2.contourArea(q) / (w * hh) < 0.7:
+            continue
+        if w < hh:
+            ang += 90
+        out.append({"x": float(cx), "y": float(cy), "angle": float(ang % 180), "w": CARD[0], "h": CARD[1],
+                    "face": "down", "blue": 1.0, "cam": cam})
+    return out
+
+
+def _split(cnt, shape, P, tz, fix):
+    """A bright patch much bigger than a card is cards touching (a row dealt close): cut it where it's
+    narrowest (watershed on the distance to its edge) into pieces; a card-sized patch stays whole."""
+    q = to_xy(P, fix(cnt.reshape(-1, 2)), tz).astype(np.float32)
+    (_, _), (w, h), _ = cv2.minAreaRect(q)
+    if max(w, h) < 1.4 * CARD[1] and min(w, h) < 1.4 * CARD[0]:
+        return [cnt]
+    x, y, bw, bh = cv2.boundingRect(cnt)
+    m = np.zeros((bh + 2, bw + 2), np.uint8)
+    cv2.drawContours(m, [cnt - (x - 1, y - 1)], -1, 255, -1)
+    d = cv2.distanceTransform(m, cv2.DIST_L2, 5)
+    sure = (d > 0.6 * d.max()).astype(np.uint8)               # each card's middle, apart from the others
+    n, markers = cv2.connectedComponents(sure)
+    if n <= 2:
+        return [cnt]
+    markers = markers + 1
+    markers[(m > 0) & (sure == 0)] = 0
+    markers = cv2.watershed(cv2.cvtColor(m, cv2.COLOR_GRAY2BGR), markers)
+    out = []
+    for k in range(2, n + 1):
+        cs, _ = cv2.findContours((markers == k).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cs:
+            out.append(max(cs, key=cv2.contourArea) + (x - 1, y - 1))
+    return out
+
+
 def find_cards(img, P, tz, markers, fix, cam):
     """Card-sized light rectangles on the dark board, in gantry mm."""
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -817,8 +902,13 @@ def find_cards(img, P, tz, markers, fix, cam):
         m = c.mean(axis=0)
         cv2.fillConvexPoly(mask, ((c - m) * 1.6 + m).astype(np.int32), 0)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    # face-down cards first: a back is a blue panel inside a white border; touching cards' borders run
+    # together, but each panel stays apart. Then cut them out, and what's left is the face-up cards.
+    cards = _backs(hsv, P, tz, fix, cam)
+    for c in cards:
+        cv2.fillConvexPoly(mask, _card_px(P, tz, c, 3.0), 0)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cards = []
+    contours = [p for c in contours for p in _split(c, mask.shape, P, tz, fix)]
     for cnt in contours:
         if cv2.contourArea(cnt) < 400:
             continue
@@ -838,5 +928,5 @@ def find_cards(img, P, tz, markers, fix, cam):
         if w < h:
             ang += 90  # angle of the long side
         cards.append({"x": float(cx), "y": float(cy), "angle": float(ang % 180), "w": float(short),
-                      "h": float(long_), "face": "down" if blue > 0.25 else "up", "cam": cam})
+                      "h": float(long_), "face": "down" if blue > 0.25 else "up", "blue": round(blue, 2), "cam": cam})
     return cards

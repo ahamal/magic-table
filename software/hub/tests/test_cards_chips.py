@@ -23,7 +23,7 @@ def fitted(n):
     """How tall cam 1's fit reads a stack of n (the count rule backwards): the height to draw a simulated
     stack at so that counting it tests the counting, not this calibration's sense of height."""
     k = dict(eyes.KNOWN)["chip"]
-    return k["unit"] * n - k["short"]
+    return k["red"] * n - k["short"]          # the stacks drawn here are red
 
 
 def face(seed):
@@ -102,6 +102,12 @@ class ChipsAndDecks(unittest.TestCase):
         img[cylinder(CAM1, 150, -100, 20, fitted(4)) > 0] = (40, 40, 200)   # near the hidden corner
         three = {k: v for k, v in MARKERS.items() if k != "3"}
         self.assertEqual([c["count"] for c in chips.Chips().find(img, CAM1, TZ, three, [])], [4])
+
+    def test_cup_heights(self):
+        self.assertEqual(eyes.cup_heights(7.1), {"sure": True, "pick_z": 21.3, "place_z": 27.0})
+        borderline = eyes.cup_heights(7.5)            # could be 8: planned as 8, never pressing into it
+        self.assertFalse(borderline["sure"])
+        self.assertEqual(borderline["pick_z"], round(3.3 * 8 - 1.8, 1))
 
     def test_deck_from_a_tall_box(self):
         img = self.picture()

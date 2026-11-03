@@ -12,6 +12,26 @@ How to run a hand of Texas hold'em at the Magic Table: what's poker-only lives h
 
 Park the head before every look (the notes say where): the Z bar hides chips behind it.
 
+## Looking: fastest first
+
+You know what's on a poker table, so never start with `/api/see` (Muse naming things, 5-7 s):
+
+1. **`/api/scene`, free, every half-second.** Cards (face-up ones named from the card cache), chip stacks (`count`, `count_raw`, `sure`, `pick_z`, `place_z`, `colour`) and decks. Most of a hand needs nothing else.
+2. **In doubt, `find` with the names above, straight away** (SAM, ~2-4 s): a stack that's `sure: false`, one that's missing (stacks touching, or next to Mate or the crane), a card the scene doesn't show (overlapping cards), or before a pick that matters. Ask only for what you're unsure of, one name a call (`what=white poker chip|white object`): fewer names, fewer things found, faster.
+3. **Still unsure:** Mate's high-effort count (below), or ask the people.
+
+## The camera makes mistakes: keep your own count
+
+What you see is a good guess, not the truth. **Keep your own record of the game** (what you dealt and where, each player's chips, what you moved into the pot) and use the scene to check it, not to replace it. When they disagree, look again with `find` for just that thing, then ask the people ("Is that one card or a few?"). Never act on one surprising reading. Mistakes seen so far:
+
+- **A single card read as a small deck** (Nov 3: the card at the far left came out "deck ~10", 5.2 mm, just past the 5 mm a deck needs; curled cards and the board's edges do this). A deck you didn't put there is a card.
+- **A deck of fewer than ~10 cards read as a card.**
+- **Deck size is ±3 cards**: use it for "about how many are left", never to deal by.
+- **A stack ±1 chip** when `count_raw` is near x.5 (`sure: false`), and more often near cam 1 (front left) and at the board's edges.
+- **Things vanish**: touching stacks, face-up cards touching each other (face-down ones are found by their backs), anything under the crane or Mate or a hand. Park the head and keep hands off before looking.
+- **Glare** (a lamp reflecting off the mat) can hide cards or join them up.
+- **A new face-up card** has no name for a second or two, until Muse reads it.
+
 ## Chips: where and how many, from cam 1
 
 `find` knows a chip is 40 × 3.3 mm and a deck 63 × 88: each stack and the deck come back with `board` where they really stand, `height_mm`, and for a stack **`count`**, the number of chips (it assumes they're stacked straight). Use `board` and `pick` as they are: no maths needed.
@@ -33,8 +53,9 @@ Tested Nov 2 (4 red chips): at 120 mm with a crop and `effort=low`, 4, right; fr
 
 ## Moving chips
 
-- **Pick:** cup over the stack's `pick`, down slowly (F600) to 3.3 × n − 1.8 mm (Z 1.5 for one chip; the cup's top is soft: it squashes), `grip` with the pump left on, lift.
-- **Place on a stack of n:** G1 to 3.3 × n + 3.3 + 0.6 mm (the stack's top plus the held chip, just above) at F1200, `drop`, Z 40.
+- **Heights come with each stack** in `/api/scene` `chips`: `pick_z` (press there to lift the top chip) and `place_z` (let go of a held chip there), from 3.3 mm a chip. When `sure` is false the count is borderline (`count_raw` near x.5) and they're planned for the taller stack: the cup stops short rather than pressing in; if the pick misses, try 3.3 mm lower. A chip lying alone may need Z 1.0 (Nov 3: one on a low spot didn't seal at 1.5).
+- **Pick:** cup over the stack's `x, y`, down slowly (F600) to `pick_z`, `grip` with the pump left on, peel at F1500 to 5 mm above, lift. Check it came up (`find/check`, or the stack's count dropped).
+- **Place:** G1 to the target stack's `place_z` at F1200, `drop`, Z 40. On the bare board: 3.9.
 - **Push the pot:** Mate with `check: false` is a fine bulldozer (see mate). Say it as you do it.
 
 ## Peeking at your own cards

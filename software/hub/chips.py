@@ -85,7 +85,8 @@ class Chips:
             w, h = sorted((w, h))
             if not (DECK_FLAT[0] * CARD[0] < w < DECK_FLAT[1] * CARD[0] and DECK_FLAT[0] * CARD[1] < h < DECK_FLAT[1] * CARD[1]):
                 continue
-            card = next((k for k in cards if abs(cx - k["x"]) < 5 and abs(cy - k["y"]) < 5), None)
+            # a deck's top is a card back too: the card finder takes it for a card, near its flat middle
+            card = next((k for k in cards if abs(cx - k["x"]) < 25 and abs(cy - k["y"]) < 25), None)
             at, area, was = _same(self.known_decks, c)
             if was == "new":
                 x, y, ang, hh, fit = eyes.upright_box(P, o, tz, CARD[0], CARD[1], (cx, cy), a % 180)
@@ -100,8 +101,8 @@ class Chips:
         return out
 
     def find(self, img, P, tz, markers, cards):
-        """The stacks on the mat: [{x, y, height_mm, count, count_raw, colour, fit}] (count_raw:
-        before rounding, so a borderline one shows). One colour a stack: a
+        """The stacks on the mat: [{x, y, height_mm, count, count_raw, sure, pick_z, place_z, colour, fit}]
+        (count_raw: before rounding, so a borderline one shows; pick_z, place_z: see eyes.cup_heights). One colour a stack: a
         white chip on red splits into its white top and a scrap of red side (a pale seam between),
         and the top alone fits as a short stack. markers: the board markers' {id: {x, y}}; cards:
         the scene's cards (cut out first)."""
@@ -144,8 +145,13 @@ class Chips:
                     blob = np.zeros(m.shape, np.uint8)
                     cv2.drawContours(blob, [c], -1, 1, -1)
                     r = float((red & (blob > 0)).sum()) / blob.sum()
-                    was = {"x": round(x + SHIFT[0], 1), "y": round(y + SHIFT[1], 1), "height_mm": round(hh, 1), "count": eyes.count(hh), "count_raw": eyes.count_raw(hh),
-                           "colour": "red" if r > .6 else "white" if r < .2 else "mixed", "fit": round(fit, 2)}
+                    colour = "red" if r > .6 else "white" if r < .2 else "mixed"
+                    k = dict(eyes.KNOWN)["chip"]
+                    k = {**k, "unit": k["red"] if colour == "red" else k["unit"]}   # red sides show in full
+                    raw = eyes.count_raw(hh, k)
+                    was = {"x": round(x + SHIFT[0], 1), "y": round(y + SHIFT[1], 1), "height_mm": round(hh, 1),
+                           "count": eyes.count(hh, k), "count_raw": raw, **eyes.cup_heights(raw),
+                           "colour": colour, "fit": round(fit, 2)}
             known.append((at, area, was))
             if was:
                 out.append(was)
