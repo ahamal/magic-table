@@ -22,7 +22,7 @@ You know what's on a poker table, so never start with `/api/see` (Muse naming th
 
 ## The camera makes mistakes: keep your own count
 
-What you see is a good guess, not the truth. **Keep your own record of the game** (what you dealt and where, each player's chips, what you moved into the pot) and use the scene to check it, not to replace it. When they disagree, look again with `find` for just that thing, then ask the people ("Is that one card or a few?"). Never act on one surprising reading. Mistakes seen so far:
+What you see is a good guess, not the truth. **Keep your own record of the game** (what you dealt and where, each player's chips, what you moved into the pot) and use the scene to check it, not to replace it. **When cards seem strange** (one missing, a deck you didn't put there, a wrong face, cards touching), **check with SAM**: park the head, then `find?what=playing card|white object` (add `ask=` to read them); it's slower but a second opinion. When they disagree, look again with `find` for just that thing, then ask the people ("Is that one card or a few?"). Never act on one surprising reading. Mistakes seen so far:
 
 - **A single card read as a small deck** (Nov 3: the card at the far left came out "deck ~10", 5.2 mm, just past the 5 mm a deck needs; curled cards and the board's edges do this). A deck you didn't put there is a card.
 - **A deck of fewer than ~10 cards read as a card.**
@@ -60,7 +60,7 @@ Tested Nov 2 (4 red chips): at 120 mm with a crop and `effort=low`, 4, right; fr
 
 ## Mate's three tricks
 
-Mate does the three things the crane can't: see a face-down card's face, turn a card, and flip one. Before any of them, **find Mate room**: with the scene (or `find` with the pieces' names if it's crowded), pick an empty spot with ~30 cm clear in front of Mate and ~15 cm behind, and drive Mate there (`/api/mate/goto`). Mate backs up after a peek or a flip, and a card or stack in the way gets pushed. Say what you're doing as you do it, and never say your own cards out loud.
+Mate does the three things the crane can't: see a face-down card's face, turn a card, and flip one. Before any of them, **keep ~30 mm in front of Mate clear** (very important: the flipper arm sticks out and sweeps there; nothing but the card being worked on). And **find Mate room**: with the scene (or `find` with the pieces' names if it's crowded), pick an empty spot with ~30 cm clear in front of Mate and ~15 cm behind, and drive Mate there (`/api/mate/goto`). Mate backs up after a peek or a flip, and a card or stack in the way gets pushed. Say what you're doing as you do it, and never say your own cards out loud.
 
 ### 1. Seeing a card (your hole cards)
 
@@ -85,6 +85,16 @@ The cup can't turn a card; Mate can. When a card is off by more than **~10°** (
 
 ### 3. The flip (the flop, turn and river)
 
-Mate's tested flip ([mate](mate.md); the notes have the runs, 14 for 14): Mate in an empty spot and squared to the card, **flipper to rest (20) first**, card face down 114 mm ahead of Mate's marker and centred, then at once flipper 20 -> 65 at speed 60 and drive 95 mm at wheel speed 640. The card stands up and tips over, landing face up ~100 mm further on. Back up 50 mm, then flipper to 20.
+**Same as the peek, but Mate keeps going instead of reading** (Nov 3, the user's recipe; first run worked, 27 s for all of it):
+1. Park the head at **(120, 230), Z 110**: at (190, 150) the gantry's wiring hangs over Mate's marker and cam 1 loses Mate; at (190, 230) the head hides the back-right board marker and goto refuses. Start from Mate's home (`/api/mate/home`). Read Mate's place from the scene, three times after it has stopped, not `assumed`.
+2. Pick the card (across at Z 110, straight down) and drop it from Z 6, 130 mm ahead of Mate's marker, long side along Mate's heading. Park again.
+3. At once: flipper to **~77°** (speed 30) and creep **28 mm** forward (wheel speed 200).
+4. Then drive on **67 mm** at full speed (800): 95 mm in all. The card stands up and tips over.
+5. At once: flipper to 20 (speed 30) and back up **60 mm**.
+6. **Mate home, then the card to its proper spot** (its place in the row, or wherever the game needs it): it lands ~100 mm past where it was placed. A flipped card may need the cup pressed to Z −2 to lift (−1.5 left it behind, Nov 3).
+
+Nov 3: the 5♦ landed face up ~100 mm past where it was placed, turned 2°, and the cache named it at once. Mate ends ~35 mm further forward than it started. Mate may drive over cards (it doesn't pick them up); the crane must mind the flipper sticking out in front.
+
+(The older Nov 2 flip, 14 for 14: card 114 mm ahead, flipper 20 -> 65 at speed 60 and drive 95 mm at wheel speed 640 together, back 50, flipper down.)
 
 Each flip turns the card 3-5° clockwise (seen from above). Past ~10°, straighten it on Mate's head (trick 2) before it goes in the row. Plan the board so a card lands where it'll be read, with the lane clear.
