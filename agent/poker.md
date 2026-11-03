@@ -58,18 +58,33 @@ Tested Nov 2 (4 red chips): at 120 mm with a crop and `effort=low`, 4, right; fr
 - **Place:** G1 to the target stack's `place_z` at F1200, `drop`, Z 40. On the bare board: 3.9.
 - **Push the pot:** Mate with `check: false` is a fine bulldozer (see mate). Say it as you do it.
 
-## Peeking at your own cards
+## Mate's three tricks
 
-Your hole cards lie face down, and no camera sees a face-down card's face. Mate peeks for you, the way a player lifts a corner:
+Mate does the three things the crane can't: see a face-down card's face, turn a card, and flip one. Before any of them, **find Mate room**: with the scene (or `find` with the pieces' names if it's crowded), pick an empty spot with ~30 cm clear in front of Mate and ~15 cm behind, and drive Mate there (`/api/mate/goto`). Mate backs up after a peek or a flip, and a card or stack in the way gets pushed. Say what you're doing as you do it, and never say your own cards out loud.
 
-1. Mate square to the card's spot, flipper down (20). The crane puts the card face down in front of Mate's face, its long side along Mate's heading, ~130-135 mm ahead of Mate's marker (114, as for flipping, is too close: the camera sees one pip). Drop it from 2 mm.
-2. Flipper up **slowly** (`speed=60`) to ~50-60°: the card's near edge lifts toward Mate's camera. At 40° only the middle shows; at 50° the corner index shows (Nov 2: a 5♣, upside down, the flipper blade across the middle).
-3. `GET hub/api/see?cam=mate&effort=low&ask=...` and **read the corner index yourself if you can**: Muse misread 5♣ as 6♣ twice from this view (low light, upside down).
-4. Flipper back to 20 slowly. The card stays on the flipper; Mate backing up drags it along (Nov 2: 45 mm, turned 15°), so look with cam 1 and pick it where it is, then put it back in its place.
-5. Never say your cards out loud.
+### 1. Seeing a card (your hole cards)
 
-Holding the card above Mate's camera with the cup instead: at Z 120 it's out of view; at Z 65 about 160 mm in front the whole face shows but too small to read reliably.
+No camera above sees a face-down card's face. Two ways, cheapest first:
 
-## Turning cards face up
+1. **Hold it up to Mate.** Pick the card (face down: its face now points down), carry it at Z 110 to ~160 mm in front of Mate's camera, lower to ~Z 65 (Nov 2: there the whole face shows; at Z 120 it's out of view), and `GET hub/api/see?cam=mate&effort=high&ask=Which playing card is this? Reply with JSON only: {"card": "5♣", "confidence": 0.9}`. `high` effort: at low effort it was too small to read. If the confidence is 0.8 or more, that's the card; put it back. **Not reliable (Nov 3):** five holds from 160 down to 80 mm and Z 65 to 50 gave 9♦ 0.7, 5♦ 0.85, 3♦ 0.65, 5♦ 0.8, 3♦ 0.7 for a 5♦: Mate's camera is too weak for a card held flat above it. Muse says 0.8 and is wrong, so a single hold proves nothing: go straight to the peek unless two holds agree.
+2. **Not sure: the peek.** Mate in an empty spot, **flipper down first** (20, slowly): a raised flipper once got a card pushed under Mate and run over.
+   - Place the card face down in front of Mate's face, long side along Mate's heading, ~130 mm ahead of Mate's marker. Carry it at Z 110 near Mate and lower only in front of it: a card hangs up to 44 mm past the cup, and **must not push Mate** (it has). Its near edge lands on the flipper's bent part, which sits a few mm up: don't press it into the flipper (Nov 3, lowered to Z 2: too hard). Come down slowly and drop it from just above that, ~Z 6.
+   - **Read Mate's place from the scene first**, three times after it has stopped, not `assumed` (Nov 3: a stale reading put the card 30 mm short and Mate peeked at nothing; Mate's own `/step` moves aren't counted in the assumed place, so after a peek it's wrong until the camera sees Mate again). Flipper up **gently** to **~77°** (user's tuning Nov 3: 70° read 5♦ at 0.85–0.9 but once 7♦; 80° read 5♦ 0.9 twice but was cutting close to the drop at ~90°) while Mate creeps **~28 mm** forward: the card rides up the flipper and leans its face toward the camera. **Tested Nov 3: `servo?angle=70&speed=30` and, at the same moment, forward 18 mm (375 half-steps, wheels at speed 200; now 28 mm): read 5♦ at 0.9 twice, right.** (Speed 60 looked too sudden; a 5 mm creep too little.) The combined move tripped Mate twice before working (it restarts: wait for it, check the flipper, retry): it doesn't happen every time. (Nov 2 read the corner at 50°; at 40° only the middle shows. Nov 3, 70° even with those faults: 5♦ read right twice, 0.95 and 0.9.)
+   - `see?cam=mate&effort=high&ask=...` as above. Muse once misread a 5♣ as 6♣ from a poor view: if it's not sure, peek again a little higher, or read the corner index yourself.
+   - **Drop the card off: flipper on up to ~90° (speed 30).** At about upright the card falls off flat, face down, in front of Mate (Nov 3: landed ~17 mm short of where it was placed, angle unchanged, and the scene saw it at once).
+   - Flipper back to 20 **slowly** (speed 30) **while** Mate backs up ~60 mm (more than it crept: the lowered arm sticks out in front and lies over the dropped card otherwise; 18 and 40 mm were both too little, Nov 3), both at once (the user's rule; one after the other leaves the card lying awkwardly). The card may come along (Nov 2: dragged 45 mm and turned 15°): look with the scene and pick it where it is, then put it back in its place.
 
-The flop, turn and river: Mate's flip ([mate](mate.md), "Flipping cards over"). It needs ~30 cm of clear lane ahead of Mate: plan the board so the cards land where they'll be read.
+### 2. Straightening a card on Mate's head
+
+The cup can't turn a card; Mate can. When a card is off by more than **~10°** (after a flip, or dealt crooked):
+
+1. Pick the card. Bring it over Mate **centred exactly on Mate's marker**, long side along Mate's heading, at Z 110 (`/api/tip`). Then down slowly with `/api/send` `G1 Z104.2 F600` (the hub's own moves go straight down over Mate at full speed): Mate's top is Z 103, so that's 1.2 above, as for any card. `drop`, up to Z 110.
+2. Turn Mate in place by the card's error (`/api/mate/goto` with Mate's own x, y and the new heading), slowly. The card turns with Mate.
+3. The card now hides Mate's marker, so the camera can't see Mate: the hub works the turn out from the wheel steps (Nov 1: within 0.3°). The card is still on the marker, which moved a little: the marker is 8.6 mm behind Mate's turning centre, so it swings round it. Take Mate's position from the scene (`mate`, `assumed: true`) and pick the card there: cup over the marker's x, y at Z 110, then `G1 Z101.5 F600` (the lowest the hub allows over Mate: a 1.5 mm press on its top), `grip`, up.
+4. Put the card back where it belongs. Its angle is the old one plus Mate's turn.
+
+### 3. The flip (the flop, turn and river)
+
+Mate's tested flip ([mate](mate.md); the notes have the runs, 14 for 14): Mate in an empty spot and squared to the card, **flipper to rest (20) first**, card face down 114 mm ahead of Mate's marker and centred, then at once flipper 20 -> 65 at speed 60 and drive 95 mm at wheel speed 640. The card stands up and tips over, landing face up ~100 mm further on. Back up 50 mm, then flipper to 20.
+
+Each flip turns the card 3-5° clockwise (seen from above). Past ~10°, straighten it on Mate's head (trick 2) before it goes in the row. Plan the board so a card lands where it'll be read, with the lane clear.

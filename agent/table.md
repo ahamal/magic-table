@@ -21,7 +21,7 @@ How to drive the gantry and the gripper safely and well. The hub enforces the ha
 | Board bounds | The cup stays **inside the rectangle between the four board markers** (not over them). Moves outside are refused; X/Y jogs stop at the edge. `POST /api/calibration/bounds` re-measures them (do it after moving the markers or the board); it also re-centres X/Y 0, 0 on the rectangle. |
 | Z range | **−1 to 150.** −1 is a 1 mm squeeze into the board for a grip; 150 is the top of travel. Moves outside are refused; jogs stop at them. |
 | Travel height | **Z 110.** Clears Mate (105 mm to the top of its corner caps). |
-| Mate | Never lower the cup onto Mate below Z 110, and never end a move over it below Z 110 (refused). Moves that cross Mate below 110 go up first. A sideways bump is survivable; pressing down into it isn't. **Carrying a card, Mate is in the card's way too:** the hub keeps the *cup* 40 mm off Mate, but a card hangs up to 44 mm past the cup. Near Mate, carry cards at Z 110, or keep the card's far edge 10 mm from Mate. |
+| Mate | Over Mate the cup goes no lower than Mate's top less a gentle 1.5 mm press: **Z 101.5** (Mate's top is Z 103: a card can be put on it and picked off it, see the poker guide). Lower ends are refused. Moves that cross Mate below 110 go up first. A sideways bump is survivable; pressing down into it isn't. **Carrying a card, Mate is in the card's way too:** the hub keeps the *cup* 40 mm off Mate, but a card hangs up to 44 mm past the cup. Near Mate, carry cards at Z 110, or keep the card's far edge 10 mm from Mate. |
 | Raw G-code | `/api/send` isn't checked against any of this. Use `/api/tip`, `/api/move`, `/api/jog`. |
 
 ## Gripper
@@ -35,7 +35,7 @@ How to drive the gantry and the gripper safely and well. The hub enforces the ha
 
 **Pick a card** (thin, flat, smooth)
 1. `GET /api/scene` → the card's `x, y`.
-2. `POST /api/tip {x, y, z: 3}`: rapid to just above it (stay at travel height first if Mate is anywhere near the path).
+2. Across at height, then straight down: `G0 Z110`, `POST /api/tip {x, y, z: 110}`, then `G0 Z3` just above it. Never lower first and then cross at a slant (the user, Nov 3: the best way anywhere is through the high space).
 3. `G1 Z-1.5 F600`: the cup touches and squeezes (its top is soft: 2 mm in is fine). On a stack of n cards add 0.3 × (n − 1). If the card stays behind, go to −2 (only via `/api/send`), and suspect Z: see below.
 4. `grip?pump_s=1`. One second of pumping is enough; the sealed line holds ~20 s (a domino held 15 s after 4 s of pumping).
 
