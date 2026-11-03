@@ -21,8 +21,8 @@ Muse Voice Transcribe on the hub). Contribute with say (spoken), chat_post
 (typed), mate_gesture (Mate). Track highest chat id, poll after=that id.
 
 Safety: by default asks a human on the Pi console to confirm the FIRST
-motion tool call. Hub limits still apply either way. Requires openai
-package (already in hub requirements.txt).
+motion tool call (STOP and unlock never wait). Hub limits still apply
+either way. Requires openai package (already in hub requirements.txt).
 """
 import argparse
 import json
@@ -32,7 +32,8 @@ import sys
 
 MODEL = "muse-spark-1.3"
 API_URL = "https://api.meta.ai/v1"
-MOTION_TOOLS = {"move_tip", "move_head", "jog", "gripper", "mate_goto", "mate_home", "mate_look", "mate_gesture", "home_gantry", "stop_gantry"}
+# STOP is never gated: an emergency stop mustn't wait for a y/N
+MOTION_TOOLS = {"move_tip", "move_head", "jog", "gripper", "mate_goto", "mate_home", "mate_look", "mate_move", "mate_gesture"}
 
 
 class MCPClient:
@@ -82,8 +83,11 @@ def main(argv=None):
     ap.add_argument("--mcp", default=None)
     ap.add_argument("--hub-url", default=os.environ.get("MAGIC_TABLE_HUB_URL", "http://localhost:8000"))
     ap.add_argument("--model", default=MODEL)
+    ap.add_argument("--api-url", default=API_URL)
     ap.add_argument("--max-turns", type=int, default=40)
     ap.add_argument("--by", default="Muse")
+    ap.add_argument("--effort", default="low", choices=("minimal", "low", "medium", "high"),
+                    help="the agent's own reasoning (vision calls choose theirs per tool)")
     ap.add_argument("--auto", action="store_true", help="skip first-motion human gate (rehearsed demo only)")
     args = ap.parse_args(argv)
     key = os.environ.get("MODEL_API_KEY")
@@ -112,7 +116,8 @@ def main(argv=None):
         except Exception as e:
             print(f"warning: could not read notes: {e}", file=sys.stderr)
         system = "\n\n".join(parts)
-        system += (f"\n\nYou speak as {args.by}. Before any motion, read get_scene and get_calibration. "
+        system += (f"\n\nYou speak as {args.by}: pass by='{args.by}' to say, chat_post, see and find. "
+                   "Before any motion, read get_scene and get_calibration; if needs_reanchor, unlock then reanchor. "
                    "Park the gantry head before see/find. Keep your own game state; verify picks with find_check. "
                    "Ask humans with say when stuck, then wait with chat_poll. Transcript: chat_poll IS your "
                    "subscription to player speech (final transcripts only, via Muse Voice Transcribe on the hub -- "
@@ -121,18 +126,18 @@ def main(argv=None):
                    "highest chat id you have seen and poll with after=that id, wait=30, in a loop while waiting "
                    "for players -- an empty poll is not the end of the game.")
         fn_tools = [{"type": "function", "name": t["name"], "description": t.get("description", ""), "parameters": t["inputSchema"]} for t in tools]
-        api = OpenAI(base_url=API_URL, api_key=key)
+        api = OpenAI(base_url=args.api_url, api_key=key)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": args.instruction}]
         gated = False
         for turn in range(args.max_turns):
-            resp = api.responses.create(model=args.model, reasoning={"effort": "minimal"}, tools=fn_tools, input=messages)
+            resp = api.responses.create(model=args.model, reasoning={"effort": args.effort}, tools=fn_tools, input=messages)
             calls = [o for o in resp.output if getattr(o, "type", None) == "function_call"]
             if resp.output_text:
                 print(f"[turn {turn}] {resp.output_text}")
             if not calls:
                 print("Done (no more tool calls).")
                 return 0
-            messages.append({"role": "assistant", "content": resp.output})
+            messages += resp.output   # the model's own items (reasoning, calls) go back as they came
             for call in calls:
                 try:
                     call_args = json.loads(call.arguments or "{}")

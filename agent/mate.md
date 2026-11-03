@@ -13,6 +13,7 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 | `POST /servo?angle=&speed=` | The flipper (degrees). |
 | `POST /screen` | Show frames on the face (128×64, 1 bit/pixel, 1024 bytes a frame, up to 64 frames, `X-FPS`, `X-Repeat`). |
 | `GET /capture` | A 640×480 JPEG from Mate's camera, ~1 s. |
+| **`POST hub/api/mate/move {servo, servo_speed, turn, drive, wheel_speed}`** | **Use this for recipes (the flip, the peek).** One step: the flipper to `servo`° at `servo_speed` (required, capped at 360), starting at once and running while Mate turns `turn`° and drives `drive` mm (+ forward, ≤ 200) at `wheel_speed` (half-steps/s, 800 full, the peek creeps at 200). Returns when both are done. Unlike `/step`, the hub counts it into where it thinks Mate is. No camera check of the way. |
 
 ## Driving
 
@@ -23,7 +24,7 @@ Mate is a small wooden robot on the board: two wheels, a flipper arm, a face scr
 - **Home:** `POST hub/api/mate/home` parks Mate at its home spot: on this build the middle of the far margin, facing the players (the notes have it). Park the gantry head where the notes say first (this build: the back right corner): parked elsewhere, the Z bar or its wires can hide Mate's marker from the camera. `GET hub/api/mate/home` says where that is; `POST hub/api/mate/home/set` saves a new one (no body = where Mate is now). Send Mate home when it's done helping, and before calibrating the cameras.
 
 - **Signs:** forward = `s1` −, `s2` +. Backward = `s1` +, `s2` −. Turn left (anticlockwise from above) = `+, +`. Turn right = `−, −`.
-- **Where it is:** Mate doesn't know. The hub does: `GET hub/api/scene` → `mate {x, y, heading}` (heading = the way its face points, degrees anticlockwise from the gantry's +X), from cam 1 seeing the marker on its top. **When cam 1 can't see it** (window glare, the gantry's cable lying over it, the Z bar in the way), the hub keeps where it last saw it plus every move the hub made since, marked `assumed: true`, and drives on that until the camera finds it again. It's kept across hub restarts. Moves you make with Mate's own API (`/step`) aren't counted: after those, the assumed place is wrong until it's seen again.
+- **Where it is:** Mate doesn't know. The hub does: `GET hub/api/scene` → `mate {x, y, heading}` (heading = the way its face points, degrees anticlockwise from the gantry's +X), from cam 1 seeing the marker on its top. **When cam 1 can't see it** (window glare, the gantry's cable lying over it, the Z bar in the way), the hub keeps where it last saw it plus every move the hub made since, marked `assumed: true`, and drives on that until the camera finds it again. It's kept across hub restarts. Moves you make with Mate's own API (`/step`) aren't counted: after those, the assumed place is wrong until it's seen again. `hub/api/mate/move` is counted.
 - **Calibrate it first** (each build differs): drive a known number of half-steps forward and turn in place, measure with `/api/scene` before and after (average a few reads), and write mm per half-step and degrees per half-step (left and right separately) to the notes. This build's numbers are in the notes.
 - **Stay on the board.** There's no edge sensor. Keep moves short (one call is at most ~20 cm or ~150°) and check `/api/scene` between them.
 
@@ -99,7 +100,7 @@ Tested Nov 2 on a stack of 4 red chips: from home (~300 mm) Muse said "about 3";
 - **Flipping cards over** (tested: 14 flips, all flat, either way over; ~4 s plus the place):
   1. Mate square to the card, and the flipper **lowered to rest (20°) first**: a card placed while the hand is up just gets pushed (and run over). The card's long side along Mate's heading.
   2. The crane places the card just in front of Mate's face so its near edge rests on the flipper's bent part (it lies on the table there). This build: card centre ~114 mm ahead of Mate's marker, centred left-right (the notes have the latest).
-  3. **At the same time:** flipper to 65° (`speed=60`) and drive forward ~95 mm (wheels at full speed). The near edge lifts, the card stands up, then tips over. ~4 s. It lands flipped ~10 cm further on, turned 3–5° clockwise (from above). Curving Mate during the push doesn't change that.
+  3. **At the same time:** flipper to 65° (`speed=60`) and drive forward ~95 mm (wheels at full speed): `POST hub/api/mate/move {servo: 65, servo_speed: 60, drive: 95}`. The near edge lifts, the card stands up, then tips over. ~4 s. It lands flipped ~10 cm further on, turned 3–5° clockwise (from above). Curving Mate during the push doesn't change that.
   4. Back up ~50 mm **before** lowering the flipper (or it comes down on the card), then flipper to 20°.
   5. Look where it landed before picking it. The small turn adds up if you flip the same card again and again (Mate squares to it each time): re-square it once it's ~20° off.
 - Keep Mate's turning centre at least ~2 cm inside the cup's board bounds, or a card that drifts on its top can end up out of reach.

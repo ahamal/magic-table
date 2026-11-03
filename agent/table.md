@@ -19,7 +19,7 @@ How to drive the gantry and the gripper safely and well. The hub enforces the ha
 | | |
 |---|---|
 | Board bounds | The cup stays **inside the rectangle between the four board markers** (not over them). Moves outside are refused; X/Y jogs stop at the edge. `POST /api/calibration/bounds` re-measures them (do it after moving the markers or the board); it also re-centres X/Y 0, 0 on the rectangle. |
-| Z range | **−1 to 150.** −1 is a 1 mm squeeze into the board for a grip; 150 is the top of travel. Moves outside are refused; jogs stop at them. |
+| Z range | **−2 to 150.** Below 0 is a squeeze into the board for a grip (the cup's top is soft: −1.5 picks a card, −2 a stubborn one); 150 is the top of travel. Moves outside are refused; jogs stop at them. |
 | Travel height | **Z 110.** Clears Mate (105 mm to the top of its corner caps). |
 | Mate | Over Mate the cup goes no lower than Mate's top less a gentle 1.5 mm press: **Z 101.5** (Mate's top is Z 103: a card can be put on it and picked off it, see the poker guide). Lower ends are refused. Moves that cross Mate below 110 go up first. A sideways bump is survivable; pressing down into it isn't. **Carrying a card, Mate is in the card's way too:** the hub keeps the *cup* 40 mm off Mate, but a card hangs up to 44 mm past the cup. Near Mate, carry cards at Z 110, or keep the card's far edge 10 mm from Mate. |
 | Raw G-code | `/api/send` isn't checked against any of this. Use `/api/tip`, `/api/move`, `/api/jog`. |
@@ -35,19 +35,19 @@ How to drive the gantry and the gripper safely and well. The hub enforces the ha
 
 **Pick a card** (thin, flat, smooth)
 1. `GET /api/scene` → the card's `x, y`.
-2. Across at height, then straight down: `G0 Z110`, `POST /api/tip {x, y, z: 110}`, then `G0 Z3` just above it. Never lower first and then cross at a slant (the user, Nov 3: the best way anywhere is through the high space).
-3. `G1 Z-1.5 F600`: the cup touches and squeezes (its top is soft: 2 mm in is fine). On a stack of n cards add 0.3 × (n − 1). If the card stays behind, go to −2 (only via `/api/send`), and suspect Z: see below.
+2. Across at height, then straight down: `POST /api/move {z: 110}`, `POST /api/tip {x, y, z: 110}`, then `POST /api/move {z: 3}` just above it. Never lower first and then cross at a slant (the user, Nov 3: the best way anywhere is through the high space).
+3. `POST /api/move {z: -1.5, feed: 600}`: the cup touches and squeezes (its top is soft: 2 mm in is fine). On a stack of n cards add 0.3 × (n − 1). If the card stays behind, go to −2, and suspect Z: see below.
 4. `grip?pump_s=1`. One second of pumping is enough; the sealed line holds ~20 s (a domino held 15 s after 4 s of pumping).
 
 **If cards stop coming up, check Z first.** Nov 2 Z 0 had crept ~1 mm above the board, so −1.5 barely touched and cards stayed behind. Lower the cup over a card 0.5 mm at a time until a person says it touches, then `POST /api/calibration/table` (Zero Z). That fixed it at once.
-5. **Peel off at F1500** (`G1 Z5 F1500`), then rapid up to **Z 40** and move. A faster peel (F2000) left every card behind: the seal isn't strong enough yet to yank it.
+5. **Peel off at F1500** (`POST /api/move {z: 5, feed: 1500}`), then rapid up to **Z 40** (`{z: 40}`, no feed) and move. A faster peel (F2000) left every card behind: the seal isn't strong enough yet to yank it.
 
 **Place a card**
 1. `POST /api/tip {x, y, z: 5}` (rapid, from Z 40).
-2. `G1` at F1200 to **1.2 mm above whatever it lands on** (the board: Z 1.2; on a stack of n cards: 1.2 + 0.3 × n).
+2. `POST /api/move {z: …, feed: 1200}` to **1.2 mm above whatever it lands on** (the board: Z 1.2; on a stack of n cards: 1.2 + 0.3 × n).
 3. `drop`, then rapid up to Z 40 before moving away. Getting close before letting go keeps the card from sliding or turning.
 
-**Keep it fast, but check.** Rapid (`G0`) in clear air, slow feed only for the last few mm. Don't sync between steps: GRBL runs the queue in order, and gripper commands wait for the motion before them. A pick and place takes **~7.5 s**. Don't stop for photos mid-carry (it eats the 20 s hold); look after the drop. When trying anything new, check the first card before doing a batch.
+**Keep it fast, but check.** Rapid (no `feed`) in clear air, slow feed only for the last few mm. Don't sync between steps: GRBL runs the queue in order, and gripper commands wait for the motion before them. A pick and place takes **~7.5 s**. Don't stop for photos mid-carry (it eats the 20 s hold); look after the drop. When trying anything new, check the first card before doing a batch.
 
 **Stack cards neatly.** The cup can't rotate a card: a card keeps the angle it was picked at. Pick a card whose `angle` is within a few degrees of the one it goes onto, and put its center on the other's center. Expect ~2–4 mm and the angle difference of misalignment.
 

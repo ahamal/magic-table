@@ -7,7 +7,7 @@ docs/architecture.md ("Only the hub calls Mate once the table is assembled")
 and it keeps the safety layer between the model and the hardware.
 
 Files in software/agent/:
-- mcp_server.py -- stdlib-only MCP server over stdio, 27 tools. Run on the Pi: `python3 mcp_server.py` (hub at http://localhost:8000). MAGIC_TABLE_HUB_URL overrides it. --list-tools prints tools without a hub.
+- mcp_server.py -- stdlib-only MCP server over stdio, 28 tools. Run on the Pi: `python3 mcp_server.py` (hub at http://localhost:8000). MAGIC_TABLE_HUB_URL overrides it. --list-tools prints tools without a hub.
 - agent_runner.py -- minimal Muse Spark loop over that MCP server. Needs MODEL_API_KEY (Pi only, already in ~/hub/.env for STT) and openai (already in hub requirements).
 - test_mcp.py -- smoke test against a mock hub, no Pi/robot. Run: `python3 test_mcp.py`.
 - mcp_config.example.json -- example stdio MCP client config.
@@ -31,10 +31,26 @@ python3 agent/agent_runner.py --instruction "Deal a Texas hold'em hand for two p
 
 ## What is NOT exposed, on purpose
 
-send_gcode / raw G-code, direct Mate /step / /servo / /screen, GRBL settings,
-full recalibration, delete_chat. All would bypass board bounds, Z limits,
-travel height, Mate no-go zone, or Mate pose tracking. The MCP server
-refuses them before any hub call.
+send_gcode / raw G-code, homing ($H), direct Mate /step / /servo / /screen,
+GRBL settings, full recalibration, delete_chat. All would bypass board bounds,
+Z limits, travel height, Mate no-go zone, or Mate pose tracking. The MCP
+server refuses them before any hub call.
+
+- **No homing:** this build has no limit switches; `$H` would drive the axes
+  into the frame looking for them. After a reset or alarm: `unlock` (sends
+  exactly `$X`, nothing else), then `reanchor`.
+- **Mate's flipper and wheels** go through the hub's `/api/mate/move`
+  (`mate_move`): a servo speed is required and capped at 360, drives are at
+  most 200 mm, and the hub counts the move into Mate's assumed place, which
+  Mate's own `/step` doesn't. That's what the flip and the peek use.
+- **Card picks:** the hub allows Z down to -2 (the recipes pick at -1.5, -2
+  for a stubborn card), with straight up/down moves at a feed through
+  `move_head` (z only).
+- **No diagonals:** `move_tip` with a z rises to the travel height if it's
+  lower, crosses, then goes straight down (`direct=true` for a nudge of a few
+  mm at the current height).
+- **chat_post** posts under the agent's own name; it refuses `player` and
+  `mate`, so the agent can't read its own notes back as players' words.
 
 ## Transcript: keep it, poll it, do not build a second subscription
 

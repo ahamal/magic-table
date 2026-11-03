@@ -13,9 +13,13 @@ Design (see ``agent/README.md`` and ``docs/architecture.md``):
   Mate is driven only through the hub (``/api/mate/*``), so the hub's
   safety layer -- board bounds, Z limits, travel height, Mate no-go zone,
   camera-checked paths -- stays between the model and the hardware.
-* There is deliberately NO tool for ``/api/send`` (raw G-code, unchecked),
-  no tool for GRBL settings, no full recalibration, and no direct Mate
-  ``/step`` / ``/servo`` / ``/screen`` tool. Those would bypass the hub.
+* There is deliberately NO tool for ``/api/send`` (raw G-code, unchecked;
+  ``unlock`` sends exactly ``$X`` and nothing else), no homing (``$H``: this
+  build has no limit switches, so homing would drive the axes into the
+  frame), no tool for GRBL settings, no full recalibration, and no direct
+  Mate ``/step`` / ``/servo`` / ``/screen`` tool. Mate's flipper and wheels
+  go through the hub's ``/api/mate/move``, which caps the flipper speed and
+  keeps the hub's idea of where Mate is right.
 * Vision is tiered, exactly as the hub already implements it in
   ``software/hub/eyes.py`` (see the audit in ``MCP_README.md``):
     - ``get_scene``: free OpenCV scene, no cloud call, every ~0.5 s.
@@ -199,24 +203,24 @@ def _t_cal(hub, a):
     return _text(hub.get("/api/calibration"))
 
 
-@tool("reanchor", "After a GRBL reset: restore work coordinates from the saved position. camera=true only when the head really moved.", _schema({"camera": {"type": "boolean"}}))
+@tool("reanchor", "After a GRBL reset, once unlocked: restore work coordinates from the saved position. camera=true only when the head really moved (skipped steps, moved by hand).", _schema({"camera": {"type": "boolean"}}))
 def _t_reanchor(hub, a):
     return _text(hub.post("/api/calibration/reanchor", query={"camera": "true" if a.get("camera") else None}))
 
 
-@tool("see", "TIER 2 vision (Muse Spark, ~2 s): what KINDS of loose things are on the board, with counts and a fallback '<colour> object' name for find. Park the gantry head first -- the Z bar hides things and the hub does not warn you. effort defaults to minimal; use high only for Mate-camera close-ups.", _schema({"cam": {"type": "string"}, "ask": {"type": "string"}, "effort": {"type": "string", "enum": list(EFFORTS)}}))
+@tool("see", "TIER 2 vision (Muse Spark, ~2 s): what KINDS of loose things are on the board, with counts and a fallback '<colour> object' name for find. Park the gantry head first -- the Z bar hides things and the hub does not warn you. effort defaults to minimal; use high only for Mate-camera close-ups.", _schema({"cam": {"type": "string"}, "ask": {"type": "string"}, "effort": {"type": "string", "enum": list(EFFORTS)}, "by": {"type": "string"}}))
 def _t_see(hub, a):
-    return _text(hub.get("/api/see", {"cam": _cam(a.get("cam", "1")), "ask": a.get("ask"), "effort": _effort(a.get("effort"))}))
+    return _text(hub.get("/api/see", {"cam": _cam(a.get("cam", "1")), "ask": a.get("ask"), "effort": _effort(a.get("effort")), "by": a.get("by")}))
 
 
-@tool("find", "TIER 3 vision (SAM 3.1, ~3-6 s): WHERE each thing is, in board mm, with pick {x, y, clear_mm}, on_board, and (for cards/decks/chips) real place/height/count. Pass names from see, with fallbacks after '|', e.g. 'playing card|white object'. SAM has no confidence scores and is fussy about names; the hub's Muse Spark verify drops robot parts (cup as plate, wheel as knife) -- matches >60% inside the robot are dropped unless Muse keeps them, only first 12 matches are numbered. Park the head first. cam=mate gives pixels only, never board mm.", _schema({"what": {"type": "string"}, "cam": {"type": "string"}, "ask": {"type": "string"}, "effort": {"type": "string", "enum": list(EFFORTS)}, "height": {"type": "boolean"}, "diameter": {"type": "number"}}, ["what"]))
+@tool("find", "TIER 3 vision (SAM 3.1, ~3-6 s): WHERE each thing is, in board mm, with pick {x, y, clear_mm}, on_board, and (for cards/decks/chips) real place/height/count. Pass names from see, with fallbacks after '|', e.g. 'playing card|white object'. SAM has no confidence scores and is fussy about names; the hub's Muse Spark verify drops robot parts (cup as plate, wheel as knife) -- matches >60% inside the robot are dropped unless Muse keeps them, only first 12 matches are numbered. Park the head first. cam=mate gives pixels only, never board mm.", _schema({"what": {"type": "string"}, "cam": {"type": "string"}, "ask": {"type": "string"}, "effort": {"type": "string", "enum": list(EFFORTS)}, "height": {"type": "boolean"}, "diameter": {"type": "number"}, "by": {"type": "string"}}, ["what"]))
 def _t_find(hub, a):
-    return _text(hub.get("/api/find", {"what": a["what"], "cam": _cam(a.get("cam", "1")), "ask": a.get("ask"), "effort": _effort(a.get("effort")), "height": "true" if a.get("height") else None, "diameter": a.get("diameter")}))
+    return _text(hub.get("/api/find", {"what": a["what"], "cam": _cam(a.get("cam", "1")), "ask": a.get("ask"), "effort": _effort(a.get("effort")), "height": "true" if a.get("height") else None, "diameter": a.get("diameter"), "by": a.get("by")}))
 
 
-@tool("find_check", "After a pick, with the item lifted: did item <id> of the LAST find leave its spot? gone=true means it came up (change > 0.35). gone=false: check Z first, then re-zero.", _schema({"id": {"type": "integer"}}, ["id"]))
+@tool("find_check", "After a pick, with the item lifted: did item <id> of the LAST find leave its spot? gone=true means it came up (change > 0.35). gone=false: check Z first, then re-zero.", _schema({"id": {"type": "integer"}, "by": {"type": "string"}}, ["id"]))
 def _t_check(hub, a):
-    return _text(hub.get("/api/find/check", {"id": int(a["id"])}))
+    return _text(hub.get("/api/find/check", {"id": int(a["id"]), "by": a.get("by")}))
 
 
 @tool("get_cards", "Face-up cards, named: cache first (ms, no API, score>=0.75 margin>=0.08), Muse Spark only for unknown cards, cached only at confidence >= 0.9. Face-down cards are never named. Treat Muse confidence as a hint, not proof -- 0.8 has been wrong on Mate-camera reads.", _schema({"effort": {"type": "string", "enum": list(EFFORTS)}}))
@@ -232,24 +236,40 @@ def _t_capture(hub, a):
     jpg = hub.get("/api/capture", {"cam": cam}, raw=True)
     return [{"type": "image", "data": base64.b64encode(jpg).decode(), "mimeType": "image/jpeg"}], False
 
-@tool("move_tip", "Put the CUP TIP (not the head) at board x, y, optionally at height z (cup height above the board, mm). Use for picks/places. Hub enforces board bounds, Z -1..150, travel height 110 over Mate. Go across at height, then straight down.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "feed": {"type": "number"}}, ["x", "y"]))
+@tool("move_tip", "Put the CUP TIP (not the head) at board x, y, optionally at height z (cup height above the board, mm). Never moves diagonally: with z, it rises to the travel height (110) if lower, crosses, then goes straight down to z. direct=true crosses at the current height instead, for a nudge of a few mm. feed applies to the last (vertical) part. Hub enforces board bounds, Z -2..150, and Mate.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "feed": {"type": "number"}, "direct": {"type": "boolean"}}, ["x", "y"]))
 def _t_tip(hub, a):
-    body = {"x": _num(a["x"], "x", -400, 400), "y": _num(a["y"], "y", -400, 400)}
-    if a.get("z") is not None:
-        body["z"] = _num(a["z"], "z", -1, 150)
-    if a.get("feed") is not None:
-        body["feed"] = _num(a["feed"], "feed", 1, 12000)
-    return _text(hub.post("/api/tip", body))
+    xy = {"x": _num(a["x"], "x", -400, 400), "y": _num(a["y"], "y", -400, 400)}
+    z = _num(a["z"], "z", -2, 150) if a.get("z") is not None else None
+    feed = _num(a["feed"], "feed", 1, 12000) if a.get("feed") is not None else None
+    steps = []
+    if z is not None and not a.get("direct"):
+        # across high, then straight down: never lower first and then cross at a slant
+        travel = hub.get("/api/calibration").get("travel_z") or 110
+        now = (hub.get("/api/status").get("WPos") or [0, 0, 0])[2]
+        if now < max(travel, z):
+            steps.append(("/api/move", {"z": max(travel, z)}))
+    steps.append(("/api/tip", dict(xy)))
+    if z is not None:
+        steps.append(("/api/tip", {**xy, "z": z, **({"feed": feed} if feed else {})}))
+    elif feed:
+        steps[-1][1]["feed"] = feed
+    replies = []
+    for path, body in steps:
+        r = hub.post(path, body)
+        replies.append(r)
+        if str(r.get("reply", "")).startswith("error"):
+            return [{"type": "text", "text": json.dumps({"steps": replies}, indent=2)}], True
+    return _text({"steps": replies})
 
 
-@tool("move_head", "Move the HEAD MARKER (GRBL position), not the cup. Prefer move_tip for board work; use this for parking the head out of the cameras' way.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "feed": {"type": "number"}}))
+@tool("move_head", "Move the HEAD MARKER (GRBL position), not the cup. Prefer move_tip for board work; use this for parking the head out of the cameras' way, and for straight up/down moves at a feed (z only: a card pick is z=-1.5 feed=600, the peel z=5 feed=1500). No feed = rapid.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "feed": {"type": "number"}}))
 def _t_move(hub, a):
     body = {}
     for k in ("x", "y"):
         if a.get(k) is not None:
             body[k] = _num(a[k], k, -400, 400)
     if a.get("z") is not None:
-        body["z"] = _num(a["z"], "z", -1, 150)
+        body["z"] = _num(a["z"], "z", -2, 150)
     if a.get("feed") is not None:
         body["feed"] = _num(a["feed"], "feed", 1, 12000)
     if not body:
@@ -272,12 +292,12 @@ def _t_grip(hub, a):
     return _text(hub.post(f"/api/gripper/{act}", query=q))
 
 
-@tool("home_gantry", "GRBL homing ($H). Use after a reset / at start, then reanchor. This homes the gantry, it is not Mate's home.", _schema({}))
-def _t_home(hub, a):
-    return _text(hub.post("/api/home"))
+@tool("unlock", "Unlock GRBL after a reset or an alarm (sends $X, nothing else). Then reanchor before moving. There is no homing: this build has no limit switches.", _schema({}))
+def _t_unlock(hub, a):
+    return _text(hub.post("/api/send", {"line": "$X"}))
 
 
-@tool("stop_gantry", "STOP: feed hold, then reset. After a STOP, reanchor before moving again.", _schema({}))
+@tool("stop_gantry", "STOP: feed hold, then reset. After a STOP: unlock, then reanchor (compare camera_off_mm to choose camera=true or not) before moving again.", _schema({}))
 def _t_stop(hub, a):
     hub.post("/api/realtime/hold")
     return _text(hub.post("/api/realtime/reset"))
@@ -307,6 +327,25 @@ def _t_mlook(hub, a):
     if a.get("side") is not None:
         body["side"] = _num(a["side"], "side", -360, 360)
     return _text(hub.post("/api/mate/look", body))
+
+
+@tool("mate_move", "One step of a Mate recipe (the flip, the peek: read the mate and poker guides first, never improvise one), VIA THE HUB: flipper to servo degrees (20 rest .. 150) at servo_speed (required, gentle: the peek uses 30, capped at 360 -- fast flipper moves brown Mate out), starting at once and running while Mate turns turn degrees and drives drive mm (+ forward, max 200) at wheel_speed (half-steps/s, 800 full, the peek creeps at 200). Returns when both are done; counted into where the hub thinks Mate is. No camera check of the way: drive only where you have looked.", _schema({"servo": {"type": "number"}, "servo_speed": {"type": "number"}, "turn": {"type": "number"}, "drive": {"type": "number"}, "wheel_speed": {"type": "number"}}))
+def _t_mmove(hub, a):
+    body = {}
+    if a.get("servo") is not None:
+        if a.get("servo_speed") is None:
+            raise ValueError("give servo_speed with servo (gentle: 30-120)")
+        body["servo"] = _num(a["servo"], "servo", 20, 150)
+        body["servo_speed"] = _num(a["servo_speed"], "servo_speed", 1, 360)
+    if a.get("turn") is not None:
+        body["turn"] = _num(a["turn"], "turn", -360, 360)
+    if a.get("drive") is not None:
+        body["drive"] = _num(a["drive"], "drive", -200, 200)
+    if a.get("wheel_speed") is not None:
+        body["wheel_speed"] = _num(a["wheel_speed"], "wheel_speed", 50, 800)
+    if not any(k in body for k in ("servo", "turn", "drive")):
+        raise ValueError("give servo (+ servo_speed), turn or drive")
+    return _text(hub.post("/api/mate/move", body))
 
 
 @tool("mate_gestures", "List Mate's gestures by name. Mate never speaks; gestures are how it talks.", _schema({}))
@@ -339,11 +378,11 @@ def _t_chat(hub, a):
     return _text(hub.get("/api/chat", {"after": int(a.get("after", 0)), "wait": wait, "by": a.get("by")}))
 
 
-@tool("chat_post", "Add a typed message to the chat (not spoken; use say for speech). by must not be 'mate' -- Mate talks with gestures.", _schema({"text": {"type": "string"}, "by": {"type": "string"}}, ["text"]))
+@tool("chat_post", "Add a typed message to the chat under by, your own name (not spoken; use say for speech). by must not be 'player' (that's the people at the table) or 'mate' (Mate talks with gestures).", _schema({"text": {"type": "string"}, "by": {"type": "string"}}, ["text"]))
 def _t_chat_post(hub, a):
-    by = (a.get("by") or "player")[:32]
-    if by == "mate":
-        raise ValueError("Mate talks with gestures, not chat_post")
+    by = (a.get("by") or "agent")[:32]
+    if by in ("player", "mate"):
+        raise ValueError("by must be your own name: 'player' is the people at the table, and Mate talks with gestures")
     return _text(hub.post("/api/chat", {"text": a["text"][:2000], "by": by}))
 
 
@@ -372,7 +411,7 @@ def handle(hub, req):
         name = params.get("name")
         args = params.get("arguments") or {}
         if name not in TOOLS:
-            if name in ("send_gcode", "raw_gcode", "mate_step", "mate_servo", "mate_screen", "calibrate", "delete_chat", "grbl_settings"):
+            if name in ("send_gcode", "raw_gcode", "home_gantry", "mate_step", "mate_servo", "mate_screen", "calibrate", "delete_chat", "grbl_settings"):
                 return _result(req_id, {"content": [{"type": "text", "text": f"error: {name} is intentionally not exposed: it would bypass the hub safety layer"}], "isError": True})
             return _error(req_id, -32602, f"unknown tool: {name}")
         _desc, _schema, fn = TOOLS[name]
@@ -399,7 +438,7 @@ def main(argv=None):
         print(json.dumps({"tools": [{"name": n, "description": d, "inputSchema": s} for n, (d, s, _f) in sorted(TOOLS.items())]}, indent=2))
         return 0
     hub = Hub(args.hub_url)
-    log(f"magic-table MCP: hub at {hub.base} (Mate only via hub; no raw G-code tool)")
+    log(f"magic-table MCP: hub at {hub.base} (Mate only via hub; no raw G-code, no homing)")
     for line in sys.stdin:
         line = line.strip()
         if not line:

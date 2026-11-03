@@ -2,8 +2,10 @@
 
 Agents can call Mate's own API (http://mate.local, see agent/mate.md) for anything. The hub
 adds what needs the overhead camera: `goto` turns and drives Mate, looks, and corrects until
-its turning centre is on the target, and `home` sends it to its home spot. And `gesture`
-plays one of Mate's gestures (agent/gestures.json): a reaction face, flipper and wheel moves.
+its turning centre is on the target, and `home` sends it to its home spot. `gesture` plays one
+of Mate's gestures (agent/gestures.json): a reaction face, flipper and wheel moves. `move` is
+one step of a recipe (the flip, the peek): the flipper and the wheels at once, counted into
+where the hub thinks Mate is, which Mate's own /step isn't.
 
 The body numbers below were measured on Nov 1 against the overhead camera (build notes);
 another build should measure its own.
@@ -66,10 +68,10 @@ class MateLink:
         with urllib.request.urlopen(req, timeout=5) as r:
             return json.loads(r.read())
 
-    def _step(self, s1, s2):
+    def _step(self, s1, s2, speed=SPEED):
         while s1 or s2:                                   # Mate takes at most 4096 per move
             k1, k2 = max(-4096, min(4096, s1)), max(-4096, min(4096, s2))
-            self._post(f"/step?s1={k1}&s2={k2}&speed={SPEED}&accel={ACCEL}")
+            self._post(f"/step?s1={k1}&s2={k2}&speed={speed}&accel={ACCEL}")
             time.sleep(0.1)
             while True:
                 with urllib.request.urlopen(f"{self.url}/status", timeout=5) as r:
@@ -78,15 +80,15 @@ class MateLink:
                 time.sleep(0.1)
             s1, s2 = s1 - k1, s2 - k2
 
-    def turn(self, deg):
+    def turn(self, deg, speed=SPEED):
         """Turn in place, deg anticlockwise (from above)."""
         n = round(abs(deg) / DEG_PER_HALFSTEP["left" if deg > 0 else "right"])
-        self._step(n, n) if deg > 0 else self._step(-n, -n)
+        self._step(n, n, speed) if deg > 0 else self._step(-n, -n, speed)
 
-    def drive(self, mm):
+    def drive(self, mm, speed=SPEED):
         """Straight ahead (+) or back (-)."""
         n = round(abs(mm) / MM_PER_HALFSTEP)
-        self._step(-n, n) if mm > 0 else self._step(n, -n)
+        self._step(-n, n, speed) if mm > 0 else self._step(n, -n, speed)
 
     def seen(self, pose):
         """The camera saw Mate here: that's where it is now."""
@@ -181,6 +183,34 @@ class MateLink:
                     "off_mm": round(math.hypot(x - cx, y - cy), 1), "moves": moves, "assumed": self.assumed}
         except OSError as e:
             return {"ok": False, "error": f"Mate didn't answer: {e}", "moves": moves}
+        finally:
+            self.busy = False
+
+    def move(self, servo=None, servo_speed=None, turn=None, drive=None, wheel_speed=SPEED):
+        """One step of a recipe: the flipper to `servo` degrees at `servo_speed` (it starts at once
+        and keeps going while the wheels move: the peek lifts the card while Mate creeps forward),
+        then turn `turn` degrees, then drive `drive` mm, at `wheel_speed` (half-steps/s; the peek
+        creeps at 200). Returns when the wheels and the flipper are done. Wheel moves are counted
+        into Mate's assumed place, unlike Mate's own /step."""
+        if self.busy:
+            return {"ok": False, "error": "Mate is busy"}
+        self.busy = True
+        try:
+            t0, servo_s = time.time(), 0.0
+            if servo is not None:
+                now = (self.status or {}).get("servo_now", REST)
+                self.servo(servo, servo_speed)
+                servo_s = abs(servo - now) / max(1, min(servo_speed, 360))
+            if turn:
+                self.turn(turn, wheel_speed)
+                self._turned(turn)
+            if drive:
+                self.drive(drive, wheel_speed)
+                self._drove(drive)
+            time.sleep(max(0, servo_s - (time.time() - t0)))
+            return {"ok": True, "pose": self.pose, "assumed": self.assumed}
+        except OSError as e:
+            return {"ok": False, "error": f"Mate didn't answer: {e}"}
         finally:
             self.busy = False
 

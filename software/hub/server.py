@@ -125,9 +125,9 @@ async def send(body: Line):
 
 
 # Work Z is the cup's height above the board (0 = touching it). Never past the top of the Z
-# travel, never more than the 1 mm squeeze a grip needs into the board. No limit switches, so
-# these are the only stops.
-Z_MIN, Z_MAX = -1.0, 150.0
+# travel, never more than the 2 mm squeeze a card pick can need (the cup's top is soft; -1.5
+# picks a card, -2 a stubborn one: agent/table.md). No limit switches, so these are the only stops.
+Z_MIN, Z_MAX = -2.0, 150.0
 
 
 def z_now():
@@ -729,6 +729,35 @@ async def mate_goto_api(body: MateGoto):
     refuses (in_the_way [{x, y}]). check=false just goes (a short hop in the clear, or pushing
     chips on purpose)."""
     return await asyncio.to_thread(mate_goto, body.x, body.y, body.heading, body.check)
+
+
+class MateMove(BaseModel):
+    servo: float | None = None         # flipper angle, degrees (20 = rest, lying on the table)
+    servo_speed: float | None = None   # required with servo: gentle (the peek lifts at 30); capped at 360
+    turn: float | None = None          # degrees anticlockwise, in place
+    drive: float | None = None         # mm, + forward
+    wheel_speed: float = 800           # half-steps/s: 800 is full speed, the peek creeps at 200
+
+
+@app.post("/api/mate/move")
+async def mate_move_api(body: MateMove):
+    """One step of a recipe (the flip, the peek: agent/mate.md): the flipper to an angle at a
+    gentle speed, starting at once and running while the wheels turn and then drive. Returns
+    when both are done. Counted into where the hub thinks Mate is (its own /step isn't); no camera
+    check of the way: drive only where you've looked (up to 200 mm a call)."""
+    if body.servo is not None:
+        if body.servo_speed is None:
+            raise HTTPException(400, "give servo_speed with servo: fast flipper moves brown Mate out")
+        if not 20 <= body.servo <= 150:
+            raise HTTPException(400, "servo is 20 (rest) to 150 degrees")
+    if body.drive is not None and abs(body.drive) > 200:
+        raise HTTPException(400, "drive at most 200 mm a call")
+    if body.turn is not None and abs(body.turn) > 360:
+        raise HTTPException(400, "turn at most 360 degrees a call")
+    if not 50 <= body.wheel_speed <= 800:
+        raise HTTPException(400, "wheel_speed is 50 to 800")
+    return await asyncio.to_thread(mate.move, body.servo, body.servo_speed, body.turn, body.drive,
+                                   round(body.wheel_speed))
 
 
 class MateLook(BaseModel):
