@@ -15,17 +15,17 @@ Files in software/agent/:
 ## Deploy to the Pi
 
 ```bash
-rsync -a software/agent/ ash@raspberrypi.local:hub/agent/
+rsync -a software/agent/ ash@raspberrypi.local:hub/mcp/   # not hub/agent/: that's the guides, and README.md would collide
 ssh ash@raspberrypi.local
-cd ~/hub && python3 agent/mcp_server.py --list-tools | head
-python3 agent/test_mcp.py
+cd ~/hub && python3 mcp/mcp_server.py --list-tools | head
+python3 mcp/test_mcp.py
 ```
 
 Then, human watching, STOP in reach:
 
 ```bash
 export MODEL_API_KEY=$(grep MODEL_API_KEY ~/hub/.env | cut -d= -f2)
-python3 agent/agent_runner.py --instruction "Deal a Texas hold'em hand for two players, then run the flop."
+python3 mcp/agent_runner.py --instruction "Deal a Texas hold'em hand for two players, then run the flop."
 # --auto only for a rehearsed demo; otherwise it asks before the first motion.
 ```
 

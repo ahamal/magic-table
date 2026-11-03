@@ -1,1 +1,1 @@
-{"mcpServers": {"magic-table": {"command": "python3", "args": ["/home/ash/hub/agent/mcp_server.py"], "env": {"MAGIC_TABLE_HUB_URL": "http://localhost:8000"}}}}
+{"mcpServers": {"magic-table": {"command": "python3", "args": ["/home/ash/hub/mcp/mcp_server.py"], "env": {"MAGIC_TABLE_HUB_URL": "http://localhost:8000"}}}}
