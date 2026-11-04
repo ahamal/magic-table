@@ -17,7 +17,7 @@ The body API for the whole table. Step 2.
 
 ## Frame server (running now)
 
-[`server.py`](server.py) + [`grbl.py`](grbl.py) + [`gripper.py`](gripper.py) + [`camera.py`](camera.py) + [`static/index.html`](static/index.html): GRBL, the gripper and the cameras over HTTP, and a jog page. The first piece of the hub.
+[`server.py`](server.py) + [`grbl.py`](grbl.py) + [`gripper.py`](gripper.py) + [`camera.py`](camera.py) + [`static/jog.html`](static/jog.html): GRBL, the gripper and the cameras over HTTP, and a jog page. The first piece of the hub.
 
 - **One serial connection, kept open.** Opening the port resets the Uno, so the server owns it. Lines go one at a time and wait for `ok`/`error`; real-time bytes (status, hold, resume, reset, jog cancel) skip the queue. Status is polled 5× a second and pushed to every page over a WebSocket.
 - **Jog page** at `http://raspberrypi.local:8000/jog` (the home page `/` lists every page), after an earlier jog page (click the XY table and the Z rail to set a target, then go), plus:
