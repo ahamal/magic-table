@@ -1,4 +1,4 @@
-"""Mate chassis corner for plywood panels, plus a slot fit test.
+"""Esper chassis corner for plywood panels, plus a slot fit test.
 
 Usage: python corner.py   (needs: pip install manifold3d numpy)
 Writes corner-normal-v3.stl, corner-thick-v3.stl and slot-test.stl next to this file.
@@ -83,7 +83,7 @@ def write_stl(manifold, path):
     record["n"] = normals
     record["v"] = v
     with open(path, "wb") as f:
-        f.write(b"Mate chassis".ljust(80, b" "))
+        f.write(b"Esper chassis".ljust(80, b" "))
         f.write(np.uint32(len(tris)).tobytes())
         f.write(record.tobytes())
 

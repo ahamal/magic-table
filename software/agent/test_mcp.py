@@ -3,10 +3,10 @@
 
 Starts a tiny HTTP server mimicking the hub endpoints the MCP server uses,
 then talks MCP over stdio and checks: initialize/tools/list, get_scene,
-mate_goto via hub, denied tools (raw G-code, homing, direct Mate step,
+esper_goto via hub, denied tools (raw G-code, homing, direct Esper step,
 calibrate, delete_chat) refused before any hub call, invalid args rejected,
 capture_image returns an MCP image block, unlock sends exactly $X,
-mate_move goes through the hub with a flipper speed, chat_post never posts
+esper_move goes through the hub with a flipper speed, chat_post never posts
 as a player, and move_tip goes up, across, then straight down.
 
 Run: python3 test_mcp.py  (exit 0 = pass)
@@ -24,17 +24,17 @@ class MockHub(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
     def do_GET(self):
         SEEN.append((self.command, self.path))
-        if self.path.startswith("/api/scene"): self._send({"head": {"x": 0, "y": 0}, "mate": {"x": -90, "y": 215}, "cards": []})
+        if self.path.startswith("/api/scene"): self._send({"head": {"x": 0, "y": 0}, "esper": {"x": -90, "y": 215}, "cards": []})
         elif self.path.startswith("/api/status"): self._send({"state": "Idle", "homed": True, "WPos": [0, 0, 20]})
         elif self.path.startswith("/api/calibration"): self._send({"calibrated": True, "travel_z": 110})
-        elif self.path.startswith("/api/mate/gestures"): self._send({"thumbs_up": {"emoji": "👍", "text": "thumbs up", "face": "happy"}})
+        elif self.path.startswith("/api/esper/gestures"): self._send({"thumbs_up": {"emoji": "👍", "text": "thumbs up", "face": "happy"}})
         elif self.path.startswith("/api/capture"): self._send(b"\xff\xd8\xff\xd9", "image/jpeg")
         elif self.path.startswith("/api/guide"):
             body = b"# mock guide\n"; self.send_response(200); self.send_header("Content-Type", "text/plain"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
         else: self._send({})
     def do_POST(self):
         SEEN.append((self.command, self.path)); length = int(self.headers.get("Content-Length") or 0); BODIES.append((self.path, json.loads(self.rfile.read(length) or b"{}")))
-        if self.path.startswith("/api/mate/goto"): self._send({"ok": True, "checked_path": True})
+        if self.path.startswith("/api/esper/goto"): self._send({"ok": True, "checked_path": True})
         elif self.path.startswith("/api/send"): self._send({"line": "", "reply": "SHOULD NOT HAPPEN"})
         else: self._send({"ok": True})
     def log_message(self, *a): pass
@@ -51,28 +51,39 @@ def main():
     proc = subprocess.Popen([sys.executable, str(HERE / "mcp_server.py")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     try:
         r = rpc(proc, "initialize", {"protocolVersion": "2024-11-05"}, 1); assert r["result"]["serverInfo"]["name"] == "magic-table", r
-        r = rpc(proc, "tools/list", {}, 2); names = [t["name"] for t in r["result"]["tools"]]; assert len(names) >= 20, names; assert "send_gcode" not in names and "mate_step" not in names, names
-        err, c = call(proc, "get_scene", {}, 3); assert not err and "mate" in c[0]["text"], c
-        err, c = call(proc, "mate_goto", {"x": 10, "y": 20}, 4); assert not err and "checked_path" in c[0]["text"], c; assert any(p.startswith("/api/mate/goto") for _, p in SEEN), SEEN; assert not any("mate.local" in p for _, p in SEEN)
+        r = rpc(proc, "tools/list", {}, 2); names = [t["name"] for t in r["result"]["tools"]]; assert len(names) >= 20, names; assert "send_gcode" not in names and "esper_step" not in names, names
+        err, c = call(proc, "get_scene", {}, 3); assert not err and "esper" in c[0]["text"], c
+        err, c = call(proc, "esper_goto", {"x": 10, "y": 20}, 4); assert not err and "checked_path" in c[0]["text"], c; assert any(p.startswith("/api/esper/goto") for _, p in SEEN), SEEN; assert not any("esper.local" in p for _, p in SEEN)
         err, c = call(proc, "send_gcode", {"line": "G0 X0"}, 5); assert err and "intentionally not exposed" in c[0]["text"], c; assert not any(p.startswith("/api/send") for _, p in SEEN), SEEN
-        err, c = call(proc, "mate_step", {"s1": 100, "s2": 100}, 6); assert err, c
+        err, c = call(proc, "esper_step", {"s1": 100, "s2": 100}, 6); assert err, c
         err, c = call(proc, "move_tip", {"x": 0, "y": 0, "z": 999}, 7); assert err and "outside" in c[0]["text"], c
-        err, c = call(proc, "say", {"text": "hi", "by": "mate"}, 8); assert err, c
+        err, c = call(proc, "say", {"text": "hi", "by": "esper"}, 8); assert err, c
         err, c = call(proc, "see", {"effort": "ultra"}, 9); assert err, c
         err, c = call(proc, "capture_image", {"cam": 1}, 10); assert not err and c[0]["type"] == "image" and c[0]["mimeType"] == "image/jpeg", c; assert base64.b64decode(c[0]["data"]) == b"\xff\xd8\xff\xd9"
         assert "home_gantry" not in names, names
         err, c = call(proc, "home_gantry", {}, 11); assert err and "intentionally not exposed" in c[0]["text"], c
         assert not any(p.startswith("/api/home") for _, p in SEEN), SEEN
         err, c = call(proc, "unlock", {}, 12); assert not err, c; assert BODIES[-1] == ("/api/send", {"line": "$X"}), BODIES[-1]
-        err, c = call(proc, "mate_move", {"servo": 77, "drive": 28}, 13); assert err and "servo_speed" in c[0]["text"], c
-        err, c = call(proc, "mate_move", {"servo": 77, "servo_speed": 30, "drive": 28, "wheel_speed": 200}, 14); assert not err, c
-        assert BODIES[-1] == ("/api/mate/move", {"servo": 77, "servo_speed": 30, "drive": 28, "wheel_speed": 200}), BODIES[-1]
+        err, c = call(proc, "esper_move", {"servo": 77, "drive": 28}, 13); assert err and "servo_speed" in c[0]["text"], c
+        err, c = call(proc, "esper_move", {"servo": 77, "servo_speed": 30, "drive": 28, "wheel_speed": 200}, 14); assert not err, c
+        assert BODIES[-1] == ("/api/esper/move", {"servo": 77, "servo_speed": 30, "drive": 28, "wheel_speed": 200}), BODIES[-1]
         err, c = call(proc, "chat_post", {"text": "note"}, 15); assert not err and BODIES[-1][1]["by"] == "agent", BODIES[-1]
         err, c = call(proc, "chat_post", {"text": "x", "by": "player"}, 16); assert err, c
         n = len(BODIES)
         err, c = call(proc, "move_tip", {"x": 50, "y": 60, "z": -1.5, "feed": 600}, 17); assert not err, c
         assert BODIES[n:] == [("/api/move", {"z": 110}), ("/api/tip", {"x": 50, "y": 60}),
                               ("/api/tip", {"x": 50, "y": 60, "z": -1.5, "feed": 600})], BODIES[n:]
+        n = len(BODIES)
+        err, c = call(proc, "batch", {"steps": [{"tool": "gripper", "args": {"action": "grip", "pump_s": 1}},
+                                                 {"tool": "move_head", "args": {"z": 5, "feed": 1500}},
+                                                 {"tool": "say", "args": {"text": "Got it.", "by": "Muse"}}]}, 18)
+        assert not err and '"ok": true' in c[0]["text"], c
+        assert [b[0].split("?")[0] for b in BODIES[n:]] == ["/api/gripper/grip", "/api/move", "/api/say"], BODIES[n:]
+        n = len(BODIES)
+        err, c = call(proc, "batch", {"steps": [{"tool": "say", "args": {"text": "x", "by": "esper"}},
+                                                 {"tool": "move_head", "args": {"z": 40}}]}, 19)
+        assert err and '"stopped_at": 0' in c[0]["text"] and len(BODIES) == n, c   # stopped: the move never ran
+        err, c = call(proc, "batch", {"steps": [{"tool": "batch", "args": {}}]}, 20); assert err and "not allowed" in c[0]["text"], c
         print(f"PASS: {len(names)} tools, mock hub saw {len(SEEN)} calls, deny-list held"); return 0
     finally:
         proc.stdin.close(); proc.wait(timeout=5); server.shutdown()

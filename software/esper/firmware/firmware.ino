@@ -1,6 +1,6 @@
-// Mate firmware for the Freenove ESP32-S3-WROOM CAM.
+// Esper firmware for the Freenove ESP32-S3-WROOM CAM.
 // Both wheels, the flipper servo, the OLED face and the camera, all over Wi-Fi.
-// Open http://mate.local/ (or the IP shown on the OLED).
+// Open http://esper.local/ (or the IP shown on the OLED).
 //
 // Cores: loop() on core 1 only runs the steppers, so Wi-Fi and the camera can't make them
 // stutter. The API server, I2C and OLED run in netTask on core 0; the video stream is a
@@ -21,7 +21,7 @@
 #include "esp_private/brownout.h"
 #include "secrets.h"  // WIFI_SSID, WIFI_PASS (copy secrets.example.h)
 
-const char *HOSTNAME = "mate";
+const char *HOSTNAME = "esper";
 const uint16_t STATUS_PERIOD_MS = 500;  // how often the status screen redraws
 
 // ---- Pins, all on the right-hand header. The camera takes 4–18 (bar 14); PSRAM takes 35–37 ----
@@ -265,7 +265,7 @@ void freeJpeg(Jpeg &j) {
 }
 
 // MJPEG stream on port 81, so a watching page never blocks the API on port 80.
-#define BOUNDARY "mateframe"
+#define BOUNDARY "esperframe"
 esp_err_t streamHandler(httpd_req_t *req) {
   httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=" BOUNDARY);
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -318,8 +318,17 @@ void setServo(int angle, uint16_t speed) {
 
 // At boot: hold the saved angle (where the arm still is), then sweep to the resting pose.
 void restoreServo() {
-  prefs.begin("mate", false);
+  prefs.begin("esper", false);
   servoSaved = prefs.getInt("servo", -1);
+  // Preserve the arm's position when upgrading firmware from the old robot name.
+  if (!prefs.isKey("servo")) {
+    Preferences legacy;
+    if (legacy.begin("mate", true)) {
+      servoSaved = legacy.getInt("servo", -1);
+      legacy.end();
+      if (servoSaved >= 0 && servoSaved <= 180) prefs.putInt("servo", servoSaved);
+    }
+  }
   if (servoSaved >= 0 && servoSaved <= 180) {
     servoNow = servoSaved;
     servoPulse(servoNow);
@@ -356,11 +365,11 @@ void drawStatus(bool online) {
   oled.clearDisplay();
   oled.setTextSize(2);
   oled.setCursor(0, 0);
-  oled.print("Mate");
+  oled.print("Esper");
   oled.setTextSize(1);
   oled.setCursor(0, 24);
   if (online) {
-    oled.print("mate.local");
+    oled.print("esper.local");
     oled.setCursor(0, 36);
     oled.print(WiFi.localIP());
     oled.setCursor(0, 52);
@@ -417,7 +426,7 @@ void updateOled() {
 // ---------------------------------------------------------------- web (core 0)
 
 const char PAGE[] PROGMEM = R"HTML(<!doctype html>
-<html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Mate</title>
+<html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Esper</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:420px;margin:16px auto;padding:0 16px;background:#111;color:#eee}
 h1{font-size:18px;color:#aaa;font-weight:500}
@@ -438,12 +447,12 @@ button.on{background:#ddd;color:#111}
 .pad button{margin:0;font-size:20px}
 small,#res{color:#888}
 </style></head><body>
-<h1>Mate</h1>
+<h1>Esper</h1>
 <img id=cam alt="camera">
 <div class=row>
  <button onclick="live()">Live</button>
  <button onclick="snap()">Snapshot</button>
- <a id=dl href="/capture" download="mate.jpg"><button>Download</button></a>
+ <a id=dl href="/capture" download="esper.jpg"><button>Download</button></a>
  <small>latency <span id=lat>-</span> ms</small>
 </div>
 
@@ -460,7 +469,7 @@ small,#res{color:#888}
 </div>
 <small id=scrmsg>-</small>
 
-<h2>Faces &mdash; tap one to play it on Mate</h2>
+<h2>Faces &mdash; tap one to play it on Esper</h2>
 <canvas id=fx width=128 height=64></canvas>
 <div class=row id=faces></div>
 <div class=row>
@@ -547,7 +556,7 @@ function sendScreen(){postScreen(bytes())}
 function statusScreen(){postScreen(new Uint8Array(0))}
 render();
 
-// ---- faces: little animations drawn here and sent to Mate as frames ----
+// ---- faces: little animations drawn here and sent to Esper as frames ----
 const TAU=Math.PI*2,fc=document.createElement('canvas');fc.width=W;fc.height=H;
 const g=fc.getContext('2d');
 function fill(s){g.fillStyle=g.strokeStyle=s}
@@ -624,7 +633,7 @@ const FACES={
   if(i<6){g.fillRect(cx,64-(64-cy)*i/6,2,4);return}
   const t=(i-6)/18;for(let k=0;k<20;k++){const a=k/20*TAU,d=4+t*30;if(t<.85||k%2)dot(cx+Math.cos(a)*d,cy+Math.sin(a)*d+t*t*12,t<.6?1.5:1)}}],
  countdown:[4,1,i=>txt(['3','2','1','GO!'][i],64,34,i<3?52:34)],
- marquee:[64,20,(i,n)=>{const s=$('t').value.trim()||'Hello from Mate!';g.font='bold 30px system-ui,sans-serif';
+ marquee:[64,20,(i,n)=>{const s=$('t').value.trim()||'Hello from Esper!';g.font='bold 30px system-ui,sans-serif';
   const w=g.measureText(s).width;g.textAlign='left';g.textBaseline='middle';g.fillText(s,128-(w+128)*i/(n-1),34)}],
 };
 function build(name){const[n,fps,draw]=FACES[name],out=[];
@@ -654,7 +663,7 @@ let busyServo=0;
 function servo(a){$('sv').textContent=a;
  if(busyServo)return;busyServo=1;
  fetch(`/servo?angle=${a}&speed=${$('ss').value}`,{method:'POST'}).finally(()=>busyServo=0)}
-// The wheels face opposite ways: same sign on both turns Mate, opposite signs drive it.
+// The wheels face opposite ways: same sign on both turns Esper, opposite signs drive it.
 // both + turns anticlockwise, and s1 −, s2 + drives forward (checked on the bench).
 const DIRS={up:[-1,1],down:[1,-1],left:[1,1],right:[-1,-1]};
 function drive(d){const n=+$('n').value,[a,b]=DIRS[d];move(a*n,b*n)}
@@ -700,7 +709,7 @@ void handleStatus() {
 }
 
 void handleInfo() {
-  String j = "{\"fw\":\"mate-s3\",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+  String j = "{\"fw\":\"esper-s3\",\"ip\":\"" + WiFi.localIP().toString() + "\"";
   j += ",\"max_steps\":" + String(MAX_STEPS) + ",\"max_speed\":" + String(MAX_SPEED) +
        ",\"max_accel\":" + String(MAX_ACCEL);
   j += ",\"max_servo_speed\":" + String(MAX_SERVO_SPEED) + ",\"servo_park\":" + String(SERVO_PARK);
@@ -839,7 +848,7 @@ void netTask(void *) {
 
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);
-  WiFi.enableIPv6();  // without an IPv6 address, macOS waits 5 s on every mate.local lookup
+  WiFi.enableIPv6();  // without an IPv6 address, macOS waits 5 s on every esper.local lookup
   WiFi.setSleep(false);  // power save adds 100 ms+ latency spikes
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   WiFi.setTxPower(WIFI_POWER_8_5dBm);  // smaller current spikes on battery; plenty for a table

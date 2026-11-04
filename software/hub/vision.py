@@ -6,7 +6,7 @@ each camera sees the marker, and a DLT fit gives each camera's full projection
 in gantry coordinates (X/Y in mm, Z in GRBL units, Z+ up). After that:
 
 - the head is where GRBL says, and the camera checks it (error in mm);
-- a pixel plus a height gives a gantry X/Y, so cards on the board, Mate's
+- a pixel plus a height gives a gantry X/Y, so cards on the board, Esper's
   marker and the board markers all come out in gantry coordinates;
 - the board markers (IDs 0-3) were recorded at calibration, so a camera that
   got bumped is noticed and corrected from them;
@@ -33,11 +33,11 @@ POS_FILE = Path(__file__).parent / "last_position.json"   # for re-anchoring aft
 RESET_FILE = Path(__file__).parent / "needs_reanchor"      # there while a reset is unresolved, across hub restarts
 
 DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-BOARD_IDS, HEAD_ID, MATE_ID = (0, 1, 2, 3), 10, 20
+BOARD_IDS, HEAD_ID, ESPER_ID = (0, 1, 2, 3), 10, 20
 # black-square size of the markers as printed now (mm, the Nov 1 sheet); the board and
-# Mate ones also give their height, by finding where the camera would see them at that
+# Esper ones also give their height, by finding where the camera would see them at that
 # size. The head plate stands upright, so its size says nothing about height.
-SIZE = {"board": 30.0, "head": 25.0, "mate": 30.0}
+SIZE = {"board": 30.0, "head": 25.0, "esper": 30.0}
 # The cup tip is this far below the head marker's centre, in the cameras' frame. A ruler says 77
 # (Nov 2), but with 77 the board came out ~7% too big against a tape measure, so something else
 # is off too (likely the gantry's steps/mm). 57 is what the board, the cup offset and the picks
@@ -57,11 +57,11 @@ KEEPOUT = 10.0     # mm around a board marker's square the cup keeps off (its ow
 # old -2.4, what the first look said). Y stays: what looked off in Y was the chip fit's bias (chips.SHIFT).
 TIP_OFFSET = (-0.9, -19.7)
 CLEARANCE = 15.0          # calibration keeps the cup at least this far above the board (mm)
-MATE_MARGIN = 40.0        # mm around Mate's footprint that counts as "over Mate"
-MATE_TOP = 103.0          # cup height that touches Mate's plywood top (where a card lies; the corner caps stand 2 mm above it)
-MATE_SQUEEZE = 1.5        # how far the cup may press into what's on Mate's top (a card): gentle
+ESPER_MARGIN = 40.0        # mm around Esper's footprint that counts as "over Esper"
+ESPER_TOP = 103.0          # cup height that touches Esper's plywood top (where a card lies; the corner caps stand 2 mm above it)
+ESPER_SQUEEZE = 1.5        # how far the cup may press into what's on Esper's top (a card): gentle
 TABLE_CAM = 1             # the camera that looks down on the board (cam 0 is too low for it)
-MATE_SIZE = (134.0, 134.0, 105.0)  # mm, over the corner caps: 130 x 130 x 100 box, 3 mm off the ground, caps 2 mm proud
+ESPER_SIZE = (134.0, 134.0, 105.0)  # mm, over the corner caps: 130 x 130 x 100 box, 3 mm off the ground, caps 2 mm proud
 CARD = (63.0, 88.0)       # poker card, mm
 
 
@@ -184,9 +184,12 @@ class Aborted(Exception):
 
 
 class Vision:
-    def __init__(self, cameras, grbl, emit, mate=None):
-        self.cameras, self.grbl, self.emit, self.mate = cameras, grbl, emit, mate
+    def __init__(self, cameras, grbl, emit, esper=None):
+        self.cameras, self.grbl, self.emit, self.esper = cameras, grbl, emit, esper
         self.cal = json.loads(CAL_FILE.read_text()) if CAL_FILE.exists() else None
+        if self.cal and "mate_home" in self.cal:
+            self.cal.setdefault("esper_home", self.cal.pop("mate_home"))
+            CAL_FILE.write_text(json.dumps(self.cal))
         self._reset_flag = False
         self.scene = {"calibrated": bool(self.cal)}
         self.busy = False
@@ -265,8 +268,8 @@ class Vision:
 
         Start with the head roughly over the middle of the board and the cup high. With bounds
         known, the head first rises to the travel height (if lower) and the grid shrinks to keep
-        the cup inside them (refused below 40 mm: move the head toward the middle). Mate under
-        the grid refuses it, when the camera can still tell where Mate is. `room` is how far (mm)
+        the cup inside them (refused below 40 mm: move the head toward the middle). Esper under
+        the grid refuses it, when the camera can still tell where Esper is. `room` is how far (mm)
         the cup is above the board at the start: the passes go down but stay CLEARANCE above it,
         and the head goes back up before moving sideways. Sideways moves are rapids (GRBL's top
         speed and acceleration, $110-$121), going down a level at feed (mm/min). Any trouble
@@ -300,12 +303,12 @@ class Vision:
                                               "of room): move it toward the middle"}
             span = min(span, fit)
         moved = (self.scene or {}).get("camera_moved_px") or 0
-        m = self.scene.get("mate") if moved < 30 else None    # a moved camera puts Mate in the wrong place
+        m = self.scene.get("esper") if moved < 30 else None    # a moved camera puts Esper in the wrong place
         if m and not m.get("assumed"):
-            half = max(MATE_SIZE[:2]) / 2 + MATE_MARGIN
+            half = max(ESPER_SIZE[:2]) / 2 + ESPER_MARGIN
             cx, cy = x0 + TIP_OFFSET[0], y0 + TIP_OFFSET[1]
             if abs(m["x"] - cx) < span + half and abs(m["y"] - cy) < span + half:
-                return {"ok": False, "error": "Mate is under the grid: drive it home first"}
+                return {"ok": False, "error": "Esper is under the grid: drive it home first"}
         if room - CLEARANCE < 20:
             return {"ok": False, "error": f"need at least {CLEARANCE + 20:.0f} mm between the cup and the board"}
         dz = (room - CLEARANCE) / (levels - 1)
@@ -348,7 +351,7 @@ class Vision:
 
             # the board's Z from marker size until the cup touches it (set_table)
             cal = {"at": time.time(), "cams": {}, "table_source": "marker size",
-                   "travel_z": z0,   # the start is Z's top: the only height allowed over Mate
+                   "travel_z": z0,   # the start is Z's top: the only height allowed over Esper
                    "grid": {"span": span, "steps": steps, "room": room, "dz": dz, "levels": levels,
                             "start": [x0, y0, z0]}}
             for cam, d in pts.items():
@@ -378,8 +381,8 @@ class Vision:
                 cal["table_z"], cal["table_source"] = self.cal["table_z"], "touch"
             if self.cal and self.cal.get("travel_z") is not None:   # a chosen travel height stays
                 cal["travel_z"] = self.cal["travel_z"]
-            if self.cal and self.cal.get("mate_home") and not from_zero:   # after a new zero it's in the old X/Y
-                cal["mate_home"] = self.cal["mate_home"]
+            if self.cal and self.cal.get("esper_home") and not from_zero:   # after a new zero it's in the old X/Y
+                cal["esper_home"] = self.cal["esper_home"]
             CAL_FILE.write_text(json.dumps(cal))
             self.needs_reanchor = False
             with self._lock:
@@ -446,7 +449,7 @@ class Vision:
         return {"ok": True, "table_z": self.cal["table_z"], "z_was": round(was, 2)}
 
     def set_travel(self, z=None):
-        """Set the travel height: the cup height (work Z) that's safe over Mate. Default: here."""
+        """Set the travel height: the cup height (work Z) that's safe over Esper. Default: here."""
         if not self.cal:
             return {"ok": False, "error": "calibrate first"}
         z = self._wpos()[2] if z is None else float(z)
@@ -520,9 +523,9 @@ class Vision:
                 if "P" in c:
                     c["P"] = (np.array(c["P"]) @ T).tolist()
                     c["camera"] = camera_position(np.array(c["P"])).tolist()
-            if self.cal.get("mate_home"):
-                h = self.cal["mate_home"]
-                self.cal["mate_home"] = [round(h[0] - cx, 1), round(h[1] - cy, 1), h[2]]
+            if self.cal.get("esper_home"):
+                h = self.cal["esper_home"]
+                self.cal["esper_home"] = [round(h[0] - cx, 1), round(h[1] - cy, 1), h[2]]
             if self.cal.get("bounds"):
                 b = self.cal["bounds"]
                 self.cal["bounds"] = [round(b[0] - cx, 1), round(b[1] - cx, 1), round(b[2] - cy, 1), round(b[3] - cy, 1)]
@@ -563,18 +566,18 @@ class Vision:
             return 0.0, 0.0                              # it would end on a marker
         return dx * t, dy * t
 
-    # ---- keeping the head off Mate ----
+    # ---- keeping the head off Esper ----
 
-    def over_mate(self, x0, y0, x1, y1):
-        """Does the cup's straight XY path from (x0, y0) to (x1, y1) pass over Mate (plus a
-        margin)? Head coordinates in; the cup's offset is added here. False when Mate isn't
+    def over_esper(self, x0, y0, x1, y1):
+        """Does the cup's straight XY path from (x0, y0) to (x1, y1) pass over Esper (plus a
+        margin)? Head coordinates in; the cup's offset is added here. False when Esper isn't
         known (not calibrated, or not in view)."""
-        m = self.scene.get("mate") if self.cal else None
+        m = self.scene.get("esper") if self.cal else None
         if not m:
             return False
         a = math.radians(m["heading"])
-        ux, uy = math.cos(a), math.sin(a)                       # Mate's forward direction
-        half = max(MATE_SIZE[0], MATE_SIZE[1]) / 2 + MATE_MARGIN
+        ux, uy = math.cos(a), math.sin(a)                       # Esper's forward direction
+        half = max(ESPER_SIZE[0], ESPER_SIZE[1]) / 2 + ESPER_MARGIN
         n = max(2, int(math.hypot(x1 - x0, y1 - y0) / 5) + 1)  # every 5 mm along the path
         for i in range(n + 1):
             px = x0 + (x1 - x0) * i / n + TIP_OFFSET[0] - m["x"]
@@ -583,25 +586,25 @@ class Vision:
                 return True
         return False
 
-    # Mate may get nudged sideways by accident; what must never happen is the cup pressing
-    # down into it. So the cup never goes lower over Mate than its top minus a gentle squeeze
-    # (enough to put a card on it and pick one off), and moves that cross Mate below travel
+    # Esper may get nudged sideways by accident; what must never happen is the cup pressing
+    # down into it. So the cup never goes lower over Esper than its top minus a gentle squeeze
+    # (enough to put a card on it and pick one off), and moves that cross Esper below travel
     # height go up first (no reason to bump it on purpose).
 
     def plan_move(self, x, y, z):
         """Lines for an absolute move to (x, y, z), any of them None = stay. A path that crosses
-        Mate below travel height goes up to travel height first, then across, then down; ending
-        over Mate lower than its top minus MATE_SQUEEZE is refused. Returns (lines, None) or
+        Esper below travel height goes up to travel height first, then across, then down; ending
+        over Esper lower than its top minus ESPER_SQUEEZE is refused. Returns (lines, None) or
         (None, why)."""
         w = self._wpos()
         tx, ty, tz = (w[0] if x is None else x), (w[1] if y is None else y), (w[2] if z is None else z)
         travel = (self.cal or {}).get("travel_z")
-        if travel is None or self.needs_reanchor or not self.over_mate(w[0], w[1], tx, ty):
+        if travel is None or self.needs_reanchor or not self.over_esper(w[0], w[1], tx, ty):
             return None, None                                   # nothing to do: move as asked
-        floor = MATE_TOP - MATE_SQUEEZE
-        if self.over_mate(tx, ty, tx, ty) and tz < floor:
-            return None, f"that would press into Mate (lowest over Mate: Z {floor:.1f})"
-        if abs(tx - w[0]) < 0.01 and abs(ty - w[1]) < 0.01:      # straight up or down over Mate
+        floor = ESPER_TOP - ESPER_SQUEEZE
+        if self.over_esper(tx, ty, tx, ty) and tz < floor:
+            return None, f"that would press into Esper (lowest over Esper: Z {floor:.1f})"
+        if abs(tx - w[0]) < 0.01 and abs(ty - w[1]) < 0.01:      # straight up or down over Esper
             return [f"G90 G0 Z{tz:.3f}"], None
         lines = []
         if w[2] < travel - 0.5:
@@ -616,12 +619,12 @@ class Vision:
         return x - TIP_OFFSET[0], y - TIP_OFFSET[1]
 
     def jog_ok(self, dx, dy, dz):
-        """Jogs may go sideways anywhere (bumping Mate is survivable); a jog that lowers the cup
-        over Mate below its top minus MATE_SQUEEZE is refused."""
+        """Jogs may go sideways anywhere (bumping Esper is survivable); a jog that lowers the cup
+        over Esper below its top minus ESPER_SQUEEZE is refused."""
         w = self._wpos()
-        if not self.cal or self.needs_reanchor or dz >= 0 or w[2] + dz >= MATE_TOP - MATE_SQUEEZE:
+        if not self.cal or self.needs_reanchor or dz >= 0 or w[2] + dz >= ESPER_TOP - ESPER_SQUEEZE:
             return True
-        return not self.over_mate(w[0] + dx, w[1] + dy, w[0] + dx, w[1] + dy)
+        return not self.over_esper(w[0] + dx, w[1] + dy, w[0] + dx, w[1] + dy)
 
     def _on_grbl(self, ev):
         # a reset makes GRBL forget where it is; until re-anchored, its numbers aren't ours
@@ -675,11 +678,11 @@ class Vision:
         tz = self.cal.get("table_z")
         scene = {"at": time.time(), "calibrated": True, "table_z": tz, "table_source": self.cal.get("table_source"),
                  "travel_z": self.cal.get("travel_z"), "bounds": self.cal.get("bounds"),
-                 "mate_home": self.cal.get("mate_home"), "needs_reanchor": self.needs_reanchor,
+                 "esper_home": self.cal.get("esper_home"), "needs_reanchor": self.needs_reanchor,
                  "saved_position": self.last_pos if self.needs_reanchor else None,
                  "head": {"x": w[0], "y": w[1], "z": w[2], "tip_x": w[0] + TIP_OFFSET[0], "tip_y": w[1] + TIP_OFFSET[1],
                           "tip_z": w[2] - TIP_BELOW_MARKER, "seen_by": []},
-                 "mate": None, "cards": [], "chips": [], "decks": [], "board": {}, "cameras": {}}
+                 "esper": None, "cards": [], "chips": [], "decks": [], "board": {}, "cameras": {}}
         errs = []
         for cam in range(len(self.cameras)):
             P, cc = self._cam(cam)
@@ -709,17 +712,17 @@ class Vision:
                 if i in found and str(i) not in scene["board"]:
                     q = to_xy(P, fix(found[i]), tz)
                     scene["board"][str(i)] = {"x": float(q[:, 0].mean()), "y": float(q[:, 1].mean())}
-            if MATE_ID in found and scene["mate"] is None:
-                c = fix(found[MATE_ID])
+            if ESPER_ID in found and scene["esper"] is None:
+                c = fix(found[ESPER_ID])
                 # its height from how big the marker looks: doesn't depend on Z's steps/mm,
-                # which isn't measured yet (so MATE_SIZE's height would be in the wrong units)
-                z = height_from_size(P, c, SIZE["mate"])
+                # which isn't measured yet (so ESPER_SIZE's height would be in the wrong units)
+                z = height_from_size(P, c, SIZE["esper"])
                 if z is not None:
                     q = to_xy(P, c, z)
                     top, bottom = (q[0] + q[1]) / 2, (q[2] + q[3]) / 2
                     d = top - bottom
-                    st = self.mate.status if self.mate else None
-                    scene["mate"] = {"x": float(q[:, 0].mean()), "y": float(q[:, 1].mean()),
+                    st = self.esper.status if self.esper else None
+                    scene["esper"] = {"x": float(q[:, 0].mean()), "y": float(q[:, 1].mean()),
                                      "heading": float(math.degrees(math.atan2(d[1], d[0]))),
                                      "height": float(z - tz), "cam": cam,
                                      "flipper": st.get("servo_now") if st else None,
@@ -732,13 +735,13 @@ class Vision:
             if self.chips:
                 scene["chips"] = self.chips.find(img, P, tz, scene["board"], scene["cards"])
                 scene["decks"] = self.chips.decks(img, P, tz, scene["board"], scene["cards"])   # takes out cards that are decks
-        if self.mate:
-            m = scene["mate"]
+        if self.esper:
+            m = scene["esper"]
             if m:
-                self.mate.seen((m["x"], m["y"], m["heading"]))
-            elif self.mate.pose:                          # unseen: where it was, plus moves since
-                x, y, h = self.mate.pose
-                scene["mate"] = {"x": x, "y": y, "heading": h, "assumed": True}
+                self.esper.seen((m["x"], m["y"], m["heading"]))
+            elif self.esper.pose:                          # unseen: where it was, plus moves since
+                x, y, h = self.esper.pose
+                scene["esper"] = {"x": x, "y": y, "heading": h, "assumed": True}
         if errs:
             scene["head"]["error_mm"] = float(min(errs))
         with self._lock:

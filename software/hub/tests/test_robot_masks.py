@@ -19,12 +19,12 @@ class RobotMasks(unittest.IsolatedAsyncioTestCase):
         self.img = np.zeros((100, 100, 3), np.uint8)
         self.jpeg = cv2.imencode('.jpg', self.img)[1].tobytes()
         corners = [(x, y, z) for x in (-30, -10) for y in (-30, -10) for z in (0, 10)]
-        self.robots = eyes.robot_masks(P, {'mate': corners}, (100, 100))
+        self.robots = eyes.robot_masks(P, {'esper': corners}, (100, 100))
         self.inside = ((20, 20, 40, 40), np.ones((20, 20), np.uint8))
         self.clear = ((70, 70, 90, 90), np.ones((20, 20), np.uint8))
 
     def test_mask_from_tracked_box(self):
-        m = self.robots['mate']
+        m = self.robots['esper']
         self.assertEqual(m[30, 30], 1)
         self.assertEqual(m[80, 80], 0)
 
@@ -35,7 +35,7 @@ class RobotMasks(unittest.IsolatedAsyncioTestCase):
     async def test_muse_decides(self):
         with patch.object(eyes, 'ask', AsyncMock(return_value='{"keep": [0]}')):
             kept = await eyes.verify(self.img, [self.inside, self.clear], 'card', robots=self.robots)
-        self.assertEqual(kept, [self.inside])   # Muse saw a loose card on Mate
+        self.assertEqual(kept, [self.inside])   # Muse saw a loose card on Esper
 
     async def test_no_answer_falls_back_to_robot_rule(self):
         with patch.object(eyes, 'ask', AsyncMock(side_effect=eyes.EyesError('down'))):
@@ -53,7 +53,7 @@ class RobotMasks(unittest.IsolatedAsyncioTestCase):
         ask = AsyncMock(return_value='{"keep": []}')
         with patch.object(eyes, 'ask', ask):
             kept = await eyes.verify(self.img, [self.inside, self.clear], 'card', robots=self.robots, everything=False)
-        self.assertEqual(kept, [self.clear])     # Muse dropped the one on Mate; the clear one wasn't in question
+        self.assertEqual(kept, [self.clear])     # Muse dropped the one on Esper; the clear one wasn't in question
         ask.assert_called_once()
 
     async def test_fallback_checked_against_first_name(self):
@@ -69,10 +69,10 @@ class RobotMasks(unittest.IsolatedAsyncioTestCase):
         corners = [(x, y, z) for x in (-30, -10) for y in (-30, -10) for z in (0, 10)]
         with patch.object(eyes, 'segment', AsyncMock(return_value=[near])), \
              patch.object(eyes, 'ask', AsyncMock(return_value='{"keep": [0]}')):
-            r = await eyes.find(self.jpeg, ['card'], P, 0, robot={'mate': corners})
+            r = await eyes.find(self.jpeg, ['card'], P, 0, robot={'esper': corners})
         it = r['items'][0]
         self.assertIn('pick', it)
-        self.assertEqual(it['robot']['near'], ['mate'])
+        self.assertEqual(it['robot']['near'], ['esper'])
 
 
 if __name__ == '__main__':

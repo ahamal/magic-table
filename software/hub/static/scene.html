@@ -80,6 +80,10 @@
   #caltext { font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
   .popbtns { display: flex; justify-content: flex-end; gap: 8px; }
   .popbtns button[hidden] { display: none; }
+  .popbox ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.45; }
+  .popbox .note { font-size: 12px; color: var(--muted, #777); }
+  .popbtns a { display: inline-flex; align-items: center; padding: 0 12px; border-radius: 6px; text-decoration: none;
+    background: #f5a524; color: #111; font-weight: 600; }
   #msg { color: var(--muted); }
   #msg:empty { display: none; }
 </style>
@@ -93,13 +97,26 @@
     <div class="popbtns"><button id="calpopstop" class="stop">Stop calibrating</button><button id="calpopok" hidden>OK</button></div>
   </div>
 </div>
+<div id="prepop" class="pop" hidden>
+  <div class="popbox" role="dialog" aria-labelledby="pretitle">
+    <b id="pretitle">Before calibrating</b>
+    <ol>
+      <li>Open the <b>jog page</b>.</li>
+      <li>Move the cup over the <b>middle of the board</b>, then bring it down until it <b>just touches</b> the board.</li>
+      <li>Press <b>Work zero → All</b> (X, Y and Z become 0 there).</li>
+      <li>Come back here and press <b>Calibrate</b> again.</li>
+    </ol>
+    <div id="prenote" class="note mono"></div>
+    <div class="popbtns"><a href="/jog" target="_blank">Open jog page</a><button id="preok">OK</button></div>
+  </div>
+</div>
 <div id="view"></div>
 
 <div class="hud">
   <div class="top"><b>3D SCENE</b><span id="conn" class="dot bad" title="offline"></span><span class="links"><a href="/">Home</a><a href="/jog">Jog</a><a href="/vision">Vision</a><a href="/talk">Talk</a></span></div>
   <div class="rows">
     <div class="row"><span>Head</span><span id="head" class="mono">–</span></div>
-    <div class="row"><span>Mate</span><span id="mate" class="mono">–</span></div>
+    <div class="row"><span>Esper</span><span id="esper" class="mono">–</span></div>
     <div class="row"><span>Cards</span><span id="cards" class="mono">–</span></div>
   </div>
   <div class="grid2"><button id="top"><svg class="ic " viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/><path d="M12 3v18"/></svg>Top</button><button id="side"><svg class="ic " viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Side</button></div>
@@ -118,7 +135,7 @@
       <button id="calib"><svg class="ic " viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4"/><path d="M12 19v4"/><path d="M1 12h4"/><path d="M19 12h4"/></svg>Calibrate</button><button id="reanchor"><svg class="ic " viewBox="0 0 24 24"><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/></svg>Re-anchor</button><button id="calstop" hidden class="stop">Stop calibrating</button>
       <button id="travelset"><svg class="ic " viewBox="0 0 24 24"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></svg>Travel here</button>
     
-      <button id="matehome" title="Mate is where its home should be: save that spot and heading">Mate home here</button>
+      <button id="esperhome" title="Esper is where its home should be: save that spot and heading">Esper home here</button>
     </div>
   </div>
 </div>
@@ -145,9 +162,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const $ = id => document.getElementById(id);
 const CARD = [63, 88], BOARD_MARKER = 30;
-// Mate: a 130 x 130 x 100 plywood box, 3 mm off the ground on its wheels, black printed corner caps that
+// Esper: a 130 x 130 x 100 plywood box, 3 mm off the ground on its wheels, black printed corner caps that
 // stand 2 mm proud of every face (so 105 to the top of the caps); the marker is on the plywood top (103)
-const MATE = { w: 130, d: 130, body: 100, lift: 3, proud: 2, corner: 24 };
+const ESPER = { w: 130, d: 130, body: 100, lift: 3, proud: 2, corner: 24 };
 // Flipper: a black plastic knife on a servo on the right side, 42 mm from the right wheel's axle at
 // 45 deg (forward and up). The shaft points straight out of the side, so the blade swings in a plane
 // beside the box: out 73 mm, then bent 90 deg inward across the whole front of the face. 20 deg (rest): the
@@ -184,7 +201,7 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(300, 800
 
 const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: .8 });
 const group = name => { const g = new THREE.Group(); g.name = name; scene.add(g); return g; };
-const boardG = group('board'), itemsG = group('items'), cardsG = group('cards'), chipsG = group('chips'), decksG = group('decks'), mateG = group('mate'), camsG = group('cams'), boundsG = group('bounds'), homeG = group('home');
+const boardG = group('board'), itemsG = group('items'), cardsG = group('cards'), chipsG = group('chips'), decksG = group('decks'), esperG = group('esper'), camsG = group('cams'), boundsG = group('bounds'), homeG = group('home');
 
 // head: built around the head marker's centre (the group's origin), from measured offsets
 const L = (dx, dy, dz) => new THREE.Vector3(dx, dz, -dy);           // gantry offset -> three offset
@@ -268,16 +285,16 @@ function drawHead(h, tz) {
 // view holds still while the table does.
 const STILL_MM = 2, STILL_DEG = 3;
 const angDiff = (a, b, period) => { const d = (((a - b) % period) + period) % period; return Math.min(d, period - d); };
-let shownCards = null, shownMate = null;
+let shownCards = null, shownEsper = null;
 function cardsMoved(next) {
   if (!shownCards || shownCards.length !== next.length) return true;
   return next.some(c => !shownCards.some(o => o.face === c.face && o.card === c.card && Math.hypot(o.x - c.x, o.y - c.y) < STILL_MM
                                                 && angDiff(o.angle, c.angle, 180) < STILL_DEG));
 }
-function mateMoved(m) {
-  if (!m || !shownMate) return m !== shownMate;
-  return Math.hypot(m.x - shownMate.x, m.y - shownMate.y) >= STILL_MM || angDiff(m.heading, shownMate.heading, 360) >= STILL_DEG
-    || m.flipper !== shownMate.flipper;
+function esperMoved(m) {
+  if (!m || !shownEsper) return m !== shownEsper;
+  return Math.hypot(m.x - shownEsper.x, m.y - shownEsper.y) >= STILL_MM || angDiff(m.heading, shownEsper.heading, 360) >= STILL_DEG
+    || m.flipper !== shownEsper.flipper;
 }
 
 // where the cup may go: the rectangle inside the board markers
@@ -294,7 +311,7 @@ function drawBounds(b, tz) {
   line.computeLineDistances(); boundsG.add(line);
 }
 
-// Mate's home: its footprint outline and a facing tick, where /api/mate/home parks it
+// Esper's home: its footprint outline and a facing tick, where /api/esper/home parks it
 let shownHome = null;
 function drawHome(h, tz) {
   const key = h ? h.join(',') + '@' + tz : null;
@@ -358,10 +375,10 @@ function drawDecks(decks, tz) {
   }
 }
 
-function drawMate(m, tz) {
-  mateG.clear();
+function drawEsper(m, tz) {
+  esperG.clear();
   if (!m) return;
-  const { w: W, d: D, body: B, lift, proud, corner: C } = MATE;   // local +x = forward (the face), z = sideways
+  const { w: W, d: D, body: B, lift, proud, corner: C } = ESPER;   // local +x = forward (the face), z = sideways
   const h = lift + B;                                 // the plywood top, where the marker is
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(W, B, D), mat(0xd9b98a));
@@ -412,7 +429,7 @@ function drawMate(m, tz) {
   const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, h + proud + 4, 0), 80, 0xea580c, 18, 12); g.add(arrow);
   g.position.copy(P(m.x, m.y, tz));
   g.rotation.y = m.heading * Math.PI / 180;          // gantry heading (from +X toward +Y) -> three's y rotation
-  mateG.add(g);
+  esperG.add(g);
 }
 
 // camera modules, posed from calibration: board, lens, and the picture's footprint on the table
@@ -517,7 +534,7 @@ function render(s) {
   if (tz !== lastTableZ || !table || Object.keys(s.board || {}).length !== table.n) {
     drawTable(tz, s.board); table.n = Object.keys(s.board || {}).length; lastTableZ = tz;
   }
-  drawHead(s.head, tz); drawCams(s.cameras, tz); drawBounds(s.bounds, tz); drawHome(s.mate_home, tz);
+  drawHead(s.head, tz); drawCams(s.cameras, tz); drawBounds(s.bounds, tz); drawHome(s.esper_home, tz);
   if (cardsMoved(s.cards || [])) { drawCards(s.cards, tz); shownCards = s.cards || []; }
   const unread = (s.cards || []).filter(c => c.face === 'up' && !c.card).length;
   if (!$('readcards').classList.contains('busy')) {
@@ -526,7 +543,7 @@ function render(s) {
   }
   drawChips(s.chips, tz);
   drawDecks(s.decks, tz);
-  if (mateMoved(s.mate)) { drawMate(s.mate, tz); shownMate = s.mate; }
+  if (esperMoved(s.esper)) { drawEsper(s.esper, tz); shownEsper = s.esper; }
   if (!framed) { frameView(false); framed = true; }
   const h = s.head || {};
   $('head').textContent = `${fmt(h.x)}, ${fmt(h.y)}, ${fmt(h.z)}`;
@@ -536,7 +553,7 @@ function render(s) {
   const mv = s.camera_moved_px;
   $('moved').textContent = mv == null ? '–' : mv < 3 ? 'no' : `${mv.toFixed(0)} px: recalibrate or re-measure bounds`;
   $('moved').className = 'mono ' + (mv == null || mv < 3 ? '' : 'warn');
-  $('mate').textContent = s.mate ? `${fmt(s.mate.x)}, ${fmt(s.mate.y)} · ${s.mate.heading.toFixed(0)}°` : 'not seen';
+  $('esper').textContent = s.esper ? `${fmt(s.esper.x)}, ${fmt(s.esper.y)} · ${s.esper.heading.toFixed(0)}°` : 'not seen';
   const cards = s.cards || [];
   $('cards').textContent = cards.length ? `${cards.length} (${cards.filter(c => c.face === 'up').length} up)` : 'none';
   $('board').textContent = Object.keys(s.board || {}).sort().join(', ') || 'none';
@@ -559,7 +576,7 @@ function connect() {
     const ev = JSON.parse(e.data);
     if (ev.type === 'scene') render(ev);
     else if (ev.type === 'calibrate') calProgress(ev);
-    else if (ev.type === 'vision' && ev.kind === 'find' && ev.by !== 'scene' && ev.items.some(i => i.board)) drawItems(ev);   // others' finds too (not Mate's: no board places)
+    else if (ev.type === 'vision' && ev.kind === 'find' && ev.by !== 'scene' && ev.items.some(i => i.board)) drawItems(ev);   // others' finds too (not Esper's: no board places)
     else if (ev.type === 'vision' && ev.kind === 'shape' && ev.by !== 'scene') drawPolys(ev);
     else if (ev.type === 'status' && S && S.calibrated && ev.WPos) {     // move the head between scene updates
       S.head = { ...S.head, x: ev.WPos[0], y: ev.WPos[1], z: ev.WPos[2], tip_z: ev.WPos[2] + TIP.dz };
@@ -582,11 +599,13 @@ $('calib').onclick = async () => {
   // start from Work zero with the cup touching the board in the middle: that's the board's height and the grid's middle
   const h = S?.head || {};
   if (![h.x, h.y, h.z].every(v => Math.abs(v ?? 1) < 0.05)) {
-    say('To calibrate: on the jog page, bring the cup down until it just touches the board in the middle, Work zero X, Y and Z there, then press Calibrate. (The head is at ' + [h.x, h.y, h.z].map(v => (v ?? 0).toFixed(1)).join(', ') + '.)', true);
+    $('prenote').textContent = 'Calibration starts from Work zero with the cup on the board. The head is at ' +
+      [h.x, h.y, h.z].map(v => (v ?? 0).toFixed(1)).join(', ') + ', not 0, 0, 0.';
+    $('prepop').hidden = false;
     return;
   }
   const top = S?.travel_z ?? 110;
-  if (!confirm(`Calibrate: the cup rises to ${top.toFixed(0)} mm, then visits 5 × 5 spots 110 mm each way from here at ${top.toFixed(0)}, ${((top + 15) / 2).toFixed(0)} and 15 mm above the board, then measures the board markers. Keep the board clear (nothing taller than ~10 mm) and Mate at home or off the board. About 3 minutes.`)) return;
+  if (!confirm(`Calibrate: the cup rises to ${top.toFixed(0)} mm, then visits 5 × 5 spots 110 mm each way from here at ${top.toFixed(0)}, ${((top + 15) / 2).toFixed(0)} and 15 mm above the board, then measures the board markers. Keep the board clear (nothing taller than ~10 mm) and Esper at home or off the board. About 3 minutes.`)) return;
   $('calib').disabled = $('reanchor').disabled = true;
   $('calstop').hidden = false;
   say('Calibrating…', true);
@@ -623,10 +642,13 @@ function calDone(title, text) {
   $('calbar').style.width = '100%'; $('calpopstop').hidden = true; $('calpopok').hidden = false;
 }
 $('calpopok').onclick = () => { $('calpop').hidden = true; };
+$('preok').onclick = () => { $('prepop').hidden = true; };
+$('prepop').onclick = e => { if (e.target === $('prepop')) $('prepop').hidden = true; };   // click outside closes
+addEventListener('keydown', e => { if (e.key === 'Escape') $('prepop').hidden = true; });
 $('calpopstop').onclick = () => { post('calibrate/stop'); $('caltext').textContent = 'Stopping after this move…'; };
 $('calstop').onclick = () => { post('calibrate/stop'); say('Stopping after this move…', true); };
 $('travelset').onclick = async () => {
-  if (!confirm('Use the current Z as the travel height? Below it, the head is kept off Mate.')) return;
+  if (!confirm('Use the current Z as the travel height? Below it, the head is kept off Esper.')) return;
   const r = await post('calibration/travel');
   say(r.ok ? `Travel height set: Z ${r.travel_z.toFixed(1)}` : 'Failed: ' + r.error, true);
 };

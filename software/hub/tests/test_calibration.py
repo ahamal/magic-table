@@ -44,11 +44,11 @@ class CalibrateRefuses(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.v.grbl.send.assert_not_called()
 
-    def test_mate_under_the_grid(self):
+    def test_esper_under_the_grid(self):
         self.v.grbl.status["WPos"] = [0.0, 0.0, 72.0]
-        self.v.scene = {"mate": {"x": 0.0, "y": 0.0}}
+        self.v.scene = {"esper": {"x": 0.0, "y": 0.0}}
         r = self.v.calibrate(72.0, span=130)
-        self.assertIn("Mate", r["error"])
+        self.assertIn("Esper", r["error"])
         self.v.grbl.send.assert_not_called()
 
     def test_from_zero_needs_the_head_at_zero(self):

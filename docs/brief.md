@@ -1,12 +1,12 @@
 # Magic Table — Project Brief
 
-*Oct 26, 2026 · Ashwin. Original brief, kept for reference. Later decisions in [`decisions.md`](decisions.md) take precedence where they differ (e.g. naming: "companion robot" is now **Mate**; the gantry is **the Frame**).*
+*Oct 26, 2026 · Ashwin. Original brief, kept for reference. Later decisions in [`decisions.md`](decisions.md) take precedence where they differ (e.g. naming: "companion robot" is now **Esper**; the gantry is **the Frame**).*
 
 ## Overview
 
 Magic Table is a tabletop robot that learns any game you explain to it in plain English, then deals, plays, keeps score and talks. It is the planned entry for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026), indie developer track, theme "Push the Frontier".
 
-- **Hardware:** the builder's existing CoreXY gantry with a suction gripper, an overhead camera, printed fixtures (card flipper, peek camera window), and an optional small companion robot that acts as the AI player's body.
+- **Hardware:** a CoreXY gantry rebuilt from salvaged parts, with a suction gripper, an overhead camera, printed fixtures (card flipper, peek camera window), and an optional small companion robot that acts as the AI player's body.
 - **Software:** Meta's SAM 3.1 sees the table, Muse Spark reasons about the game and calls the table's MCP tools, and G-code moves the gantry.
 - **Hero demo:** poker. The table deals, flips community cards, moves chips, privately peeks at its own hole cards, and bluffs out loud.
 - **Pitch:** "A table that learns any game you teach it, and you can build your own."
@@ -39,7 +39,7 @@ Most of the plumbing already exists, so the ten days go to AI and robotics, not 
 
 - **Xenote:** the builder's browser notebook platform (web-runner, box-runner, versions, AI integration, own MCP server).
 - **Vani:** Xenote's messaging layer (browser ↔ Raspberry Pi / ESP32).
-- **Robo Diner:** a dosa-cooking robot under $500, built end to end — the CoreXY gantry used here.
+- **An earlier cooking robot:** dismantled; its rails, motors, belts and drivers were salvaged, cut and modified into the Frame.
 - **TinyESP:** ESP32 wireless controllers.
 - **Card Games workspace:** existing Xenote card-game work.
 - **Other:** Logic Lab, Casita, other education work.
@@ -76,7 +76,7 @@ Poker is the hero demo; Go and chess are stretch goals to show breadth.
 **Poker:**
 - Chips: the cup picks the top chip off a stack; the camera counts stacks.
 - Flipping: a printed passive flipper — card face down on a hinged paddle, the gantry pushes its lever, the card lands face up. Curved chute as fallback.
-- Peek: the robot reads its own card privately; the table camera never sees other players' cards. *(Now done with Mate's camera — see decisions.)*
+- Peek: the robot reads its own card privately; the table camera never sees other players' cards. *(Now done with Esper's camera — see decisions.)*
 
 **Go:** stones are smooth domes about 22 mm wide, likely the easiest pick. 19×19 is about 42×45 cm, so 9×9 (about 21 cm) or 13×13 (about 30 cm) depending on travel. Feed stones from a printed dispenser, never a heaped bowl.
 
@@ -111,7 +111,7 @@ Poker is the hero demo; Go and chess are stretch goals to show breadth.
 
 **Deferred:** 12V electromagnet + steel washers, MOSFET modules with 1N4007 diodes, vacuum pressure sensor (XGZP6847, to confirm picks). US coins are not magnetic, which is why suction is the main tool.
 
-## Companion robot (now: Mate)
+## Companion robot (now: Esper)
 
 A small wheeled robot on the table. Recommended role: the AI player's body — faces whoever is talking, reacts to bets, "thinks" before calling, shows emotions on a small screen. Alternatives considered: courier (carries chips/cards beyond the gantry's reach), recon (low-angle views; never look at other players' faces or cards).
 

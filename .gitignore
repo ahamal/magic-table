@@ -14,7 +14,7 @@ software/hub/certs/
 software/hub/transcripts.jsonl
 software/hub/chat.jsonl
 software/hub/calibration.json
-software/hub/mate_pose.json
+software/hub/esper_pose.json
 software/hub/last_position.json
 software/hub/needs_reanchor
 software/hub/notes.md
@@ -22,3 +22,4 @@ software/hub/voices/
 software/hub/voice.json
 software/hub/vision/
 software/hub/cards/
+software/hub/chats/

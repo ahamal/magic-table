@@ -315,9 +315,9 @@ function render(s) {
 // ---- map ----
 // The board, from above, in work coordinates: 0,0 is its middle, X right, Y up. The dot is the
 // head (what Go and the readout use); the cup hangs TIP from it, so the cup's reach is drawn as
-// where the head can be (shifted by TIP). Markers and Mate are where the cameras see them.
+// where the head can be (shifted by TIP). Markers and Esper are where the cameras see them.
 const PAD = 12, TIP = [-2.4, -19.7], ZMIN = -1, ZMAX = 150;
-let board = { bounds: [-210, 210, -191, 191], markers: {}, mate: null };
+let board = { bounds: [-210, 210, -191, 191], markers: {}, esper: null };
 const view = () => { const b = board.bounds, m = 50;          // the board: the cup's reach plus the marker margin
   return [b[0] - m, b[1] + m, b[2] - m, b[3] - TIP[1] + m]; };
 const sx = x => x, sy = y => -y;                                // SVG y runs down
@@ -344,8 +344,8 @@ function drawMap() {
     el('rect', { x: m.x - 19, y: -m.y - 19, width: 38, height: 38, fill: '#f4f4f2' }, xy);
     el('rect', { x: m.x - 13, y: -m.y - 13, width: 26, height: 26, fill: '#1b1b1b' }, xy);
   }
-  if (board.mate) {                                              // Mate's body, ~90 x 100 mm
-    const g = el('g', { transform: `translate(${board.mate.x} ${-board.mate.y}) rotate(${-board.mate.heading})` }, xy);
+  if (board.esper) {                                              // Esper's body, ~90 x 100 mm
+    const g = el('g', { transform: `translate(${board.esper.x} ${-board.esper.y}) rotate(${-board.esper.heading})` }, xy);
     el('rect', { x: -50, y: -45, width: 100, height: 90, rx: 6, fill: '#c9a46c', opacity: .85 }, g);
   }
   // 0,0: the middle of the board
@@ -428,22 +428,22 @@ $('zrail').addEventListener('pointerdown', e => {
   updateTarget();
 }));
 $('here').onclick = () => { target = currentOr0(); updateTarget(); };
-// this page talks to GRBL directly: plain G-code, none of the hub's checks (bounds, Z, Mate) in between
+// this page talks to GRBL directly: plain G-code, none of the hub's checks (bounds, Z, Esper) in between
 const num = v => (+v).toFixed(3);
 $('go').onclick = () => target && send(`G90 G1 X${num(target.x)} Y${num(target.y)}${target.z != null ? ' Z' + num(target.z) : ''} F${feed().toFixed(0)}`);
 $('gozero').onclick = $('padzero').onclick = () => send(`G90 G1 X0 Y0 F${feed().toFixed(0)}`);
 
-// the board from the cameras: reach, markers, Mate (refreshed with each scene)
+// the board from the cameras: reach, markers, Esper (refreshed with each scene)
 function boardFrom(s) {
   if (!s || !s.calibrated) return;
   $('resetbar').hidden = !s.needs_reanchor;
   const p = s.saved_position;
   $('savedpos').textContent = p ? `(${p.map(v => Math.round(v)).join(', ')})` : '';
   $('reanchor').disabled = !p;
-  const mate = s.mate ? { x: s.mate.x, y: s.mate.y, heading: s.mate.heading } : null;
+  const esper = s.esper ? { x: s.esper.x, y: s.esper.y, heading: s.esper.heading } : null;
   const same = JSON.stringify(s.bounds) === JSON.stringify(board.bounds) && Object.keys(s.board || {}).length === Object.keys(board.markers).length
-    && (!mate === !board.mate) && (!mate || Math.hypot(mate.x - board.mate.x, mate.y - board.mate.y) < 3);
-  board = { bounds: s.bounds || board.bounds, markers: s.board || {}, mate };
+    && (!esper === !board.esper) && (!esper || Math.hypot(esper.x - board.esper.x, esper.y - board.esper.y) < 3);
+  board = { bounds: s.bounds || board.bounds, markers: s.board || {}, esper };
   if (!same) drawMap();
 }
 fetch('/api/scene').then(r => r.json()).then(boardFrom).catch(() => {});

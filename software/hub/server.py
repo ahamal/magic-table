@@ -25,10 +25,10 @@ import cards as cardlib
 import chips as chiplib
 import eyes
 from grbl import REALTIME, Grbl
-from mate import CENTRE as MATE_CENTRE, CLOSE_MM as MATE_CLOSE, MateLink
+from esper import CENTRE as ESPER_CENTRE, CLOSE_MM as ESPER_CLOSE, EsperLink
 from gripper import SEQUENCES, Gripper
 from talk import Chat, TranscribeError
-from vision import MATE_SIZE, Vision, to_xy
+from vision import ESPER_SIZE, Vision, to_xy
 from voice import Voice
 
 HERE = Path(__file__).parent
@@ -49,7 +49,7 @@ def broadcast(event):
 gripper = Gripper(grbl, broadcast)
 chat = Chat(broadcast)
 voice = Voice(broadcast)
-mate = MateLink()
+esper = EsperLink()
 vision = None  # needs the cameras, so it starts at startup
 
 
@@ -68,7 +68,7 @@ async def startup():
     grbl.start()
     cameras.extend(await asyncio.to_thread(camera.start_all))
     global vision
-    vision = Vision(cameras, grbl, broadcast, mate)
+    vision = Vision(cameras, grbl, broadcast, esper)
     vision.cards = cardlib.Cards()
     vision.chips = chiplib.Chips()
     asyncio.create_task(vision.cards.watch(eyes.ask))
@@ -153,7 +153,7 @@ async def jog(body: Jog):
     if not axes:
         raise HTTPException(400, "nothing to jog")
     if vision and not vision.jog_ok(body.x, body.y, body.z):
-        return {"line": "", "reply": "error:won't press into Mate"}
+        return {"line": "", "reply": "error:won't press into Esper"}
     return await asyncio.to_thread(run, f"$J=G91 G21 {axes} F{body.feed:.0f}")
 
 
@@ -177,7 +177,7 @@ async def move(body: Move):
         lines, why = vision.plan_move(body.x, body.y, body.z)
         if why:
             return {"line": "", "reply": f"error:{why}"}
-        if lines:   # around Mate: up to travel height, across, back down
+        if lines:   # around Esper: up to travel height, across, back down
             replies = [await asyncio.to_thread(run, l) for l in lines]
             return {"line": " / ".join(lines), "reply": replies[-1]["reply"]}
     cmd = f"G90 G1 {axes} F{body.feed:.0f}" if body.feed else f"G90 G0 {axes}"
@@ -195,7 +195,7 @@ class Tip(BaseModel):
 async def tip(body: Tip):
     """Put the cup tip (not the head) at board X/Y, optionally at a height. The cup sits in
     front of the Z extrusion (vision.TIP_OFFSET), so the head goes there minus that offset.
-    Same Mate rule as /api/move."""
+    Same Esper rule as /api/move."""
     hx, hy = vision.head_for_tip(body.x, body.y)
     return await move(Move(x=hx, y=hy, z=body.z, feed=body.feed))
 
@@ -260,12 +260,12 @@ history = eyes.History()   # every see, find and check, kept on disk
 
 
 async def _picture(cam):
-    """A fresh JPEG from cam 0, 1 or "mate", and that camera's model (None for Mate)."""
-    if cam == "mate":
+    """A fresh JPEG from cam 0, 1 or "esper", and that camera's model (None for Esper)."""
+    if cam == "esper":
         try:
-            return await asyncio.to_thread(lambda: urllib.request.urlopen(f"{mate.url}/capture", timeout=5).read()), None
+            return await asyncio.to_thread(lambda: urllib.request.urlopen(f"{esper.url}/capture", timeout=5).read()), None
         except OSError as e:
-            raise HTTPException(503, f"Mate's camera didn't answer: {e}")
+            raise HTTPException(503, f"Esper's camera didn't answer: {e}")
     c = get_camera(int(cam))
     jpg = await asyncio.to_thread(c.capture)
     if jpg is None:
@@ -309,7 +309,7 @@ async def see(cam: str = "1", ask: str | None = None, effort: str = "minimal", b
 
 
 def _robot_boxes():
-    """The head and Mate as boxes of work-coordinate corners, where they're tracked now, so find
+    """The head and Esper as boxes of work-coordinate corners, where they're tracked now, so find
     can tell a match that is the robot from a loose thing (eyes.robot_masks)."""
     sc, tz = vision.scene, (vision.cal or {}).get("table_z")
     if tz is None or not sc.get("head"):
@@ -320,10 +320,10 @@ def _robot_boxes():
     h = sc["head"]
     out = {"cup": box(h["tip_x"], h["tip_y"], 12, 12, h["tip_z"], h["z"]),
            "head": box(h["x"] + 11, h["y"], 12, 19, h["z"] - 35, h["z"] + 250)}   # Z extrusion, marker card on its left face
-    m = sc.get("mate")
+    m = sc.get("esper")
     if m:
-        half = max(MATE_SIZE[:2]) / 2 + 8
-        out["mate"] = box(m["x"], m["y"], half, half, tz, tz + MATE_SIZE[2], math.radians(m["heading"]))
+        half = max(ESPER_SIZE[:2]) / 2 + 8
+        out["esper"] = box(m["x"], m["y"], half, half, tz, tz + ESPER_SIZE[2], math.radians(m["heading"]))
     return out
 
 
@@ -331,12 +331,12 @@ def _robot_boxes():
 async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = "minimal", height: bool = False,
                diameter: float | None = None, by: str = "agent"):
     """Where things are, for picking (SAM 3.1, one fresh picture from `cam`: 1 by default, 0, or
-    "mate"). what: one or more names, comma-separated (from /api/see, or your own); fallbacks
+    "esper"). what: one or more names, comma-separated (from /api/see, or your own); fallbacks
     after "|" are tried in order when a name finds nothing: what=earbuds case|white object
     (/api/see gives them). Each item: what, matched, box and outline (pixels), and from a
     calibrated camera its footprint on the board {x, y, w, h, angle}, on_board, and pick
     {x, y, clear_mm}: put the cup at x, y; clear_mm is how much room the cup (15 mm) has.
-    Mate's camera gives pixels only. ask: a question Muse Spark answers about each item from
+    Esper's camera gives pixels only. ask: a question Muse Spark answers about each item from
     its crop (answer). height=true (cam 1): cam 0, low at the side, looks at the same moment
     and each item gets height_mm, how tall it stands (None where cam 0 can't see it whole).
     Off by default: on this build cam 0's board level is off (Nov 2), so it finds nothing yet.
@@ -483,7 +483,7 @@ class Calibrate(BaseModel):
 @app.post("/api/calibrate")
 async def calibrate(body: Calibrate):
     """Move the head marker over a grid at several heights and fit every camera. Takes ~2-3 min.
-    Start with Z at its top (that becomes the travel height) over the middle of the board, Mate
+    Start with Z at its top (that becomes the travel height) over the middle of the board, Esper
     out from under the square; it goes down from there, never closer than 15 mm to the board."""
     if body.from_zero:
         return await asyncio.to_thread(vision.calibrate, 0.0, body.span, body.steps, body.levels, body.feed, from_zero=True)
@@ -517,12 +517,12 @@ async def calibration_table():
 
 
 class Travel(BaseModel):
-    z: float | None = None   # cup height (work Z) that's safe over Mate; None = the current Z
+    z: float | None = None   # cup height (work Z) that's safe over Esper; None = the current Z
 
 
 @app.post("/api/calibration/travel")
 def calibration_travel(body: Travel = Travel()):
-    """Set the travel height: the cup height that's safe over Mate (110 mm clears it)."""
+    """Set the travel height: the cup height that's safe over Esper (110 mm clears it)."""
     return vision.set_travel(body.z)
 
 
@@ -541,20 +541,20 @@ async def reanchor(camera: bool = False):
 
 @app.get("/api/scene")
 async def scene(fresh: bool = False):
-    """Where everything is, in gantry coordinates: head, Mate, cards (face-up ones named: card,
+    """Where everything is, in gantry coordinates: head, Esper, cards (face-up ones named: card,
     from the card cache), chip stacks (chips: [{x, y, height_mm, count, count_raw, colour, fit}]; count_raw unrounded, 7.4 is a shaky 7; from cam 1's
     colours, where they really stand), decks ([{x, y, angle, height_mm, cards, fit}], likewise),
     board markers, cameras."""
     return await asyncio.to_thread(vision.update) if fresh else vision.scene
 
 
-# ---- Mate: driving with the camera ----
+# ---- Esper: driving with the camera ----
 
-def mate_pose(n=3):
-    """Mate's marker pose (x, y, heading), averaged over a few fresh looks; None if unseen."""
+def esper_pose(n=3):
+    """Esper's marker pose (x, y, heading), averaged over a few fresh looks; None if unseen."""
     seen = []
     for _ in range(n):
-        m = vision.update().get("mate")
+        m = vision.update().get("esper")
         if m and not m.get("assumed"):
             seen.append((m["x"], m["y"], m["heading"]))
         time.sleep(0.15)
@@ -563,15 +563,15 @@ def mate_pose(n=3):
     h0 = seen[0][2]
     hs = [h0 + ((h - h0 + 180) % 360 - 180) for _, _, h in seen]
     p = (sum(p[0] for p in seen) / len(seen), sum(p[1] for p in seen) / len(seen), sum(hs) / len(hs))
-    mate.seen(p)
+    esper.seen(p)
     return p
 
 
-def mate_home():
-    """Mate's home: saved in the calibration, or by default the middle of the left margin,
+def esper_home():
+    """Esper's home: saved in the calibration, or by default the middle of the left margin,
     halfway between the left board markers, facing into the board (+X)."""
-    if vision.cal and vision.cal.get("mate_home"):
-        return vision.cal["mate_home"]
+    if vision.cal and vision.cal.get("esper_home"):
+        return vision.cal["esper_home"]
     board = vision.update().get("board") or {}
     pts = [(b["x"], b["y"]) for b in board.values()]
     if len(pts) < 2:
@@ -583,35 +583,35 @@ def mate_home():
     return [round(sum(x for x, _ in left) / len(left), 1), round(sum(y for _, y in left) / len(left), 1), 0.0]
 
 
-class MateGoto(BaseModel):
+class EsperGoto(BaseModel):
     x: float
     y: float
     heading: float | None = None   # degrees, anticlockwise from +X; None = any
     check: bool = True             # cam 1 checks the way first (~1 s, no API call); false = just go
 
 
-MATE_EYE = MATE_SIZE[0] / 2 - MATE_CENTRE[0]   # the camera, on the front face, ahead of the turning centre (mm)
+ESPER_EYE = ESPER_SIZE[0] / 2 - ESPER_CENTRE[0]   # the camera, on the front face, ahead of the turning centre (mm)
 MAT_GREY = 120          # cam 1: the mat is darker than this (it reads 30-85 across the board)
 MAT_RED = (100, 90)     # ...and anything this saturated and bright isn't the mat either (a red chip)
 IN_THE_WAY_PX = 120     # px: something this big in cam 1 is in the way (a chip is ~2000)
 MARKER_CLEAR = 30       # mm around a board marker's centre that's the marker, not in the way
-MATE_BODY = (-67.0, 87.0, -67.0, 67.0)   # Mate's footprint from its marker (back, front with the flipper down, right, left), mm
-MATE_GAP = 3.0          # mm: how close Mate may pass something
-MATE_SELF = 25.0        # mm around Mate's box that's still Mate in the picture (its arm and wheels)
-CARD_MM = ((52, 76), (78, 100))   # a lying card's footprint as cam 1 maps it (63 x 88; fine for Mate to drive over)
+ESPER_BODY = (-67.0, 87.0, -67.0, 67.0)   # Esper's footprint from its marker (back, front with the flipper down, right, left), mm
+ESPER_GAP = 3.0          # mm: how close Esper may pass something
+ESPER_SELF = 25.0        # mm around Esper's box that's still Esper in the picture (its arm and wheels)
+CARD_MM = ((52, 76), (78, 100))   # a lying card's footprint as cam 1 maps it (63 x 88; fine for Esper to drive over)
 
 
-def _footprint(cx, cy, heading, grow=MATE_GAP):
-    """Mate's footprint on the board with its turning centre at (cx, cy): 4 corners."""
-    b, f, r, l = MATE_BODY
+def _footprint(cx, cy, heading, grow=ESPER_GAP):
+    """Esper's footprint on the board with its turning centre at (cx, cy): 4 corners."""
+    b, f, r, l = ESPER_BODY
     a = math.radians(heading)
     c, s = math.cos(a), math.sin(a)
-    return [(cx + c * (u - MATE_CENTRE[0]) - s * (v - MATE_CENTRE[1]), cy + s * (u - MATE_CENTRE[0]) + c * (v - MATE_CENTRE[1]))
+    return [(cx + c * (u - ESPER_CENTRE[0]) - s * (v - ESPER_CENTRE[1]), cy + s * (u - ESPER_CENTRE[0]) + c * (v - ESPER_CENTRE[1]))
             for u, v in ((b - grow, r - grow), (f + grow, r - grow), (f + grow, l + grow), (b - grow, l + grow))]
 
 
 def _sweep(start, h0, end, h1, h2):
-    """Where Mate's footprint goes: turning at start from h0 to h1, driving to end, turning to
+    """Where Esper's footprint goes: turning at start from h0 to h1, driving to end, turning to
     h2 (h2 None: no turn). Convex pieces (lists of x, y)."""
     turn = lambda c, a, b: [_footprint(*c, a + (b - a) * k / 12) for k in range(13)]
     d = lambda a, b: (b - a + 180) % 360 - 180
@@ -623,10 +623,10 @@ def _sweep(start, h0, end, h1, h2):
 
 
 def _in_the_way(pose, end, heading=None, ignore=()):
-    """What Mate would touch driving from `pose` (its marker's x, y, heading) to `end` (its
-    turning centre) and turning to `heading`, the way mate.goto drives (turn toward it, or
+    """What Esper would touch driving from `pose` (its marker's x, y, heading) to `end` (its
+    turning centre) and turning to `heading`, the way esper.goto drives (turn toward it, or
     away and back up, then drive), from a fresh cam 1 picture: anything that isn't dark mat
-    where its footprint goes (MATE_GAP to spare), apart from Mate itself, the gantry head, the
+    where its footprint goes (ESPER_GAP to spare), apart from Esper itself, the gantry head, the
     board markers and the spots in `ignore`. Only on the mat (inside the board markers): past
     them is the table. [{x, y, px}], or why it can't tell (a string)."""
     P, _ = vision._cam(1)
@@ -642,11 +642,11 @@ def _in_the_way(pose, end, heading=None, ignore=()):
     img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
     shape = img.shape[:2]
     pix = lambda pts, z=tz: np.array([eyes.project(P, (x, y, z)) for x, y in pts], np.int32)
-    start = mate.centre(pose)
+    start = esper.centre(pose)
     h1 = math.degrees(math.atan2(end[1] - start[1], end[0] - start[0]))
     if abs((h1 - pose[2] + 180) % 360 - 180) > 90:      # it backs up there instead
         h1 += 180
-    if math.hypot(end[0] - start[0], end[1] - start[1]) <= MATE_CLOSE:
+    if math.hypot(end[0] - start[0], end[1] - start[1]) <= ESPER_CLOSE:
         h1 = pose[2]                                     # already there: only the last turn
     path = np.zeros(shape, np.uint8)
     for piece in _sweep(start, pose[2], end, h1, heading):
@@ -654,10 +654,10 @@ def _in_the_way(pose, end, heading=None, ignore=()):
     mat = np.zeros(shape, np.uint8)
     cv2.fillConvexPoly(mat, cv2.convexHull(pix([(m["x"], m["y"]) for m in marks.values()])), 1)
     path &= mat
-    me = _footprint(*start, pose[2], MATE_SELF)          # Mate itself, from below the board to its top
-    cv2.fillConvexPoly(path, cv2.convexHull(np.r_[pix(me, tz - 20), pix(me, tz + MATE_SIZE[2])]), 0)
+    me = _footprint(*start, pose[2], ESPER_SELF)          # Esper itself, from below the board to its top
+    cv2.fillConvexPoly(path, cv2.convexHull(np.r_[pix(me, tz - 20), pix(me, tz + ESPER_SIZE[2])]), 0)
     for name, r in eyes.robot_masks(P, _robot_boxes() or {}, shape).items():
-        if name != "mate":
+        if name != "esper":
             path[r > 0] = 0
     ring = lambda c, r: [(c[0] + r * math.cos(t), c[1] + r * math.sin(t)) for t in np.linspace(0, 2 * math.pi, 32)]
     for c in [(m["x"], m["y"]) for m in marks.values()]:
@@ -674,7 +674,7 @@ def _in_the_way(pose, end, heading=None, ignore=()):
         inside = thing & (path > 0)
         n = int(inside.sum())
         if n < IN_THE_WAY_PX or _a_card(P, thing, tz):
-            continue                                     # Mate drives over cards (it's 3 mm up)
+            continue                                     # Esper drives over cards (it's 3 mm up)
         ys, xs = np.nonzero(inside)
         x, y = to_xy(P, np.array([[xs.mean(), ys.mean()]]), tz)[0]
         hit.append({"x": round(float(x), 1), "y": round(float(y), 1), "px": n})
@@ -694,7 +694,7 @@ def _a_card(P, thing, tz):
         and cv2.contourArea(q) > 0.8 * w * h
 
 
-def mate_goto(x, y, heading, check=True, ignore=()):
+def esper_goto(x, y, heading, check=True, ignore=()):
     if not vision.cal:
         return {"ok": False, "error": "not calibrated"}
     b = vision.cal.get("bounds")
@@ -703,35 +703,35 @@ def mate_goto(x, y, heading, check=True, ignore=()):
     if vision.needs_reanchor:                           # can't tell how high the head is
         return {"ok": False, "error": UNANCHORED["reply"].removeprefix("error:")}
     travel = vision.cal.get("travel_z")
-    if travel is not None and z_now() < travel - 0.5:   # nothing low for Mate to run into
+    if travel is not None and z_now() < travel - 0.5:   # nothing low for Esper to run into
         if grbl.send(f"G90 G0 Z{travel:.3f}") != "ok" or grbl.send("G4 P0", 60) != "ok":
             return {"ok": False, "error": "couldn't raise the head first"}
-    p = mate_pose() or mate.pose                         # unseen: where it was last seen, plus moves since
+    p = esper_pose() or esper.pose                         # unseen: where it was last seen, plus moves since
     if p is None:
-        return {"ok": False, "error": "the camera can't see Mate's marker, and hasn't since the hub started"}
+        return {"ok": False, "error": "the camera can't see Esper's marker, and hasn't since the hub started"}
     if check:
         hit = _in_the_way(p, (x, y), heading, ignore)
         if isinstance(hit, str):
-            return {"ok": False, "error": f"can't check Mate's way: {hit} (check=false to go anyway)"}
+            return {"ok": False, "error": f"can't check Esper's way: {hit} (check=false to go anyway)"}
         if hit:
-            return {"ok": False, "error": "something is in Mate's way", "in_the_way": hit}
-    res = mate.goto(mate_pose, x, y, heading)
+            return {"ok": False, "error": "something is in Esper's way", "in_the_way": hit}
+    res = esper.goto(esper_pose, x, y, heading)
     res["checked_path"] = check
     return res
 
 
-@app.post("/api/mate/goto")
-async def mate_goto_api(body: MateGoto):
-    """Drive Mate so its turning centre ends on (x, y), then turn to `heading`. Turns, drives,
+@app.post("/api/esper/goto")
+async def esper_goto_api(body: EsperGoto):
+    """Drive Esper so its turning centre ends on (x, y), then turn to `heading`. Turns, drives,
     looks with the camera and corrects until within ~5 mm and ~3 deg. Raises the gantry head to
     travel height first. With check (the default), cam 1 looks at the way first (its lane and
     where it turns, ~1 s, no API call): anything on the mat there, or no way to check, and it
     refuses (in_the_way [{x, y}]). check=false just goes (a short hop in the clear, or pushing
     chips on purpose)."""
-    return await asyncio.to_thread(mate_goto, body.x, body.y, body.heading, body.check)
+    return await asyncio.to_thread(esper_goto, body.x, body.y, body.heading, body.check)
 
 
-class MateMove(BaseModel):
+class EsperMove(BaseModel):
     servo: float | None = None         # flipper angle, degrees (20 = rest, lying on the table)
     servo_speed: float | None = None   # required with servo: gentle (the peek lifts at 30); capped at 360
     turn: float | None = None          # degrees anticlockwise, in place
@@ -739,15 +739,15 @@ class MateMove(BaseModel):
     wheel_speed: float = 800           # half-steps/s: 800 is full speed, the peek creeps at 200
 
 
-@app.post("/api/mate/move")
-async def mate_move_api(body: MateMove):
-    """One step of a recipe (the flip, the peek: agent/mate.md): the flipper to an angle at a
+@app.post("/api/esper/move")
+async def esper_move_api(body: EsperMove):
+    """One step of a recipe (the flip, the peek: agent/esper.md): the flipper to an angle at a
     gentle speed, starting at once and running while the wheels turn and then drive. Returns
-    when both are done. Counted into where the hub thinks Mate is (its own /step isn't); no camera
+    when both are done. Counted into where the hub thinks Esper is (its own /step isn't); no camera
     check of the way: drive only where you've looked (up to 200 mm a call)."""
     if body.servo is not None:
         if body.servo_speed is None:
-            raise HTTPException(400, "give servo_speed with servo: fast flipper moves brown Mate out")
+            raise HTTPException(400, "give servo_speed with servo: fast flipper moves brown Esper out")
         if not 20 <= body.servo <= 150:
             raise HTTPException(400, "servo is 20 (rest) to 150 degrees")
     if body.drive is not None and abs(body.drive) > 200:
@@ -756,92 +756,92 @@ async def mate_move_api(body: MateMove):
         raise HTTPException(400, "turn at most 360 degrees a call")
     if not 50 <= body.wheel_speed <= 800:
         raise HTTPException(400, "wheel_speed is 50 to 800")
-    return await asyncio.to_thread(mate.move, body.servo, body.servo_speed, body.turn, body.drive,
+    return await asyncio.to_thread(esper.move, body.servo, body.servo_speed, body.turn, body.drive,
                                    round(body.wheel_speed))
 
 
-class MateLook(BaseModel):
+class EsperLook(BaseModel):
     x: float
     y: float
-    distance: float = 150.0          # from Mate's camera to (x, y), mm
-    side: float | None = None        # look from this direction (degrees from +X, from the spot toward Mate); None = from where Mate is
+    distance: float = 150.0          # from Esper's camera to (x, y), mm
+    side: float | None = None        # look from this direction (degrees from +X, from the spot toward Esper); None = from where Esper is
     check: bool = True               # cam 1 checks the way first; false = just go
 
 
-def mate_look(x, y, distance=150.0, side=None, check=True):
-    p = mate_pose() or mate.pose
+def esper_look(x, y, distance=150.0, side=None, check=True):
+    p = esper_pose() or esper.pose
     if p is None:
-        return {"ok": False, "error": "the camera can't see Mate's marker, and hasn't since the hub started"}
-    cx, cy = mate.centre(p)
+        return {"ok": False, "error": "the camera can't see Esper's marker, and hasn't since the hub started"}
+    cx, cy = esper.centre(p)
     a = math.radians(side) if side is not None else math.atan2(cy - y, cx - x)
-    back = distance + MATE_EYE
+    back = distance + ESPER_EYE
     spot = (x + back * math.cos(a), y + back * math.sin(a))
     heading = (math.degrees(a) + 180 + 180) % 360 - 180      # facing the spot
-    res = mate_goto(spot[0], spot[1], heading, check, ignore=[(x, y)])
+    res = esper_goto(spot[0], spot[1], heading, check, ignore=[(x, y)])
     res["looking_at"] = [x, y]
     return res
 
 
-@app.post("/api/mate/look")
-async def mate_look_api(body: MateLook):
-    """Send Mate to look at a spot on the board with its own camera: it drives (with the
+@app.post("/api/esper/look")
+async def esper_look_api(body: EsperLook):
+    """Send Esper to look at a spot on the board with its own camera: it drives (with the
     overhead camera checking) to `distance` mm from (x, y) and faces it, from `side` or from
-    where it already is. Then use cam=mate with /api/see (ask=...) or /api/find to look. Like
+    where it already is. Then use cam=esper with /api/see (ask=...) or /api/find to look. Like
     goto, it checks the way first (in_the_way; check=false skips that). ~20 s."""
-    return await asyncio.to_thread(mate_look, body.x, body.y, body.distance, body.side, body.check)
+    return await asyncio.to_thread(esper_look, body.x, body.y, body.distance, body.side, body.check)
 
 
-@app.get("/api/mate/home")
-def mate_home_get():
-    return {"home": mate_home()}
+@app.get("/api/esper/home")
+def esper_home_get():
+    return {"home": esper_home()}
 
 
-@app.post("/api/mate/home")
-async def mate_home_go():
-    """Send Mate home (see GET /api/mate/home)."""
-    h = mate_home()
+@app.post("/api/esper/home")
+async def esper_home_go():
+    """Send Esper home (see GET /api/esper/home)."""
+    h = esper_home()
     if not h:
         return {"ok": False, "error": "no home yet: the camera needs the left board markers"}
-    return await asyncio.to_thread(mate_goto, *h)
+    return await asyncio.to_thread(esper_goto, *h)
 
 
-class MateHome(BaseModel):
-    x: float | None = None          # all None = where Mate is now
+class EsperHome(BaseModel):
+    x: float | None = None          # all None = where Esper is now
     y: float | None = None
     heading: float | None = None
 
 
-@app.post("/api/mate/home/set")
-async def mate_home_set(body: MateHome):
-    """Save Mate's home: a spot and heading, or (no body) where Mate is now."""
+@app.post("/api/esper/home/set")
+async def esper_home_set(body: EsperHome):
+    """Save Esper's home: a spot and heading, or (no body) where Esper is now."""
     if body.x is None or body.y is None:
-        p = await asyncio.to_thread(mate_pose)
+        p = await asyncio.to_thread(esper_pose)
         if p is None:
-            return {"ok": False, "error": "the camera can't see Mate"}
-        cx, cy = mate.centre(p)
+            return {"ok": False, "error": "the camera can't see Esper"}
+        cx, cy = esper.centre(p)
         home = [round(cx, 1), round(cy, 1), round(p[2], 1)]
     else:
         home = [body.x, body.y, body.heading if body.heading is not None else 0.0]
-    vision.cal["mate_home"] = home
+    vision.cal["esper_home"] = home
     vision.save()
     return {"ok": True, "home": home}
 
 
-FACES = HERE / "faces"     # software/mate/faces, deployed next to the hub (eyes.bin, reactions/)
+FACES = HERE / "faces"     # software/esper/faces, deployed next to the hub (eyes.bin, reactions/)
 
 
 def gestures():
     return {k: v for k, v in json.loads((GUIDES / "gestures.json").read_text()).items() if not k.startswith("_")}
 
 
-@app.get("/api/mate/gestures")
-def mate_gestures():
-    """Mate's gestures by name: what each says in the chat and which face it shows."""
+@app.get("/api/esper/gestures")
+def esper_gestures():
+    """Esper's gestures by name: what each says in the chat and which face it shows."""
     return {k: {"emoji": g.get("emoji", ""), "text": g["text"], "face": g.get("face")} for k, g in gestures().items()}
 
 
 class Gesture(BaseModel):
-    name: str | None = None          # one of GET /api/mate/gestures
+    name: str | None = None          # one of GET /api/esper/gestures
     to: str | None = None            # who it's aimed at (a player's name), for the chat line
     wait: bool = False               # True: return once it's done
     # or a one-off gesture of your own instead of a name (same fields as agent/gestures.json):
@@ -851,27 +851,27 @@ class Gesture(BaseModel):
     steps: list[dict] = []
 
 
-@app.post("/api/mate/gesture")
-async def mate_gesture(body: Gesture):
-    """Mate reacts: a face, flipper and wheel moves, ending where it started (a few cm at most).
-    The gesture goes in the chat as Mate's: Mate never speaks, this is how it talks. Returns at
-    once unless wait=true; Mate refuses while it's busy (a goto or another gesture)."""
+@app.post("/api/esper/gesture")
+async def esper_gesture(body: Gesture):
+    """Esper reacts: a face, flipper and wheel moves, ending where it started (a few cm at most).
+    The gesture goes in the chat as Esper's: Esper never speaks, this is how it talks. Returns at
+    once unless wait=true; Esper refuses while it's busy (a goto or another gesture)."""
     if body.name:
         g = gestures().get(body.name)
         if g is None:
-            raise HTTPException(404, f"no gesture {body.name!r}; see GET /api/mate/gestures")
+            raise HTTPException(404, f"no gesture {body.name!r}; see GET /api/esper/gestures")
     elif body.text:
         g = {"emoji": body.emoji, "text": body.text, "face": body.face, "steps": body.steps}
     else:
         raise HTTPException(400, "give a gesture name, or text (+ face, steps) for a one-off")
     if g.get("face") and not (FACES / "reactions" / f"{g['face']}.bin").exists():
         raise HTTPException(400, f"no face {g['face']!r}; have {sorted(p.stem for p in (FACES / 'reactions').glob('*.bin'))}")
-    if mate.busy:
-        return {"ok": False, "error": "Mate is busy"}
+    if esper.busy:
+        return {"ok": False, "error": "Esper is busy"}
     said = (g["to"].format(to=body.to) if "to" in g else f"{g['text']} at {body.to}") if body.to else g["text"]
-    item = chat.add(f"{g.get('emoji', '')} {said}".strip(), "mate", "gesture", gesture=body.name or "custom",
+    item = chat.add(f"{g.get('emoji', '')} {said}".strip(), "esper", "gesture", gesture=body.name or "custom",
                     **({"to": body.to} if body.to else {}))
-    run = asyncio.to_thread(mate.gesture, g, FACES)
+    run = asyncio.to_thread(esper.gesture, g, FACES)
     if body.wait:
         return {**await run, "chat": item}
     asyncio.create_task(run)
@@ -889,8 +889,8 @@ async def say(body: Say):
     """Speak out loud on the table's speaker, and the line goes in the chat under `by`. Use it to
     talk to the people at the table, and to ask them when something is impossible or unclear;
     their answers come back in the chat (GET /api/chat?after=<id>&wait=30)."""
-    if body.by in ("player", "mate"):
-        raise HTTPException(400, "players type or talk on the talk page; Mate never speaks (use /api/mate/gesture)")
+    if body.by in ("player", "esper"):
+        raise HTTPException(400, "players type or talk on the talk page; Esper never speaks (use /api/esper/gesture)")
     chat.add(body.text, body.by[:32], "speaker")
     err = await asyncio.to_thread(voice.say, body.text, body.wait)
     return {"ok": err is None, "error": err}
@@ -934,7 +934,7 @@ async def transcribe(request: Request):
 @app.get("/api/chat")
 async def get_chat(after: int = 0, wait: float = 0, by: str | None = None):
     """The table's chat, oldest first: what people said (voice) or typed, what the agent said
-    out loud (via "speaker", by = its name), and Mate's gestures (by "mate", via "gesture").
+    out loud (via "speaker", by = its name), and Esper's gestures (by "esper", via "gesture").
     after=<id>: only newer messages. wait=N: if there are none yet, wait up to N seconds
     (max 60) for one, so an agent can loop on this to follow the conversation. by=player: only
     people's messages."""
@@ -954,8 +954,8 @@ class ChatPost(BaseModel):
 @app.post("/api/chat")
 def post_chat(body: ChatPost):
     """Add a typed message to the chat (not spoken; for spoken lines use /api/say)."""
-    if body.by == "mate":
-        raise HTTPException(400, "Mate talks with gestures: /api/mate/gesture")
+    if body.by == "esper":
+        raise HTTPException(400, "Esper talks with gestures: /api/esper/gesture")
     item = chat.add(body.text[:2000], body.by[:32], "typed")
     if not item:
         raise HTTPException(400, "empty message")
@@ -964,8 +964,9 @@ def post_chat(body: ChatPost):
 
 @app.delete("/api/chat")
 def clear_chat():
-    chat.clear()
-    return {"cleared": True}
+    """Start a fresh chat. The old one is kept on the Pi in chats/chat-<date>-<time>.jsonl;
+    message ids keep counting up, so an agent waiting on the chat isn't thrown off."""
+    return {"cleared": True, "archived": chat.clear()}
 
 
 @app.get("/api/transcripts")
@@ -1045,8 +1046,8 @@ GUIDES = HERE / "agent"   # the repo's agent/ folder, deployed next to the hub
 
 @app.get("/api/guide", response_class=PlainTextResponse)
 def guide():
-    """Start here: what the table and Mate can do and how to behave (agent/README.md). The agent
-    reads this first, then /api/guide/table, /api/guide/mate and /api/notes."""
+    """Start here: what the table and Esper can do and how to behave (agent/README.md). The agent
+    reads this first, then /api/guide/table, /api/guide/esper and /api/notes."""
     return (GUIDES / "README.md").read_text()
 
 
@@ -1054,7 +1055,7 @@ def guide():
 def guide_page_text(name: str):
     path = GUIDES / f"{name}.md"
     if not name.isidentifier() or not path.exists():
-        raise HTTPException(404, f"no guide {name}; try table, mate or poker")
+        raise HTTPException(404, f"no guide {name}; try table, esper or poker")
     return path.read_text()
 
 

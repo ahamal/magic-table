@@ -4,7 +4,7 @@ Usage: python markers.py   (needs: pip install opencv-contrib-python-headless pi
 Writes markers.pdf (US Letter) next to this file. Print at 100% / actual size.
 
 Dictionary DICT_4X4_50. IDs 0-3 go on the board corners, ID 10 on the head plate,
-ID 20 on top of Mate (its top edge toward Mate's face, so the marker gives its heading).
+ID 20 on top of Esper (its top edge toward Esper's face, so the marker gives its heading).
 The white border is part of each marker: cut along the grey line, not the black.
 """
 
@@ -22,11 +22,11 @@ DICT = cv2.aruco.DICT_4X4_50
 # simulated down to 15 mm; these keep a margin for worse light and angles.
 CORNER_BLACK, CORNER_BORDER = 30, 5   # mm: 40 mm cut size
 HEAD_BLACK, HEAD_BORDER = 25, 4       # mm: 33 mm cut size, fits the head plate
-MATE_BLACK, MATE_BORDER = 30, 5       # mm: 40 mm cut size, on top of Mate
-MATE_TAB = 9                          # mm: extra strip above Mate's marker for the arrow
+ESPER_BLACK, ESPER_BORDER = 30, 5       # mm: 40 mm cut size, on top of Esper
+ESPER_TAB = 9                          # mm: extra strip above Esper's marker for the arrow
 CORNERS = (0, 1, 2, 3)
 HEAD_ID = 10
-MATE_ID = 20
+ESPER_ID = 20
 
 
 def px(mm):
@@ -77,18 +77,18 @@ def sheet():
         place(marker(HEAD_ID, HEAD_BLACK, HEAD_BORDER), 20 + i * (hcut + 16), y,
               f"ID {HEAD_ID} · head" + (" (spare)" if i else ""))
 
-    # Mate: the marker plus a strip above it with an arrow; that edge goes toward Mate's face
-    mate = marker(MATE_ID, MATE_BLACK, MATE_BORDER)
-    tab = Image.new("RGB", (mate.width, mate.height + px(MATE_TAB)), "white")
-    tab.paste(mate, (0, px(MATE_TAB)))
+    # Esper: the marker plus a strip above it with an arrow; that edge goes toward Esper's face
+    esper = marker(ESPER_ID, ESPER_BLACK, ESPER_BORDER)
+    tab = Image.new("RGB", (esper.width, esper.height + px(ESPER_TAB)), "white")
+    tab.paste(esper, (0, px(ESPER_TAB)))
     t = ImageDraw.Draw(tab)
     cx, top = tab.width // 2, px(1.5)
     t.polygon([(cx, top), (cx - px(3.5), top + px(4)), (cx + px(3.5), top + px(4))], fill="black")
     t.text((cx + px(5), top), "face", fill="black", font=small)
-    place(tab, 20 + 2 * (hcut + 16) + 10, y - MATE_TAB, f"ID {MATE_ID} · top of Mate, arrow to its face")
+    place(tab, 20 + 2 * (hcut + 16) + 10, y - ESPER_TAB, f"ID {ESPER_ID} · top of Esper, arrow to its face")
 
     # 100 mm check ruler
-    y = px(28 + cut + 30 + max(hcut, MATE_BLACK + 2 * MATE_BORDER) + 22)
+    y = px(28 + cut + 30 + max(hcut, ESPER_BLACK + 2 * ESPER_BORDER) + 22)
     x0, x1 = px(20), px(120)
     d.line([x0, y, x1, y], fill="black", width=3)
     for mm in range(0, 101, 10):

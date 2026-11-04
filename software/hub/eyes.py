@@ -4,7 +4,7 @@ see(): Muse Spark looks at one picture and names the kinds of things on the boar
 backup name ("white object"): SAM is fussy about names (the AirPods case was only ever found
 from above as "white object").
 
-find(): SAM proposes matches in one camera's picture (cam 1 by default; 0, or Mate's).
+find(): SAM proposes matches in one camera's picture (cam 1 by default; 0, or Esper's).
 Muse Spark checks numbered outlines in the whole scene against the original requested object,
 rejecting robot parts and ambiguous matches before returning any pick targets. For
 each thing: its outline and, for a calibrated camera, its footprint on the board in mm (the
@@ -476,7 +476,7 @@ def raster_match(box, mask, shape):
 
 def robot_masks(P, boxes, shape):
     """Where the robot is in the picture, from where it's tracked (no API call): each named
-    box (work-coordinate corners, from server.py: the head's cup and Z extrusion, Mate's body)
+    box (work-coordinate corners, from server.py: the head's cup and Z extrusion, Esper's body)
     projected through the camera and filled. {name: 0/1 array}."""
     masks = {}
     for name, corners in boxes.items():
@@ -506,7 +506,7 @@ def robot_overlap(box, mask, robots):
 async def verify(img, matches, wanted, effort="minimal", robots=None, everything=True):
     """Muse Spark looks at SAM's matches, numbered on the whole picture, and drops the ones that
     aren't a loose `wanted` (the suction cup as a plate, a wheel as a knife). Matches mostly
-    inside the robot are kept only if it says they're a separate thing there (a card on Mate).
+    inside the robot are kept only if it says they're a separate thing there (a card on Esper).
     If it can't answer, the robot rule alone decides: a check failing never fails find.
     everything=False: only matches touching or near the robot are in doubt; the rest are kept
     without asking (Muse takes ~25 s over a picture of a dozen cards; SAM's own name is right
@@ -567,7 +567,7 @@ async def find(jpeg, wanted, P=None, tz=None, bounds=None, question=None, effort
     footprint centre). For an angled camera that's nearer the truth for a tall thing than the
     middle of what it sees, which is partway down its near side (20 mm off from cam 1). With a
     question, Muse Spark answers it about each item on the board, from its crop. robot: boxes
-    of the head and Mate where they're tracked (see robot_masks); each item says how much of it
+    of the head and Esper where they're tracked (see robot_masks); each item says how much of it
     is inside them and which it's near. side: (cam 0's JPEG, its P), taken at the same time:
     each item it sees also gets height_mm (side_height; None where cam 0 can't see it whole).
     Known things (KNOWN: cards, decks, chips) and, with diameter (mm), any upright cylinder get
@@ -683,7 +683,7 @@ def changed(before, now, outline):
     """How much of an item's outline (pixels, from find) looks different in `now` than in
     `before` (grey pictures from the same camera): the share of its pixels that changed a lot.
     Lifted off its spot, most of it does; a pick that didn't take, hardly any. Works for any
-    camera, Mate's too, as long as the camera hasn't moved. No API call."""
+    camera, Esper's too, as long as the camera hasn't moved. No API call."""
     m = np.zeros(before.shape, np.uint8)
     cv2.fillPoly(m, [np.array(outline, np.int32)], 1)
     m = cv2.erode(m, np.ones((5, 5), np.uint8))       # the edge shifts a pixel or two anyway
@@ -718,7 +718,16 @@ class History:
         self.items = []
         for line in self.file.read_text().splitlines() if self.file.exists() else []:
             try:
-                self.items.append(json.loads(line))
+                rec = json.loads(line)
+                if rec.get("cam") == "mate":
+                    rec["cam"] = "esper"
+                if "mate" in rec.get("pictures", []):
+                    old = self.dir / f"{rec['n']}-mate.jpg"
+                    new = self.dir / f"{rec['n']}-esper.jpg"
+                    if old.exists() and not new.exists():
+                        old.rename(new)
+                    rec["pictures"] = ["esper" if cam == "mate" else cam for cam in rec["pictures"]]
+                self.items.append(rec)
             except ValueError:
                 pass
 

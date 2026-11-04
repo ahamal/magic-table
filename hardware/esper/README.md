@@ -1,4 +1,4 @@
-# Mate (hardware)
+# Esper (hardware)
 
 A small wheeled robot on the table — the AI player's body. Self-contained: its own ESP32-S3, its own API over Wi-Fi, its own camera.
 
@@ -6,19 +6,19 @@ A small wheeled robot on the table — the AI player's body. Self-contained: its
 
 | Part | Detail | Status |
 |---|---|---|
-| Controller | Freenove ESP32-S3-WROOM CAM: ESP32-S3 (rev v0.2), 8 MB flash, 8 MB PSRAM, CH343 USB-serial, camera connector. Runs everything: Wi-Fi API, steppers, flipper servo, face, camera | Working — firmware in [`software/mate/firmware`](../../software/mate/firmware) |
-| Camera | The board's bundled **GC0308**, 640×480, no hardware JPEG (the firmware encodes in software). Fixed on Mate's head, mounted upside down (the firmware rotates it 180°) — also the peek camera. An OV2640/OV3660 module fits the same connector | Working |
+| Controller | Freenove ESP32-S3-WROOM CAM: ESP32-S3 (rev v0.2), 8 MB flash, 8 MB PSRAM, CH343 USB-serial, camera connector. Runs everything: Wi-Fi API, steppers, flipper servo, face, camera | Working — firmware in [`software/esper/firmware`](../../software/esper/firmware) |
+| Camera | The board's bundled **GC0308**, 640×480, no hardware JPEG (the firmware encodes in software). Fixed on Esper's head, mounted upside down (the firmware rotates it 180°) — also the peek camera. An OV2640/OV3660 module fits the same connector | Working |
 | Wheels | 2× 28BYJ-48 + ULN2003, differential drive, 70 mm printed wheels ([`wheels/`](wheels/)), ball caster or skid at the back | Have motors, wheels designed |
 | Servo | Flipper: **MG996R** (big: ~0.5–0.9 A moving, ~2.5 A stalled), driven straight from the ESP32's PWM. No pan or tilt servos | Working |
 | Flipper hand | On the right side, 42 mm from the right wheel's axle at 45° up-forward: a 73 mm arm, then bent 90° across the whole face. Rests on the table at 20°, level and centred on the face at 65°. Flips cards over | Working (second hand, Nov 2) |
 | Face | 0.96" SSD1306 OLED, 128×64, I2C 0x3C, on the head with the camera just below it. The only I2C device. Shows bitmaps sent over Wi-Fi, or a status screen | Working on the S3 |
 | Range sensor | TF-Luna on the head (I2C mode, 0x10, 5V power) | Later |
-| Speech | Done by the hub (the Pi 5 speaks for Mate) | — |
-| Marker | ArUco on the roof, designed into Mate's look | To make |
+| Speech | Done by the hub (the Pi 5 speaks for Esper) | — |
+| Marker | ArUco on the roof, designed into Esper's look | To make |
 | Hub board | ~5 × 7 cm perfboard: 5V and I2C buses with JST-XH connectors (below) | Built — needs the S3 rewiring |
 | Power | 5V USB power bank through a cut USB cable on the robot; CanaKit 5V supply on the bench | Have |
 
-**Dropped:** the PCA9685 servo board (took too much space; the S3 has enough pins once the distance sensor is gone) and the VL6180X edge sensor. Without the edge sensor nothing on Mate stops it at the table edge — see [Notes](#notes).
+**Dropped:** the PCA9685 servo board (took too much space; the S3 has enough pins once the distance sensor is gone) and the VL6180X edge sensor. Without the edge sensor nothing on Esper stops it at the table edge — see [Notes](#notes).
 
 Spares: Raspberry Pi 3B, Arduino Nano, ov5647 camera, the classic ESP32 DevKit (browns out with Wi-Fi on), PCA9685, VL6180X.
 
@@ -88,7 +88,7 @@ About 0.15–0.3 A parked, 0.7 A driving, 1.5 A busy, 2–2.5 A if a servo stall
 - **Bench:** ESP32 on USB, CanaKit 5V into PWR IN, **ESP PWR unplugged.**
 - **Battery:** USB unplugged, power bank into PWR IN, ESP PWR into the board's 5V and GND pins.
 - **Never have USB and ESP PWR plugged in together** — two supplies fight through the board. Unplug ESP PWR to program on battery (or use OTA once it's added).
-- **Keep the ESP32 drawing from the same port as the motors,** so the bank doesn't switch the port off while Mate is parked.
+- **Keep the ESP32 drawing from the same port as the motors,** so the bank doesn't switch the port off while Esper is parked.
 - Power banks and the CanaKit have built-in short-circuit protection; zip-tie the cut cable near the joint for strain relief.
 
 ## Size (estimate, chassis not designed yet)
@@ -107,12 +107,12 @@ The head has to fit under the gantry head while it holds a card over the camera 
 
 ## Notes
 
-- **No edge reflex any more.** Mate can drive off the table if told to. What keeps it on: the firmware's max steps per command (one wheel turn, ~22 cm), and the hub's no-go check against Mate's position from the overhead camera. Until the hub does that, drive with someone watching.
+- **No edge reflex any more.** Esper can drive off the table if told to. What keeps it on: the firmware's max steps per command (one wheel turn, ~22 cm), and the hub's no-go check against Esper's position from the overhead camera. Until the hub does that, drive with someone watching.
 - **The camera jams the Wi-Fi when it runs.** On this board the camera clock and DMA push pings from ~5 ms to 100–300 ms and stall transfers for seconds. The firmware runs the camera clock at 10 MHz and only while capturing or streaming; idle, Wi-Fi is normal.
 - **Speed:** 28BYJ-48 tops out around 500–800 half-steps/s; about 4.3 cm/s with 70 mm wheels.
 - **Motors on their own core:** stepping runs on core 1; Wi-Fi, the camera and the OLED on core 0, so motion stays smooth.
-- **Peek:** the gantry hovers a card over Mate's camera (tilted up), or drops it on a clear flipper paddle above the camera. The GC0308 is only 640×480 — **test whether it can read a card corner at 10–15 cm.** If it can't, swap in an OV2640/OV3660 module (same connector, the firmware detects it), or let the overhead camera handle peeking.
+- **Peek:** the gantry hovers a card over Esper's camera (tilted up), or drops it on a clear flipper paddle above the camera. The GC0308 is only 640×480 — **test whether it can read a card corner at 10–15 cm.** If it can't, swap in an OV2640/OV3660 module (same connector, the firmware detects it), or let the overhead camera handle peeking.
 
 ## Open
 
-See [`docs/open-questions.md`](../../docs/open-questions.md#blocking-step-1-mate): chassis, whether the GC0308 can read cards.
+See [`docs/open-questions.md`](../../docs/open-questions.md#blocking-step-1-esper): chassis, whether the GC0308 can read cards.

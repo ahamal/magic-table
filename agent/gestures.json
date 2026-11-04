@@ -1,5 +1,5 @@
 {
-  "_about": "Mate's gestures, run by POST /api/mate/gesture {name, to?}. Each: emoji + text for the chat, a face (software/mate/faces/reactions/), and steps run in order: servo [angle, speed] (doesn't wait), drive mm, turn deg (anticlockwise +), wait s. Every gesture ends where it started, flipper back at 20. Edit freely; the hub reads this file on every call.",
+  "_about": "Esper's gestures, run by POST /api/esper/gesture {name, to?}. Each: emoji + text for the chat, a face (software/esper/faces/reactions/), and steps run in order: servo [angle, speed] (doesn't wait), drive mm, turn deg (anticlockwise +), wait s. Every gesture ends where it started, flipper back at 20. Edit freely; the hub reads this file on every call.",
   "yes":          {"emoji": "✅", "text": "nods", "face": "yes",
                    "steps": [{"drive": 10}, {"drive": -10}, {"drive": 10}, {"drive": -10}]},
   "no":           {"emoji": "❌", "text": "shakes its head", "face": "no",

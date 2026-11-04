@@ -1,14 +1,14 @@
 # The Frame (hardware)
 
-The Robo Diner CoreXY gantry, reused as the table's hands and eyes. Controlled by the Pi 5, which is also the hub for the whole table.
+A CoreXY gantry rebuilt for this project from a dismantled earlier machine (rails, NEMA 17 steppers, GT2 belts and drivers salvaged, then cut, modified and reassembled): the table's hands and eyes. Controlled by the Pi 5, which is also the hub for the whole table.
 
 ## Components
 
 | Part | Detail | Status |
 |---|---|---|
-| Gantry | CoreXY, V-wheel gantry, inverted Z rail, NEMA 17 steppers, TMC2208 drivers | Exists (Robo Diner) |
-| Controller | Arduino Uno + CNC Shield V3, GRBL 1.1h built with CoreXY (`$I` → `[OPT:VCZ,15,128]`), 12V motor supply | Exists, working |
-| Limit switches | Homing (`$H`) for repeatable coordinates | Exists |
+| Gantry | CoreXY, V-wheel gantry, inverted Z rail, NEMA 17 steppers, TMC2208 drivers, GT2 belts | Rebuilt from salvaged parts (cut and modified) |
+| Controller | Arduino Uno + GRBL CNC Shield (from a Longruner CNC kit; the kit's RAMPS 1.4 isn't used), standard GRBL 1.1h built with CoreXY (`$I` → `[OPT:VCZ,15,128]`), 12V motor supply | Working |
+| Limit switches | None. No homing: position comes from re-anchoring (saved position or both cameras) and a Z touch-off | — |
 | Computer | Raspberry Pi 5 (`ash@raspberrypi.local`), the table hub | Exists |
 | Overhead camera | Camera v2 (imx219), ~50 cm above the table | Working on the Pi 5 (`GET /api/capture`); needs a mount |
 | Gripper | 2-layer bellows suction cup, 15 mm across (sold as 12 mm), on a sprung printed mount | Working |
@@ -24,7 +24,6 @@ The Robo Diner CoreXY gantry, reused as the table's hands and eyes. Controlled b
 ```
 Pi 5 ── USB ──────────► Uno + CNC Shield (GRBL, /dev/ttyACM0)
                          ├─ X/Y (CoreXY) + Z steppers
-                         ├─ limit switches
                          ├─ probe pin ◄── touch switch (optional)
                          ├─ CoolEn (A3) ─► MOSFET ─► diaphragm pump   (12V)  M8 / M9
                          └─ SpnDir (D13) ─► MOSFET ─► solenoid valve  (12V)  M4 S0 / M3 S0
@@ -36,7 +35,7 @@ Pi 5 ── I2C (pins 3/5) ► VL6180X on the head   (short cable, low bus speed
 
 **MOSFETs:** shield signal pin → 220 Ω → gate, 10 k gate → GND; source → shield GND and 12V −; drain → load −; load + → 12V +; 1N4007 across the load, stripe on +.
 
-**Z limit goes on SpnEn, not Z+/Z−.** This GRBL is built with variable spindle, which moves the spindle output to D11 (the shield's Z end-stop header) and reads the Z limit on D12 (the header labeled SpnEn). SpnEn is an input here; don't drive anything from it.
+**Leave SpnEn and the Z+/Z− end-stop header free.** There are no limit switches. In this variable-spindle build GRBL uses D11 (the shield's Z end-stop header) for the spindle output and reads D12 (the header labeled SpnEn) as the Z limit input; nothing is connected to either.
 
 **VL6180X:** VIN → pin 1 (3.3V), GND → pin 6, SDA → pin 3 (GPIO 2), SCL → pin 5 (GPIO 3). Address 0x29. Enable I2C with `sudo raspi-config nonint do_i2c 0`.
 
@@ -48,16 +47,16 @@ Tuned on Oct 30 at 12V (see [`docs/log.md`](../../docs/log.md)):
 |---|---|---|
 | `$100`, `$101` steps/mm X/Y | 40 | Measured Nov 1: a 100 mm jog moves 100 mm. GT2 belt, 20T pulley, TMC2208 at 1/8 step (no jumpers) |
 | `$102` steps/mm Z | 40 | Measured Nov 1: 100 commanded moved 126 at 50. Same belt and pulley as X/Y |
-| Z travel | −1 to 150 | Work Z 0 = cup touching the board, 150 = top of travel; the hub keeps moves and jogs inside this. Travel height (over Mate) is Z 110 |
+| Z travel | −1 to 150 | Work Z 0 = cup touching the board, 150 = top of travel; the hub keeps moves and jogs inside this. Travel height (over Esper) is Z 110 |
 | `$3` direction invert | 4 (Z) | The Z motor ran backwards (Z+ lowered the cup). Now Z+ is up, as on any CNC |
 | `$110`, `$111` max rate X/Y | 11000 mm/min (~183 mm/s) | Real mm since steps/mm = 40. About the step rate that ran clean on Oct 30; ~15000 real mm/min skipped steps |
 | `$112` max rate Z | 7000 mm/min | Z doesn't need more; keep picks gentle |
 | `$120`–`$122` acceleration | 500 mm/s² | Was 80; halved the test time, clean |
-| `$22` homing | on | GRBL starts in alarm: `$H` to home, or `$X` to unlock |
+| `$22` homing | on, but there are no switches | Never `$H`: it would drive the axes into the frame. GRBL starts in alarm; `$X` to unlock, then re-anchor |
 | `$1` step idle delay | 25 ms | Shared enable pin: idle motors click at move start/end. `$1=255` keeps them energized |
 
 - **The 12V supply is the speed limit,** not power: about 200 mm/s is the estimated ceiling (coil inductance and back-EMF). 24V would roughly double it, but the pump and valve are 12V parts and would need their own supply.
-- **Build options** (`$I`): `V` variable spindle, `C` CoreXY, `Z` homing sets machine zero at the switches. 15-block planner, 128-byte serial buffer. Moves are sent as normal X/Y; GRBL does the CoreXY mixing.
+- **Build options** (`$I`): `V` variable spindle, `C` CoreXY, `Z` homing sets machine zero at the switches (unused: there are none). 15-block planner, 128-byte serial buffer. Moves are sent as normal X/Y; GRBL does the CoreXY mixing.
 - **Keep the serial port open.** Opening it resets the Uno, which loses position and re-locks GRBL.
 - **Never plug or unplug a motor with the 12V on.**
 
@@ -71,8 +70,8 @@ Tuned on Oct 30 at 12V (see [`docs/log.md`](../../docs/log.md)):
 - **VL6180X:** usable ~5–100 mm; mount so the table is 20–60 mm below with the head up. Keep its window clear. 255 = out of range. Average ~5 readings.
 - **Calibration:** ArUco head marker (on the [marker plate](markers/README.md)) moved over a grid at three heights; the hub fits each camera ([`software/hub/vision.py`](../../software/hub/vision.py)). Start with Z at its top over the middle of the board: calibration only goes down from there, never closer than 15 mm to the board, and stops with no further moves on any reset, pause or error.
 - **No limit switches, so counts can lie.** A move into an end of travel stalls and skips steps, but GRBL counts it anyway, and the next move "back" by count overshoots. On Nov 1 calibration went up into the top of Z, then "returned" 40 mm too low and tore the board paper. Hence: start at the top and go down, never assume room above.
-- **Mate rule:** a sideways bump is fine, pressing down into Mate isn't. Travel height is Z 110 (Mate is 105 to the top of its corner caps); below it the hub never lowers or ends the cup over Mate, and moves across it go up first. Mate's toggle switch now sits at the back, off the top.
-- **Robo Diner hand:** replaced by the suction head (pump on CoolEn, valve on SpnDir); the tilt/grab servos aren't used.
+- **Esper rule:** a sideways bump is fine, pressing down into Esper isn't. Travel height is Z 110 (Esper is 105 to the top of its corner caps); below it the hub never lowers or ends the cup over Esper, and moves across it go up first. Esper's toggle switch now sits at the back, off the top.
+- **The old machine's hand:** replaced by the suction head (pump on CoolEn, valve on SpnDir); the tilt/grab servos aren't used.
 
 ## Open
 

@@ -1,11 +1,11 @@
-# Mate bring-up tests (ESP32)
+# Esper bring-up tests (ESP32)
 
-> **History.** This is the classic-DevKit test, with the VL6180X and PCA9685 that Mate no longer uses. Mate now runs [`../firmware`](../firmware) on the ESP32-S3.
+> **History.** This is the classic-DevKit test, with the VL6180X and PCA9685 that Esper no longer uses. Esper now runs [`../firmware`](../firmware) on the ESP32-S3.
 
-[`web_i2c/`](web_i2c/) is the bench test for the ESP32 Mate: I2C devices, web server and both steppers. It passed all three rounds:
+[`web_i2c/`](web_i2c/) is the bench test for the ESP32 Esper: I2C devices, web server and both steppers. It passed all three rounds:
 
 1. **I2C:** VL6180X (0x29), SSD1306 OLED (0x3C, mounted upside down), PCA9685 (0x40).
-2. **Web server:** `http://mate.local/`, about 25 ms per request with Wi-Fi power saving off.
+2. **Web server:** `http://esper.local/`, about 25 ms per request with Wi-Fi power saving off.
 3. **Steppers:** both wheels, together and opposite, stop mid-move, over Wi-Fi.
 
 ## Endpoints
@@ -38,8 +38,8 @@ Copy `web_i2c/secrets.example.h` to `web_i2c/secrets.h` (git-ignored) and fill i
 
 ```bash
 arduino-cli lib install AccelStepper VL6180X "Adafruit SSD1306" "Adafruit GFX Library" "Adafruit PWM Servo Driver Library"
-arduino-cli compile --fqbn esp32:esp32:esp32 software/mate/tests/web_i2c
-arduino-cli upload --fqbn esp32:esp32:esp32 -p /dev/cu.usbserial-XXXX software/mate/tests/web_i2c
+arduino-cli compile --fqbn esp32:esp32:esp32 software/esper/tests/web_i2c
+arduino-cli upload --fqbn esp32:esp32:esp32 -p /dev/cu.usbserial-XXXX software/esper/tests/web_i2c
 ```
 
 ## Lessons from bring-up

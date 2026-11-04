@@ -1,11 +1,11 @@
-"""Mate, from the hub: its live status, and driving it to a spot with the camera checking.
+"""Esper, from the hub: its live status, and driving it to a spot with the camera checking.
 
-Agents can call Mate's own API (http://mate.local, see agent/mate.md) for anything. The hub
-adds what needs the overhead camera: `goto` turns and drives Mate, looks, and corrects until
+Agents can call Esper's own API (http://esper.local, see agent/esper.md) for anything. The hub
+adds what needs the overhead camera: `goto` turns and drives Esper, looks, and corrects until
 its turning centre is on the target, and `home` sends it to its home spot. `gesture` plays one
-of Mate's gestures (agent/gestures.json): a reaction face, flipper and wheel moves. `move` is
+of Esper's gestures (agent/gestures.json): a reaction face, flipper and wheel moves. `move` is
 one step of a recipe (the flip, the peek): the flipper and the wheels at once, counted into
-where the hub thinks Mate is, which Mate's own /step isn't.
+where the hub thinks Esper is, which Esper's own /step isn't.
 
 The body numbers below were measured on Nov 1 against the overhead camera (build notes);
 another build should measure its own.
@@ -18,25 +18,28 @@ import time
 import urllib.request
 from pathlib import Path
 
-MATE = "http://mate.local"
-POSE_FILE = Path(__file__).parent / "mate_pose.json"   # where Mate is, kept across restarts
+ESPER = "http://esper.local"
+POSE_FILE = Path(__file__).parent / "esper_pose.json"   # where Esper is, kept across restarts
 MM_PER_HALFSTEP = 0.048          # forward
 DEG_PER_HALFSTEP = {"left": 0.0377, "right": 0.0371}
-CENTRE = (8.6, 0.5)              # turning centre from the marker centre, Mate's frame (forward, left)
+CENTRE = (8.6, 0.5)              # turning centre from the marker centre, Esper's frame (forward, left)
 SPEED, ACCEL = 800, 1000         # full speed: the wheels are fine there (it's the servo that browns out)
 CLOSE_MM, CLOSE_DEG = 5.0, 3.0   # good enough
 REST, REST_SPEED = 20, 120       # the flipper's rest angle, and how gently a gesture goes back there
-FACE_FPS = 10                    # reactions are drawn for 10 fps (software/mate/faces/make.py)
+FACE_FPS = 10                    # reactions are drawn for 10 fps (software/esper/faces/make.py)
 
 
-class MateLink:
-    def __init__(self, url=MATE, every=1.0):
+class EsperLink:
+    def __init__(self, url=ESPER, every=1.0):
         self.url, self.every = url, every
         self.status = None        # last /status reply, or None while unreachable
         self.seen_at = None
         self.busy = False         # a goto is running
-        self.pose = None          # where Mate's marker is (x, y, heading): last seen, plus moves since
+        self.pose = None          # where Esper's marker is (x, y, heading): last seen, plus moves since
         self.assumed = True       # True while that's only worked out from the moves
+        legacy_pose = POSE_FILE.with_name("mate_pose.json")
+        if not POSE_FILE.exists() and legacy_pose.exists():
+            legacy_pose.rename(POSE_FILE)
         try:
             self.pose = tuple(json.loads(POSE_FILE.read_text()))
         except (OSError, ValueError):
@@ -69,7 +72,7 @@ class MateLink:
             return json.loads(r.read())
 
     def _step(self, s1, s2, speed=SPEED):
-        while s1 or s2:                                   # Mate takes at most 4096 per move
+        while s1 or s2:                                   # Esper takes at most 4096 per move
             k1, k2 = max(-4096, min(4096, s1)), max(-4096, min(4096, s2))
             self._post(f"/step?s1={k1}&s2={k2}&speed={speed}&accel={ACCEL}")
             time.sleep(0.1)
@@ -91,7 +94,7 @@ class MateLink:
         self._step(-n, n, speed) if mm > 0 else self._step(n, -n, speed)
 
     def seen(self, pose):
-        """The camera saw Mate here: that's where it is now."""
+        """The camera saw Esper here: that's where it is now."""
         self._keep(pose, False)
 
     def _keep(self, pose, assumed):
@@ -126,14 +129,14 @@ class MateLink:
                 y + CENTRE[0] * math.sin(a) + CENTRE[1] * math.cos(a))
 
     def goto(self, look, x, y, heading=None, tries=6):
-        """Put Mate's turning centre on (x, y), then face `heading` (degrees, None = any).
-        `look()` returns Mate's marker pose (x, y, heading) from the camera, or None.
+        """Put Esper's turning centre on (x, y), then face `heading` (degrees, None = any).
+        `look()` returns Esper's marker pose (x, y, heading) from the camera, or None.
         Turns toward the target (driving backward if that's the shorter turn), drives, looks
-        again, and repeats until within CLOSE_MM / CLOSE_DEG. When the camera can't see Mate
+        again, and repeats until within CLOSE_MM / CLOSE_DEG. When the camera can't see Esper
         (glare, a cable over its marker), it carries on from where it last saw it plus the
         moves since (`assumed` in the answer), and stops correcting once it's there."""
         if self.busy:
-            return {"ok": False, "error": "Mate is already on its way somewhere"}
+            return {"ok": False, "error": "Esper is already on its way somewhere"}
         self.busy = True
         moves = []
 
@@ -147,7 +150,7 @@ class MateLink:
             for _ in range(tries):
                 p = where()
                 if p is None:
-                    return {"ok": False, "error": "the camera can't see Mate's marker, and hasn't yet", "moves": moves}
+                    return {"ok": False, "error": "the camera can't see Esper's marker, and hasn't yet", "moves": moves}
                 if self.assumed and moves:
                     break                                  # unseen: the moves got it there
                 cx, cy = self.centre(p)
@@ -182,18 +185,18 @@ class MateLink:
             return {"ok": True, "centre": [round(cx, 1), round(cy, 1)], "heading": round(p[2], 1),
                     "off_mm": round(math.hypot(x - cx, y - cy), 1), "moves": moves, "assumed": self.assumed}
         except OSError as e:
-            return {"ok": False, "error": f"Mate didn't answer: {e}", "moves": moves}
+            return {"ok": False, "error": f"Esper didn't answer: {e}", "moves": moves}
         finally:
             self.busy = False
 
     def move(self, servo=None, servo_speed=None, turn=None, drive=None, wheel_speed=SPEED):
         """One step of a recipe: the flipper to `servo` degrees at `servo_speed` (it starts at once
-        and keeps going while the wheels move: the peek lifts the card while Mate creeps forward),
+        and keeps going while the wheels move: the peek lifts the card while Esper creeps forward),
         then turn `turn` degrees, then drive `drive` mm, at `wheel_speed` (half-steps/s; the peek
         creeps at 200). Returns when the wheels and the flipper are done. Wheel moves are counted
-        into Mate's assumed place, unlike Mate's own /step."""
+        into Esper's assumed place, unlike Esper's own /step."""
         if self.busy:
-            return {"ok": False, "error": "Mate is busy"}
+            return {"ok": False, "error": "Esper is busy"}
         self.busy = True
         try:
             t0, servo_s = time.time(), 0.0
@@ -210,7 +213,7 @@ class MateLink:
             time.sleep(max(0, servo_s - (time.time() - t0)))
             return {"ok": True, "pose": self.pose, "assumed": self.assumed}
         except OSError as e:
-            return {"ok": False, "error": f"Mate didn't answer: {e}"}
+            return {"ok": False, "error": f"Esper didn't answer: {e}"}
         finally:
             self.busy = False
 
@@ -219,7 +222,7 @@ class MateLink:
         waiting, drive mm, turn deg, wait s), then bring the flipper back to rest and the eyes
         back. `faces` is the folder with eyes.bin and reactions/."""
         if self.busy:
-            return {"ok": False, "error": "Mate is busy"}
+            return {"ok": False, "error": "Esper is busy"}
         self.busy = True
         moved = False
         try:
@@ -246,6 +249,6 @@ class MateLink:
                 self.screen((faces / "eyes.bin").read_bytes(), 12, 0)
             return {"ok": True}
         except (OSError, ValueError, KeyError) as e:
-            return {"ok": False, "error": f"Mate didn't answer: {e}"}
+            return {"ok": False, "error": f"Esper didn't answer: {e}"}
         finally:
             self.busy = False

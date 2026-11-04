@@ -1,7 +1,7 @@
 """Chip stacks and decks for free: on the dark mat a red or white chip is a patch of its colour; each patch's
 outline in cam 1 is fitted with an upright 40 mm cylinder (eyes.upright), which gives where the
 stack really stands and how tall it is: how many chips. No API. A patch that doesn't fit a
-cylinder well isn't a stack (Mate, the deck's edge) or is two stacks touching: left out.
+cylinder well isn't a stack (Esper, the deck's edge) or is two stacks touching: left out.
 
 A deck is the same with a box: a light patch the card finder turned down (too big: its side
 shows), fitted with an upright 63 x 88 box (eyes.upright_box), or one it took for a card: a thin deck
@@ -25,7 +25,7 @@ MARKER_MM = 30             # around a board marker's centre: its white border, n
 CARD_GROW = 3              # mm around a card that's the card, not a chip
 SHIFT = (0.0, 2.3)         # mm added to a stack's fitted x, y: the cup centred over flat cards but landed 0-4 mm
                            # toward the front of six stacks (Nov 3, mean 2.3), so it's the stack fit, not the cup
-FIT = 0.80                 # a stack fits 0.86-0.96; Mate, the deck's edge, touching stacks 0.5 or less
+FIT = 0.80                 # a stack fits 0.86-0.96; Esper, the deck's edge, touching stacks 0.5 or less
 SAME_PX, SAME_AREA = 3, 0.04   # a patch this close to one already fitted is the same stack
 DECK_V = 90                # a deck's back and edges: brighter than this (as the card finder)
 DECK_MIN_MM = 5.0          # a box this tall is a deck, not a card (a curled card fits ~4)

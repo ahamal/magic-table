@@ -1,11 +1,11 @@
-# Mate (software)
+# Esper (software)
 
-> **Using Mate as an agent:** start at [agent/mate.md](../../agent/mate.md) (how to drive it, gestures, faces, calibration). This page is the full API reference.
+> **Using Esper as an agent:** start at [agent/esper.md](../../agent/esper.md) (how to drive it, gestures, faces, calibration). This page is the full API reference.
 
-Mate is a self-contained system: one ESP32-S3 program serves its own API over Wi-Fi, its own control page and its own camera. It works with nothing else running. Later, the table hub on the Pi 5 becomes one more client of this API.
+Esper is a self-contained system: one ESP32-S3 program serves its own API over Wi-Fi, its own control page and its own camera. It works with nothing else running. Later, the table hub on the Pi 5 becomes one more client of this API.
 
 ```
-software/mate/
+software/esper/
 ├── faces/      ready-made screen animations (eyes, chicken, 24 reactions for gestures) and the script that draws them
 ├── firmware/   ESP32-S3: Wi-Fi API, raw steppers, flipper servo, face, camera, control page
 ├── server/     (retired — was the Pi 3 web server; the ESP32 serves the API now)
@@ -16,18 +16,18 @@ software/mate/
 ## Design rules
 
 - **Raw, no abstraction.** Steps, not millimetres. Angles, not "look left". Which way is forward, how many steps make a quarter turn — that's for the agent (human or AI) to work out. The robot learns its own body.
-- **Both wheels in one command.** `step {s1, s2}` moves both steppers at once and they finish together, so Mate can drive straight or curve.
+- **Both wheels in one command.** `step {s1, s2}` moves both steppers at once and they finish together, so Esper can drive straight or curve.
 - **Physics and safety stay in the body:** acceleration ramps, max speed, max steps per command, coils off when idle, and stop.
-- **Mate does not track its own position.** Feedback comes from outside — the overhead camera later, the human's eyes in step 1.
-- **No edge sensor.** Keeping Mate on the table is the hub's job (no-go zone from the overhead camera), plus the per-command step limit.
+- **Esper does not track its own position.** Feedback comes from outside — the overhead camera later, the human's eyes in step 1.
+- **No edge sensor.** Keeping Esper on the table is the hub's job (no-go zone from the overhead camera), plus the per-command step limit.
 
 ## API
 
-Everything Mate can do goes through this HTTP API. The control page uses it, and so will the hub and the AI brain. Every reply below was captured from the robot.
+Everything Esper can do goes through this HTTP API. The control page uses it, and so will the hub and the AI brain. Every reply below was captured from the robot.
 
 ### Conventions
 
-- **Base URL:** `http://mate.local` (port 80). Use the IP from `/info` if mDNS is slow. The live video is on port 81.
+- **Base URL:** `http://esper.local` (port 80). Use the IP from `/info` if mDNS is slow. The live video is on port 81.
 - **Parameters** go in the query string, e.g. `POST /step?s1=400&s2=-400`. POST requests have no body, except `/screen`.
 - **Numbers are whole numbers.** A value that isn't a number is read as `0`, not rejected, so check what you send.
 - **Replies** are JSON, except `/capture` (JPEG), `/stream` (MJPEG) and `/` (HTML).
@@ -51,8 +51,8 @@ Everything Mate can do goes through this HTTP API. The control page uses it, and
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/info` | What Mate is: limits, screen size, camera, stream URL |
-| GET | `/status` | What Mate is doing: moving or not, last move, servo, screen, health |
+| GET | `/info` | What Esper is: limits, screen size, camera, stream URL |
+| GET | `/status` | What Esper is doing: moving or not, last move, servo, screen, health |
 | POST | `/step` | Move both wheels (starts the move and returns at once) |
 | POST | `/stop` | Stop the wheels now |
 | POST | `/servo` | Set the flipper angle |
@@ -68,7 +68,7 @@ Everything Mate can do goes through this HTTP API. The control page uses it, and
 Static facts about the robot. Read it once at start-up.
 
 ```json
-{"fw":"mate-s3","ip":"192.168.1.201","max_steps":4096,"max_speed":800,"max_accel":1000,"max_servo_speed":600,"servo_park":20,"oled":true,
+{"fw":"esper-s3","ip":"192.168.1.201","max_steps":4096,"max_speed":800,"max_accel":1000,"max_servo_speed":600,"servo_park":20,"oled":true,
  "screen":{"width":128,"height":64,"frame_bytes":1024,"max_frames":64,"max_fps":30,"max_repeat":1000},
  "camera":"GC0308","stream":"http://192.168.1.201:81/stream","vflip":1,"hmirror":1}
 ```
@@ -108,12 +108,12 @@ The live state. Poll it after `/step` (every 100–200 ms) to know when a move e
 | `screen.done` | `true` once an animation has played its `X-Repeat` times and is holding its last frame. Always `true` for a still picture or the status screen; never for a forever loop |
 | `uptime_ms` | Time since the last restart |
 | `reset_reason` | Why it last restarted: `power_on`, `brownout`, `crash`, `watchdog`, `software`, `usb`, `other` |
-| `boots` | Restarts since power was connected. If this goes up, Mate restarted: check `reset_reason` |
+| `boots` | Restarts since power was connected. If this goes up, Esper restarted: check `reset_reason` |
 | `rssi` | Wi-Fi signal in dBm (−30 great, −70 weak) |
 
 ### `POST /step?s1=&s2=[&speed=][&accel=]`
 
-Moves both wheels at once. Both wheels start and finish together, so different values make Mate curve.
+Moves both wheels at once. Both wheels start and finish together, so different values make Esper curve.
 
 | Param | Required | Range | Default | Meaning |
 |---|---|---|---|---|
@@ -128,7 +128,7 @@ Moves both wheels at once. Both wheels start and finish together, so different v
 - The motor coils switch off after every move, so the wheels can be turned by hand while idle.
 
 ```bash
-curl -X POST "http://mate.local/step?s1=-1024&s2=1024&speed=600&accel=800"   # → {"ok":true}
+curl -X POST "http://esper.local/step?s1=-1024&s2=1024&speed=600&accel=800"   # → {"ok":true}
 ```
 
 ### `POST /stop`
@@ -144,18 +144,18 @@ Moves the flipper (MG996R).
 | `angle` | yes | 0…180 | — | Target angle in degrees |
 | `speed` | no | 0…600 | 0 | Sweep speed in degrees/s. `0` or left out = jump: the servo goes there as fast as it can (~0.2 s per 60°) |
 
-- **Returns at once:** `{"ok":true}`. With a `speed`, Mate sweeps the flipper there in small steps on its own; `/status` shows `servo_moving: true` until it arrives (e.g. 30° at `speed=30` takes ~1 s).
+- **Returns at once:** `{"ok":true}`. With a `speed`, Esper sweeps the flipper there in small steps on its own; `/status` shows `servo_moving: true` until it arrives (e.g. 30° at `speed=30` takes ~1 s).
 - **A new `/servo` replaces the current one**, even mid-sweep: it continues from where the flipper is now.
-- **Resting pose and memory:** at every boot the flipper starts at its last saved angle (so it doesn't jump), then sweeps to its resting angle, **20°** (`servo_park`), at 40°/s. Mate saves the angle to flash once the flipper has been still for 2 s with the wheels stopped. If nothing was saved yet, or the arm was turned by hand while off, the first move at boot is a jump to 20°.
-- It then holds that angle. There is no feedback of the real position, only where Mate is driving it.
+- **Resting pose and memory:** at every boot the flipper starts at its last saved angle (so it doesn't jump), then sweeps to its resting angle, **20°** (`servo_park`), at 40°/s. Esper saves the angle to flash once the flipper has been still for 2 s with the wheels stopped. If nothing was saved yet, or the arm was turned by hand while off, the first move at boot is a jump to 20°.
+- It then holds that angle. There is no feedback of the real position, only where Esper is driving it.
 
 ```bash
-curl -X POST "http://mate.local/servo?angle=120&speed=60"   # sweep to 120° at 60°/s → {"ok":true}
+curl -X POST "http://esper.local/servo?angle=120&speed=60"   # sweep to 120° at 60°/s → {"ok":true}
 ```
 
  **Avoid the very ends** (0 and 180) if the flipper hits something there: holding against a stop draws ~2.5 A.
 
- **Keep the servo at ~60% of the max or less** (`speed` ≤ 360, always given). A jump or full speed draws enough current to drop Mate off Wi-Fi now and then. The wheels are fine at full speed and acceleration.
+ **Keep the servo at ~60% of the max or less** (`speed` ≤ 360, always given). A jump or full speed draws enough current to drop Esper off Wi-Fi now and then. The wheels are fine at full speed and acceleration.
 
 ### `POST /screen`
 
@@ -166,27 +166,27 @@ Shows a picture or a looping animation on the face (the OLED).
   - `X-FPS: 1–30` (default 10): playback speed.
   - `X-Repeat: 0–1000` (default 0): how many times to play the animation. `0` loops forever; `1` plays once; then it **stays on the last frame**.
 
-  These are headers, not `?fps=`, because Mate's web server ignores query args on requests with a binary body.
+  These are headers, not `?fps=`, because Esper's web server ignores query args on requests with a binary body.
 - **Returns** `{"frames":N,"fps":F,"repeat":R}`.
-- **1 frame** = a still picture. **2–64 frames** = Mate plays them by itself at `X-FPS`, `X-Repeat` times, until replaced. **Empty body** = back to the status screen.
+- **1 frame** = a still picture. **2–64 frames** = Esper plays them by itself at `X-FPS`, `X-Repeat` times, until replaced. **Empty body** = back to the status screen.
 - **Knowing when it's finished:** `/status` → `screen.done` turns `true` when a counted animation ends. Play-once reactions (a blink, a surprised face) then hold their last frame until you send the next thing.
-- **The status screen** is what Mate shows by itself: at boot, whenever nothing has been sent ("Mate", `mate.local`, its IP and camera), and whenever Wi-Fi is down ("not connected" and the network name).
+- **The status screen** is what Esper shows by itself: at boot, whenever nothing has been sent ("Esper", `esper.local`, its IP and camera), and whenever Wi-Fi is down ("not connected" and the network name).
 - Not kept across restarts. If Wi-Fi drops, the status screen ("not connected") shows until it's back, then the animation resumes.
 
 ```bash
 # loop forever
 curl -X POST -H 'Content-Type: application/octet-stream' -H 'X-FPS: 12' \
-  --data-binary @software/mate/faces/eyes.bin http://mate.local/screen   # → {"frames":56,"fps":12,"repeat":0}
+  --data-binary @software/esper/faces/eyes.bin http://esper.local/screen   # → {"frames":56,"fps":12,"repeat":0}
 # play once, then hold the last frame
 curl -X POST -H 'Content-Type: application/octet-stream' -H 'X-FPS: 4' -H 'X-Repeat: 1' \
-  --data-binary @software/mate/faces/chicken.bin http://mate.local/screen # → {"frames":4,"fps":4,"repeat":1}
+  --data-binary @software/esper/faces/chicken.bin http://esper.local/screen # → {"frames":4,"fps":4,"repeat":1}
 ```
 
-Ready-made faces (eyes, chicken, a portrait) are in [`faces/`](faces/); `faces/make.py` shows how to draw frames with Pillow (`Image.new("1", (128, 64)).tobytes()` is already in Mate's format).
+Ready-made faces (eyes, chicken, a portrait) are in [`faces/`](faces/); `faces/make.py` shows how to draw frames with Pillow (`Image.new("1", (128, 64)).tobytes()` is already in Esper's format).
 
 ### `GET /capture`
 
-Returns a fresh photo: `image/jpeg`, 640×480, about 25–35 KB, in about 1 s. Each call wakes the camera, throws away the stale frame, takes a new one, and puts the camera back to sleep (a running camera slows Mate's Wi-Fi). The image is already turned the right way up.
+Returns a fresh photo: `image/jpeg`, 640×480, about 25–35 KB, in about 1 s. Each call wakes the camera, throws away the stale frame, takes a new one, and puts the camera back to sleep (a running camera slows Esper's Wi-Fi). The image is already turned the right way up.
 
 ### `POST /camera[?vflip=0|1][&hmirror=0|1]`
 
@@ -194,7 +194,7 @@ Reads or sets the image flip. With no params it just returns the current setting
 
 ### `GET :81/stream`
 
-Live MJPEG video (`http://mate.local:81/stream`), about 2 fps, for people to watch in a browser. The camera stays on while anyone watches, which slows Wi-Fi, so the AI should use `/capture` instead.
+Live MJPEG video (`http://esper.local:81/stream`), about 2 fps, for people to watch in a browser. The camera stays on while anyone watches, which slows Wi-Fi, so the AI should use `/capture` instead.
 
 ### `GET /scan`
 
@@ -204,7 +204,7 @@ The I2C addresses that answer, e.g. `{"i2c":["0x3c"]}` (`0x3c` is the face scree
 
 Calibration is the agent's job, but these were checked on the bench (Oct 31):
 
-| Command | What Mate does |
+| Command | What Esper does |
 |---|---|
 | `s1` −, `s2` + (e.g. `-1024, 1024`) | Drives **forward** |
 | `s1` +, `s2` − | Drives backward |
@@ -213,8 +213,8 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 
 - One wheel turn is 4096 half-steps. The wheels are 70 mm across, so one turn rolls about **220 mm** (≈ 0.054 mm per half-step) if nothing slips. Measured on the table: 0.048 mm per half-step (build notes).
 - Top speed: 800 half-steps/s ≈ **4.3 cm/s**. Use it (with `accel=1000`): slower is sluggish.
-- Mate doesn't know where it is. The hub's overhead camera does (`/api/scene` → `mate`), and `POST hub/api/mate/goto` drives it to a spot with the camera checking.
-- **No edge sensor:** nothing on Mate stops it at the table edge. The 4096-step limit per move (~22 cm) is the only guard.
+- Esper doesn't know where it is. The hub's overhead camera does (`/api/scene` → `esper`), and `POST hub/api/esper/goto` drives it to a spot with the camera checking.
+- **No edge sensor:** nothing on Esper stops it at the table edge. The 4096-step limit per move (~22 cm) is the only guard.
 
 ### A typical agent loop
 
@@ -222,7 +222,7 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 2. `POST /step?...` → `{"ok":true}`.
 3. Poll `GET /status` every ~150 ms until `busy` is `false`. Read `last.result` and `last.d1`/`last.d2`.
 4. `GET /capture` to see the result.
-5. Check `boots` now and then: if it went up, Mate restarted, the face screen is reset, and the step counters are back at 0.
+5. Check `boots` now and then: if it went up, Esper restarted, the face screen is reset, and the step counters are back at 0.
 
 ### Getting pictures: notes
 
@@ -231,7 +231,7 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 
 ### Control page
 
-`http://mate.local/` is for people: camera (snapshot, live, download), a screen editor (draw with clicks, type text, send), a **Faces** grid of 19 ready-made animations with a loop/once switch, an arrow pad with keyboard arrows (Space or Esc stops), speed and accel sliders, raw `s1`/`s2`, STOP, and a flipper slider with a speed slider (full = jump). It uses only the API above.
+`http://esper.local/` is for people: camera (snapshot, live, download), a screen editor (draw with clicks, type text, send), a **Faces** grid of 19 ready-made animations with a loop/once switch, an arrow pad with keyboard arrows (Space or Esc stops), speed and accel sliders, raw `s1`/`s2`, STOP, and a flipper slider with a speed slider (full = jump). It uses only the API above.
 
 ## Step 1 checklist
 
@@ -243,5 +243,5 @@ Calibration is the agent's job, but these were checked on the bench (Oct 31):
 - [x] Sign conventions: forward = s1 −, s2 +; left turn = +, + (see [Driving](#driving-whats-known-about-the-body))
 - [x] Calibration on the table: half-steps per mm, per degree of turn (Nov 1, with the overhead camera; numbers in the hub's build notes, `GET /api/notes`)
 - [ ] Card-corner test at 10–15 cm with the GC0308
-- [x] Mount the flipper arm and check the 20° resting pose (on the right side, bent across the face; level and centred at 65°; see [agent/mate.md](../../agent/mate.md))
-- [x] Flip cards over with the flipper (Nov 2: 14 flips, all flat; recipe in [agent/mate.md](../../agent/mate.md))
+- [x] Mount the flipper arm and check the 20° resting pose (on the right side, bent across the face; level and centred at 65°; see [agent/esper.md](../../agent/esper.md))
+- [x] Flip cards over with the flipper (Nov 2: 14 flips, all flat; recipe in [agent/esper.md](../../agent/esper.md))

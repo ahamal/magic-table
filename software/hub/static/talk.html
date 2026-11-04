@@ -43,7 +43,7 @@
   .msg { align-self: flex-end; max-width: 85%; background: var(--mine); border-radius: 8px 8px 2px 8px; padding: 9px 13px; }
   .msg.player { background: var(--panel); border: 1px solid var(--line); }
   .msg.spoken { align-self: flex-start; background: var(--spoken); color: var(--spoken-ink); border-radius: 8px 8px 8px 2px; }
-  /* Mate's gestures: a stage direction, not a bubble */
+  /* Esper's gestures: a stage direction, not a bubble */
   .msg.gesture { align-self: center; max-width: 90%; background: none; padding: 0 8px; text-align: center;
     font-size: 14px; font-style: italic; color: var(--muted); }
   .msg.gesture b { font-weight: 700; font-style: normal; }
@@ -90,10 +90,10 @@
   <span id="conn" class="tag">connecting</span>
   <span class="spacer"></span>
   <nav><a href="/">Home</a><a href="/jog">Jog</a><a href="/scene">3D Scene</a><a href="/vision">Vision</a></nav>
-  <button id="clear" title="Delete the whole chat">Clear</button>
+  <button id="clear" title="Start a fresh chat (the old one is kept on the Pi)">Clear</button>
 </header>
 
-<main id="list"><p id="empty">Talk to the table: hold the button while you speak, or type below. Answers come here and out loud; Mate answers with gestures.</p></main>
+<main id="list"><p id="empty">Talk to the table: hold the button while you speak, or type below. Answers come here and out loud; Esper answers with gestures.</p></main>
 
 <footer>
   <button id="mic" aria-label="Hold to talk">
@@ -136,9 +136,9 @@ function fill(d, item) {
   t.textContent = fmtTime(item.at);
   d.textContent = '';
   d.dataset.by = item.by;
-  if (item.by === 'mate') {                       // Mate never speaks: its gestures read like stage directions
+  if (item.by === 'esper') {                       // Esper never speaks: its gestures read like stage directions
     d.className = 'msg gesture';
-    const who = document.createElement('b'); who.textContent = 'Mate';
+    const who = document.createElement('b'); who.textContent = 'Esper';
     d.append(who, ' ' + item.text, t);
     return;
   }
@@ -193,7 +193,7 @@ function connect() {
 }
 function load() { fetch('/api/chat').then(r => r.json()).then(items => items.forEach(i => show(i))).catch(() => {}); }
 
-$('clear').onclick = () => { if (confirm('Delete the whole chat?')) fetch('/api/chat', { method: 'DELETE' }); };
+$('clear').onclick = () => { if (confirm('Start a fresh chat? The old one is kept on the Pi.')) fetch('/api/chat', { method: 'DELETE' }); };
 
 // ---- typing ----
 $('type').onsubmit = async e => {

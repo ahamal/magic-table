@@ -1,4 +1,4 @@
-"""Mate drive wheel for the 28BYJ-48 shaft, plus a bore fit test.
+"""Esper drive wheel for the 28BYJ-48 shaft, plus a bore fit test.
 
 Usage: python wheel.py   (needs: pip install manifold3d numpy)
 Writes wheel-70.stl and fit-test.stl next to this file. All sizes in mm.
@@ -85,7 +85,7 @@ def write_stl(manifold, path):
     record["n"] = normals
     record["v"] = v
     with open(path, "wb") as f:
-        f.write(b"Mate wheel".ljust(80, b" "))
+        f.write(b"Esper wheel".ljust(80, b" "))
         f.write(np.uint32(len(tris)).tobytes())
         f.write(record.tobytes())
 

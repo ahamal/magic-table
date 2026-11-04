@@ -1,11 +1,11 @@
-"""The table's chat: what people say or type, what the agent says, and Mate's gestures, in one log.
+"""The table's chat: what people say or type, what the agent says, and Esper's gestures, in one log.
 
 People talk on the talk page: it streams the mic (16 kHz PCM) to the hub, which relays it to
 Meta's Muse Voice Transcribe realtime endpoint and passes the words back as they're recognised
 (about 0.3 s behind the speech), so the page can show them live; the final text becomes the
 message. (A whole recorded WAV can also be sent to the one-shot endpoint.) People can also
-type. Everything the agent says out loud (/api/say) goes in too, and Mate's gestures
-(/api/mate/gesture), since that's how Mate talks. Each message is kept in order (and appended
+type. Everything the agent says out loud (/api/say) goes in too, and Esper's gestures
+(/api/esper/gesture), since that's how Esper talks. Each message is kept in order (and appended
 to chat.jsonl), pushed to open pages as a `chat` event, and agents can wait for new ones
 (GET /api/chat?after=<id>&wait=30).
 
@@ -28,10 +28,11 @@ REALTIME_URL = "wss://api.meta.ai/v1/asr/realtime"   # handshake JSON, PCM16 fra
 MODEL = "muse-voice-transcribe-1.0"
 MAX_BYTES = 32 * 1024 * 1024  # the endpoint's limit (also 10 minutes of audio)
 # words the model would otherwise mis-hear at a card table
-KEYWORDS = ["Mate", "fold", "check", "call", "raise", "all in", "blind", "flop", "turn", "river",
+KEYWORDS = ["Esper", "fold", "check", "call", "raise", "all in", "blind", "flop", "turn", "river",
             "deal", "shuffle", "poker", "chips", "hearts", "spades", "clubs", "diamonds"]
 LOG = Path(__file__).parent / "chat.jsonl"
 OLD_LOG = Path(__file__).parent / "transcripts.jsonl"   # before the chat: player speech only
+ARCHIVE = Path(__file__).parent / "chats"                # cleared chats, kept: chat-<date>-<time>.jsonl
 
 
 class TranscribeError(RuntimeError):
@@ -50,18 +51,32 @@ class Chat:
             except ValueError:
                 continue
             item.setdefault("by", "player")
+            if item["by"] == "mate":
+                item["by"] = "esper"
             item.setdefault("via", "voice")
             self.items.append(item)
+        # ids keep counting up across a clear, so an agent waiting for "after <id>" still hears new ones
+        self.last_id = self.items[-1]["id"] if self.items else self._archived_last_id()
+
+    @staticmethod
+    def _archived_last_id():
+        old = sorted(ARCHIVE.glob("chat-*.jsonl")) if ARCHIVE.exists() else []
+        for line in reversed(old[-1].read_text().splitlines() if old else []):
+            try:
+                return json.loads(line)["id"]
+            except (ValueError, KeyError):
+                continue
+        return 0
 
     def add(self, text, by="player", via="typed", **extra):
-        """Add one message. by: "player" (people at the table), "mate" (its gestures),
+        """Add one message. by: "player" (people at the table), "esper" (its gestures),
         or an agent's name; via: "voice", "typed", "speaker" or "gesture"."""
         text = text.strip()
         if not text:
             return None
         with self._lock:
-            item = {"id": (self.items[-1]["id"] if self.items else 0) + 1, "at": time.time(),
-                    "by": by, "via": via, "text": text, **extra}
+            self.last_id += 1
+            item = {"id": self.last_id, "at": time.time(), "by": by, "via": via, "text": text, **extra}
             self.items.append(item)
             with LOG.open("a") as f:
                 f.write(json.dumps(item) + "\n")
@@ -135,8 +150,17 @@ class Chat:
         return [i for i in self.items if i["id"] > after_id]
 
     def clear(self):
+        """Start a fresh chat. The old one is kept in chats/ (a demo's transcript is worth keeping);
+        returns its file name, or None if the chat was empty."""
+        kept = None
         with self._lock:
             self.items = []
-            LOG.unlink(missing_ok=True)
-            OLD_LOG.unlink(missing_ok=True)
+            for src in (LOG, OLD_LOG):
+                if src.exists() and src.stat().st_size:
+                    ARCHIVE.mkdir(exist_ok=True)
+                    kept = ARCHIVE / f"chat-{time.strftime('%Y-%m-%d-%H%M%S')}.jsonl"
+                    src.rename(kept)
+                else:
+                    src.unlink(missing_ok=True)
         self.emit({"type": "chat_cleared"})
+        return kept.name if kept else None

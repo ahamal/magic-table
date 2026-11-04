@@ -9,17 +9,17 @@ Run on the Pi, next to the hub (``software/hub/server.py``)::
 Design (see ``agent/README.md`` and ``docs/architecture.md``):
 
 * The MCP server is a *thin* wrapper over the hub HTTP API. It never talks
-  to GRBL, to Mate's own API (``mate.local``), or to any serial port.
-  Mate is driven only through the hub (``/api/mate/*``), so the hub's
-  safety layer -- board bounds, Z limits, travel height, Mate no-go zone,
+  to GRBL, to Esper's own API (``esper.local``), or to any serial port.
+  Esper is driven only through the hub (``/api/esper/*``), so the hub's
+  safety layer -- board bounds, Z limits, travel height, Esper no-go zone,
   camera-checked paths -- stays between the model and the hardware.
 * There is deliberately NO tool for ``/api/send`` (raw G-code, unchecked;
   ``unlock`` sends exactly ``$X`` and nothing else), no homing (``$H``: this
   build has no limit switches, so homing would drive the axes into the
   frame), no tool for GRBL settings, no full recalibration, and no direct
-  Mate ``/step`` / ``/servo`` / ``/screen`` tool. Mate's flipper and wheels
-  go through the hub's ``/api/mate/move``, which caps the flipper speed and
-  keeps the hub's idea of where Mate is right.
+  Esper ``/step`` / ``/servo`` / ``/screen`` tool. Esper's flipper and wheels
+  go through the hub's ``/api/esper/move``, which caps the flipper speed and
+  keeps the hub's idea of where Esper is right.
 * Vision is tiered, exactly as the hub already implements it in
   ``software/hub/eyes.py`` (see the audit in ``MCP_README.md``):
     - ``get_scene``: free OpenCV scene, no cloud call, every ~0.5 s.
@@ -27,7 +27,7 @@ Design (see ``agent/README.md`` and ``docs/architecture.md``):
     - ``find``: SAM 3.1 (``sam-3.1``) segments, Muse Spark verifies the
       robot-near matches. ``effort`` defaults to ``minimal`` (validated:
       same card answers in 0.5-2 s vs ~15 s at default effort); use
-      ``high`` for Mate-camera close-ups (counts, peeks), where
+      ``high`` for Esper-camera close-ups (counts, peeks), where
       ``minimal``/``low`` miscounted in testing.
     - ``get_cards``: card cache first (milliseconds, no API), Muse Spark
       only for unknown face-up cards, cached only at confidence >= 0.9.
@@ -52,7 +52,7 @@ import urllib.request
 
 HUB_URL = os.environ.get("MAGIC_TABLE_HUB_URL", "http://localhost:8000").rstrip("/")
 EFFORTS = ("minimal", "low", "medium", "high")
-GUIDE_NAMES = ("guide", "table", "mate", "poker")
+GUIDE_NAMES = ("guide", "table", "esper", "poker")
 GRIPPER_ACTIONS = ("pump_on", "pump_off", "valve_on", "valve_off", "grip", "drop", "stop")
 
 
@@ -131,9 +131,16 @@ def _effort(value):
 
 def _cam(value):
     v = str(value or "1")
-    if v not in ("0", "1", "mate"):
-        raise ValueError("cam must be 0, 1, or mate (mate gives pixels only, no board mm)")
+    if v not in ("0", "1", "esper"):
+        raise ValueError("cam must be 0, 1, or esper (esper gives pixels only, no board mm)")
     return v
+
+def _opt(value):
+    """A text argument, or None when the model sent a stand-in for nothing ("", "null", "none")."""
+    if value is None or str(value).strip().lower() in ("", "null", "none", "undefined"):
+        return None
+    return value
+
 
 def _text(obj):
     text = obj if isinstance(obj, str) else json.dumps(obj, indent=2, ensure_ascii=False)
@@ -169,11 +176,11 @@ def _schema(props, required=()):
     return {"type": "object", "properties": props, "required": list(required), "additionalProperties": False}
 
 
-@tool("get_guide", "Read a guide FIRST, before moving anything. 'guide' is the start-here page, then 'table' (gantry/gripper/safety/recipes), 'mate' (Mate robot), 'poker' (the game). Then read get_notes.", _schema({"name": {"type": "string", "enum": list(GUIDE_NAMES)}}))
+@tool("get_guide", "Read a guide FIRST, before moving anything. 'guide' is the start-here page, then 'table' (gantry/gripper/safety/recipes), 'esper' (Esper robot), 'poker' (the game). Then read get_notes.", _schema({"name": {"type": "string", "enum": list(GUIDE_NAMES)}}))
 def _t_guide(hub, a):
     name = a.get("name", "guide")
     if name not in GUIDE_NAMES:
-        raise ValueError("name must be guide, table, mate, or poker")
+        raise ValueError("name must be guide, table, esper, or poker")
     path = "/api/guide" if name == "guide" else f"/api/guide/{name}"
     return _text(_raw_text(hub, path))
 
@@ -193,7 +200,7 @@ def _t_status(hub, a):
     return _text(hub.get("/api/status"))
 
 
-@tool("get_scene", "FREE, no cloud call, ~0.5 s: head/cup, Mate, face-up cards (cached names), chip stacks, decks, board markers, in board mm. Use first, always. Caveats: touching cards merge/vanish, deck +/-3, chip counts +/-1 near x.5. Keep your own game state and use scene to check it, not replace it.", _schema({"fresh": {"type": "boolean"}}))
+@tool("get_scene", "FREE, no cloud call, ~0.5 s: head/cup, Esper, face-up cards (cached names), chip stacks, decks, board markers, in board mm. Use first, always. Caveats: touching cards merge/vanish, deck +/-3, chip counts +/-1 near x.5. Keep your own game state and use scene to check it, not replace it.", _schema({"fresh": {"type": "boolean"}}))
 def _t_scene(hub, a):
     return _text(hub.get("/api/scene", {"fresh": "true" if a.get("fresh") else None}))
 
@@ -208,14 +215,14 @@ def _t_reanchor(hub, a):
     return _text(hub.post("/api/calibration/reanchor", query={"camera": "true" if a.get("camera") else None}))
 
 
-@tool("see", "TIER 2 vision (Muse Spark, ~2 s): what KINDS of loose things are on the board, with counts and a fallback '<colour> object' name for find. Park the gantry head first -- the Z bar hides things and the hub does not warn you. effort defaults to minimal; use high only for Mate-camera close-ups.", _schema({"cam": {"type": "string"}, "ask": {"type": "string"}, "effort": {"type": "string", "enum": list(EFFORTS)}, "by": {"type": "string"}}))
+@tool("see", "TIER 2 vision (Muse Spark, ~2 s): what KINDS of loose things are on the board, with counts and a fallback '<colour> object' name for find. Park the gantry head first -- the Z bar hides things and the hub does not warn you. effort defaults to minimal; use high only for Esper-camera close-ups.", _schema({"cam": {"type": "string"}, "ask": {"type": "string"}, "effort": {"type": "string", "enum": list(EFFORTS)}, "by": {"type": "string"}}))
 def _t_see(hub, a):
-    return _text(hub.get("/api/see", {"cam": _cam(a.get("cam", "1")), "ask": a.get("ask"), "effort": _effort(a.get("effort")), "by": a.get("by")}))
+    return _text(hub.get("/api/see", {"cam": _cam(a.get("cam", "1")), "ask": _opt(a.get("ask")), "effort": _effort(a.get("effort")), "by": _opt(a.get("by"))}))
 
 
-@tool("find", "TIER 3 vision (SAM 3.1, ~3-6 s): WHERE each thing is, in board mm, with pick {x, y, clear_mm}, on_board, and (for cards/decks/chips) real place/height/count. Pass names from see, with fallbacks after '|', e.g. 'playing card|white object'. SAM has no confidence scores and is fussy about names; the hub's Muse Spark verify drops robot parts (cup as plate, wheel as knife) -- matches >60% inside the robot are dropped unless Muse keeps them, only first 12 matches are numbered. Park the head first. cam=mate gives pixels only, never board mm.", _schema({"what": {"type": "string"}, "cam": {"type": "string"}, "ask": {"type": "string"}, "effort": {"type": "string", "enum": list(EFFORTS)}, "height": {"type": "boolean"}, "diameter": {"type": "number"}, "by": {"type": "string"}}, ["what"]))
+@tool("find", "TIER 3 vision (SAM 3.1, ~3-6 s): WHERE each thing is, in board mm, with pick {x, y, clear_mm}, on_board, and (for cards/decks/chips) real place/height/count. Pass names from see, with fallbacks after '|', e.g. 'playing card|white object'. SAM has no confidence scores and is fussy about names; the hub's Muse Spark verify drops robot parts (cup as plate, wheel as knife) -- matches >60% inside the robot are dropped unless Muse keeps them, only first 12 matches are numbered. Park the head first. cam=esper gives pixels only, never board mm.", _schema({"what": {"type": "string"}, "cam": {"type": "string"}, "ask": {"type": "string"}, "effort": {"type": "string", "enum": list(EFFORTS)}, "height": {"type": "boolean"}, "diameter": {"type": "number"}, "by": {"type": "string"}}, ["what"]))
 def _t_find(hub, a):
-    return _text(hub.get("/api/find", {"what": a["what"], "cam": _cam(a.get("cam", "1")), "ask": a.get("ask"), "effort": _effort(a.get("effort")), "height": "true" if a.get("height") else None, "diameter": a.get("diameter"), "by": a.get("by")}))
+    return _text(hub.get("/api/find", {"what": a["what"], "cam": _cam(a.get("cam", "1")), "ask": _opt(a.get("ask")), "effort": _effort(a.get("effort")), "height": "true" if a.get("height") else None, "diameter": a.get("diameter"), "by": _opt(a.get("by"))}))
 
 
 @tool("find_check", "After a pick, with the item lifted: did item <id> of the LAST find leave its spot? gone=true means it came up (change > 0.35). gone=false: check Z first, then re-zero.", _schema({"id": {"type": "integer"}, "by": {"type": "string"}}, ["id"]))
@@ -223,7 +230,7 @@ def _t_check(hub, a):
     return _text(hub.get("/api/find/check", {"id": int(a["id"]), "by": a.get("by")}))
 
 
-@tool("get_cards", "Face-up cards, named: cache first (ms, no API, score>=0.75 margin>=0.08), Muse Spark only for unknown cards, cached only at confidence >= 0.9. Face-down cards are never named. Treat Muse confidence as a hint, not proof -- 0.8 has been wrong on Mate-camera reads.", _schema({"effort": {"type": "string", "enum": list(EFFORTS)}}))
+@tool("get_cards", "Face-up cards, named: cache first (ms, no API, score>=0.75 margin>=0.08), Muse Spark only for unknown cards, cached only at confidence >= 0.9. Face-down cards are never named. Treat Muse confidence as a hint, not proof -- 0.8 has been wrong on Esper-camera reads.", _schema({"effort": {"type": "string", "enum": list(EFFORTS)}}))
 def _t_cards(hub, a):
     return _text(hub.get("/api/cards", {"effort": _effort(a.get("effort"))}))
 
@@ -236,7 +243,7 @@ def _t_capture(hub, a):
     jpg = hub.get("/api/capture", {"cam": cam}, raw=True)
     return [{"type": "image", "data": base64.b64encode(jpg).decode(), "mimeType": "image/jpeg"}], False
 
-@tool("move_tip", "Put the CUP TIP (not the head) at board x, y, optionally at height z (cup height above the board, mm). Never moves diagonally: with z, it rises to the travel height (110) if lower, crosses, then goes straight down to z. direct=true crosses at the current height instead, for a nudge of a few mm. feed applies to the last (vertical) part. Hub enforces board bounds, Z -2..150, and Mate.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "feed": {"type": "number"}, "direct": {"type": "boolean"}}, ["x", "y"]))
+@tool("move_tip", "Put the CUP TIP (not the head) at board x, y, optionally at height z (cup height above the board, mm). Never moves diagonally: with z, it rises to the travel height (110) if lower, crosses, then goes straight down to z. direct=true crosses at the current height instead, for a nudge of a few mm. feed applies to the last (vertical) part. Hub enforces board bounds, Z -2..150, and Esper.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "feed": {"type": "number"}, "direct": {"type": "boolean"}}, ["x", "y"]))
 def _t_tip(hub, a):
     xy = {"x": _num(a["x"], "x", -400, 400), "y": _num(a["y"], "y", -400, 400)}
     z = _num(a["z"], "z", -2, 150) if a.get("z") is not None else None
@@ -277,13 +284,13 @@ def _t_move(hub, a):
     return _text(hub.post("/api/move", body))
 
 
-@tool("jog", "Relative jog in mm. Z jogs stop at limits, X/Y at board bounds, jogs will not press into Mate.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "feed": {"type": "number"}}))
+@tool("jog", "Relative jog in mm. Z jogs stop at limits, X/Y at board bounds, jogs will not press into Esper.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "feed": {"type": "number"}}))
 def _t_jog(hub, a):
     body = {"x": _num(a.get("x", 0), "x", -200, 200), "y": _num(a.get("y", 0), "y", -200, 200), "z": _num(a.get("z", 0), "z", -200, 200), "feed": _num(a.get("feed", 3000), "feed", 1, 12000)}
     return _text(hub.post("/api/jog", body))
 
 
-@tool("gripper", "Gripper: grip (pump on, stays on), drop (vent 0.3 s), pump_on/off, valve_on/off, stop. grip with pump_s=N pumps N s then holds on vacuum ~20 s. A card needs ~1 s pump, peel at F1500, not F2000.", _schema({"action": {"type": "string", "enum": list(GRIPPER_ACTIONS)}, "pump_s": {"type": "number"}}, ["action"]))
+@tool("gripper", "Gripper: grip (pump on, stays on), drop (vent 0.3 s), pump_on/off, valve_on/off, stop. grip with pump_s=N pumps N s then holds on vacuum ~20 s. A card needs ~1 s pump, peel at F1500, not F2000. Send a grip only inside a batch that also drops it. Holding a card up shows the cameras nothing: don't pick a card up to look at it.", _schema({"action": {"type": "string", "enum": list(GRIPPER_ACTIONS)}, "pump_s": {"type": "number"}}, ["action"]))
 def _t_grip(hub, a):
     act = a["action"]
     if act not in GRIPPER_ACTIONS:
@@ -303,33 +310,33 @@ def _t_stop(hub, a):
     return _text(hub.post("/api/realtime/reset"))
 
 
-@tool("mate_goto", "Drive Mate VIA THE HUB so its turning centre ends at (x, y) and faces heading (optional). check=true (default) makes cam 1 check the way first and refuses with in_the_way if anything is on the mat there; check=false only for a short hop you have just looked at, or to push chips on purpose. Mate drives over lying cards but not stacks.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "heading": {"type": "number"}, "check": {"type": "boolean"}}, ["x", "y"]))
+@tool("esper_goto", "Drive Esper VIA THE HUB so its turning centre ends at (x, y) and faces heading (optional). check=true (default) makes cam 1 check the way first and refuses with in_the_way if anything is on the mat there; check=false only for a short hop you have just looked at, or to push chips on purpose. Esper drives over lying cards but not stacks.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "heading": {"type": "number"}, "check": {"type": "boolean"}}, ["x", "y"]))
 def _t_mgoto(hub, a):
     body = {"x": _num(a["x"], "x", -400, 400), "y": _num(a["y"], "y", -400, 400), "check": bool(a.get("check", True))}
     if a.get("heading") is not None:
         body["heading"] = _num(a["heading"], "heading", -360, 360)
-    return _text(hub.post("/api/mate/goto", body))
+    return _text(hub.post("/api/esper/goto", body))
 
 
-@tool("mate_home", "Send Mate home VIA THE HUB. Park the gantry head at the build's park spot first, or the gantry's wires can hide Mate's marker.", _schema({}))
+@tool("esper_home", "Send Esper home VIA THE HUB. Park the gantry head at the build's park spot first, or the gantry's wires can hide Esper's marker.", _schema({}))
 def _t_mhome(hub, a):
-    return _text(hub.post("/api/mate/home"))
+    return _text(hub.post("/api/esper/home"))
 
 
-@tool("get_mate_home", "Where Mate's home spot is.", _schema({}))
+@tool("get_esper_home", "Where Esper's home spot is.", _schema({}))
 def _t_mhome_get(hub, a):
-    return _text(hub.get("/api/mate/home"))
+    return _text(hub.get("/api/esper/home"))
 
 
-@tool("mate_look", "Send Mate to look at (x, y) with its own camera, from distance mm (default 150), from side degrees if given, then use see/find with cam=mate. ~20 s. Mate-camera reads need effort=high and a second opinion: a single hold/peek at confidence 0.8 has been wrong in testing.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "distance": {"type": "number"}, "side": {"type": "number"}, "check": {"type": "boolean"}}, ["x", "y"]))
+@tool("esper_look", "Send Esper to look at (x, y) with its own camera, from distance mm (default 150), from side degrees if given, then use see/find with cam=esper. ~20 s. Esper-camera reads need effort=high and a second opinion: a single hold/peek at confidence 0.8 has been wrong in testing.", _schema({"x": {"type": "number"}, "y": {"type": "number"}, "distance": {"type": "number"}, "side": {"type": "number"}, "check": {"type": "boolean"}}, ["x", "y"]))
 def _t_mlook(hub, a):
     body = {"x": _num(a["x"], "x", -400, 400), "y": _num(a["y"], "y", -400, 400), "distance": _num(a.get("distance", 150), "distance", 50, 400), "check": bool(a.get("check", True))}
     if a.get("side") is not None:
         body["side"] = _num(a["side"], "side", -360, 360)
-    return _text(hub.post("/api/mate/look", body))
+    return _text(hub.post("/api/esper/look", body))
 
 
-@tool("mate_move", "One step of a Mate recipe (the flip, the peek: read the mate and poker guides first, never improvise one), VIA THE HUB: flipper to servo degrees (20 rest .. 150) at servo_speed (required, gentle: the peek uses 30, capped at 360 -- fast flipper moves brown Mate out), starting at once and running while Mate turns turn degrees and drives drive mm (+ forward, max 200) at wheel_speed (half-steps/s, 800 full, the peek creeps at 200). Returns when both are done; counted into where the hub thinks Mate is. No camera check of the way: drive only where you have looked.", _schema({"servo": {"type": "number"}, "servo_speed": {"type": "number"}, "turn": {"type": "number"}, "drive": {"type": "number"}, "wheel_speed": {"type": "number"}}))
+@tool("esper_move", "One step of a Esper recipe (the flip, the peek: read the esper and poker guides first, never improvise one), VIA THE HUB: flipper to servo degrees (20 rest .. 150) at servo_speed (required, gentle: the peek uses 30, capped at 360 -- fast flipper moves brown Esper out), starting at once and running while Esper turns turn degrees and drives drive mm (+ forward, max 200) at wheel_speed (half-steps/s, 800 full, the peek creeps at 200). Returns when both are done; counted into where the hub thinks Esper is. No camera check of the way: drive only where you have looked.", _schema({"servo": {"type": "number"}, "servo_speed": {"type": "number"}, "turn": {"type": "number"}, "drive": {"type": "number"}, "wheel_speed": {"type": "number"}}))
 def _t_mmove(hub, a):
     body = {}
     if a.get("servo") is not None:
@@ -345,15 +352,15 @@ def _t_mmove(hub, a):
         body["wheel_speed"] = _num(a["wheel_speed"], "wheel_speed", 50, 800)
     if not any(k in body for k in ("servo", "turn", "drive")):
         raise ValueError("give servo (+ servo_speed), turn or drive")
-    return _text(hub.post("/api/mate/move", body))
+    return _text(hub.post("/api/esper/move", body))
 
 
-@tool("mate_gestures", "List Mate's gestures by name. Mate never speaks; gestures are how it talks.", _schema({}))
+@tool("esper_gestures", "List Esper's gestures by name. Esper never speaks; gestures are how it talks.", _schema({}))
 def _t_mgestures(hub, a):
-    return _text(hub.get("/api/mate/gestures"))
+    return _text(hub.get("/api/esper/gestures"))
 
 
-@tool("mate_gesture", "Play a Mate gesture VIA THE HUB: face, flipper and wheel moves ending where they started, plus a chat line as Mate. wait=true blocks until done. Refused while Mate is busy. If Mate does not answer, it may have browned out: cover in character, wait ~30 s, then play woke_up.", _schema({"name": {"type": "string"}, "to": {"type": "string"}, "wait": {"type": "boolean"}, "text": {"type": "string"}, "face": {"type": "string"}, "emoji": {"type": "string"}, "steps": {"type": "array", "items": {"type": "object"}}}))
+@tool("esper_gesture", "Play a Esper gesture VIA THE HUB: face, flipper and wheel moves ending where they started, plus a chat line as Esper. wait=true blocks until done. Refused while Esper is busy. If Esper does not answer, it may have browned out: cover in character, wait ~30 s, then play woke_up.", _schema({"name": {"type": "string"}, "to": {"type": "string"}, "wait": {"type": "boolean"}, "text": {"type": "string"}, "face": {"type": "string"}, "emoji": {"type": "string"}, "steps": {"type": "array", "items": {"type": "object"}}}))
 def _t_mgesture(hub, a):
     body = {"wait": bool(a.get("wait", False))}
     for k in ("name", "to", "text", "face", "emoji", "steps"):
@@ -361,14 +368,14 @@ def _t_mgesture(hub, a):
             body[k] = a[k]
     if not body.get("name") and not body.get("text"):
         raise ValueError("give a gesture name, or text for a one-off")
-    return _text(hub.post("/api/mate/gesture", body))
+    return _text(hub.post("/api/esper/gesture", body))
 
 
-@tool("say", "Speak on the table's speaker (Piper, local) and add the line to the chat under by (your own name, e.g. 'Muse'). Use to announce, to ask humans when stuck, and to say what Mate is doing before you send it. by must not be 'player' or 'mate'.", _schema({"text": {"type": "string"}, "by": {"type": "string"}, "wait": {"type": "boolean"}}, ["text"]))
+@tool("say", "Speak on the table's speaker (Piper, local) and add the line to the chat under by (your own name, e.g. 'Muse'). Use to announce, to ask humans when stuck, and to say what Esper is doing before you send it. by must not be 'player' or 'esper'.", _schema({"text": {"type": "string"}, "by": {"type": "string"}, "wait": {"type": "boolean"}}, ["text"]))
 def _t_say(hub, a):
     by = (a.get("by") or "agent")[:32]
-    if by in ("player", "mate"):
-        raise ValueError("by must be your own name, not player or mate")
+    if by in ("player", "esper"):
+        raise ValueError("by must be your own name, not player or esper")
     return _text(hub.post("/api/say", {"text": a["text"][:1000], "by": by, "wait": bool(a.get("wait", False))}))
 
 
@@ -378,12 +385,45 @@ def _t_chat(hub, a):
     return _text(hub.get("/api/chat", {"after": int(a.get("after", 0)), "wait": wait, "by": a.get("by")}))
 
 
-@tool("chat_post", "Add a typed message to the chat under by, your own name (not spoken; use say for speech). by must not be 'player' (that's the people at the table) or 'mate' (Mate talks with gestures).", _schema({"text": {"type": "string"}, "by": {"type": "string"}}, ["text"]))
+@tool("chat_post", "Add a typed message to the chat under by, your own name (not spoken; use say for speech). by must not be 'player' (that's the people at the table) or 'esper' (Esper talks with gestures).", _schema({"text": {"type": "string"}, "by": {"type": "string"}}, ["text"]))
 def _t_chat_post(hub, a):
     by = (a.get("by") or "agent")[:32]
-    if by in ("player", "mate"):
-        raise ValueError("by must be your own name: 'player' is the people at the table, and Mate talks with gestures")
+    if by in ("player", "esper"):
+        raise ValueError("by must be your own name: 'player' is the people at the table, and Esper talks with gestures")
     return _text(hub.post("/api/chat", {"text": a["text"][:2000], "by": by}))
+
+
+BATCH_SKIP = ("batch", "chat_poll", "get_guide", "capture_image")   # no nesting, no long waits, no big reads
+
+
+def _failed(content, is_err):
+    """A step failed: the tool said so, or the hub answered with an error reply or ok: false."""
+    if is_err:
+        return True
+    text = "".join(c.get("text", "") for c in content if c.get("type") == "text")
+    return '"reply": "error' in text or '"ok": false' in text
+
+
+@tool("batch", "Run several tools in ONE call, in order, stopping at the first failure: use it for every recipe step you'd otherwise send one by one (across, down, grip, peel, up; say + esper_gesture together). A batch with a grip must also carry the drop: never end a batch holding something (the vacuum lasts ~20 s, a round of thinking takes seconds). Look before the grip, not while holding. Each step is {tool, args}. Returns each step's result (shortened) and where it stopped. Not inside a batch: batch, chat_poll, get_guide, capture_image.", _schema({"steps": {"type": "array", "items": {"type": "object", "properties": {"tool": {"type": "string"}, "args": {"type": "object"}}, "required": ["tool"]}}}, ["steps"]))
+def _t_batch(hub, a):
+    steps = a.get("steps") or []
+    if not steps:
+        raise ValueError("give steps: [{tool, args}, ...]")
+    done = []
+    for i, step in enumerate(steps):
+        name = step.get("tool")
+        if name in BATCH_SKIP or name not in TOOLS:
+            done.append({"step": i, "tool": name, "error": "not allowed in a batch" if name in BATCH_SKIP else "unknown tool"})
+            return _text({"stopped_at": i, "steps": done}) [0], True
+        try:
+            content, is_err = TOOLS[name][2](hub, step.get("args") or {})
+        except (ValueError, HubError) as e:
+            content, is_err = _err(str(e))
+        text = "".join(c.get("text", "") for c in content if c.get("type") == "text")
+        done.append({"step": i, "tool": name, "result": text[:400]})
+        if _failed(content, is_err):
+            return _text({"stopped_at": i, "steps": done})[0], True
+    return _text({"ok": True, "steps": done})
 
 
 def _result(req_id, result):
@@ -411,7 +451,7 @@ def handle(hub, req):
         name = params.get("name")
         args = params.get("arguments") or {}
         if name not in TOOLS:
-            if name in ("send_gcode", "raw_gcode", "home_gantry", "mate_step", "mate_servo", "mate_screen", "calibrate", "delete_chat", "grbl_settings"):
+            if name in ("send_gcode", "raw_gcode", "home_gantry", "esper_step", "esper_servo", "esper_screen", "calibrate", "delete_chat", "grbl_settings"):
                 return _result(req_id, {"content": [{"type": "text", "text": f"error: {name} is intentionally not exposed: it would bypass the hub safety layer"}], "isError": True})
             return _error(req_id, -32602, f"unknown tool: {name}")
         _desc, _schema, fn = TOOLS[name]
@@ -438,7 +478,7 @@ def main(argv=None):
         print(json.dumps({"tools": [{"name": n, "description": d, "inputSchema": s} for n, (d, s, _f) in sorted(TOOLS.items())]}, indent=2))
         return 0
     hub = Hub(args.hub_url)
-    log(f"magic-table MCP: hub at {hub.base} (Mate only via hub; no raw G-code, no homing)")
+    log(f"magic-table MCP: hub at {hub.base} (Esper only via hub; no raw G-code, no homing)")
     for line in sys.stdin:
         line = line.strip()
         if not line:

@@ -4,7 +4,7 @@
 Runtime target: 3:00 exactly. Film order is not edit order.
 Film the poker hand first, in one wide iPhone shot with live sound. That gives you Muse's actual decision, your genuine reaction, and a truthful spine for the edit. Then move the phone for close-ups of the hardware, the rotation, and the rescue. Use Esper's onboard camera for the private peek.
 
-Cast: Crane — the gantry / suction-cup robot, he/his. Esper — the small wheeled companion robot (formerly called Mate in code and guides), she/her. Internal code and hub endpoints stay /api/mate/* for now; Esper is the demo character name.
+Cast: Crane — the gantry / suction-cup robot, he/his. Esper — the small wheeled companion robot (formerly called Esper in code and guides), she/her. Internal code and hub endpoints stay /api/esper/* for now; Esper is the demo character name.
 
 Rules for the edit: Keep Muse's real decision, your real reaction, and the real Talk-page transcript. If Muse folds, keep the fold. Do not re-record Muse's voice, do not fake a transcript, do not fake a peek. Cut long travel, never cut the moment a decision lands. Caption Muse's spoken lines. Caption staged recovery as "Recovery demonstration".
 

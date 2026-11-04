@@ -35,23 +35,23 @@
     <span>Gantry <b id="grbl">…</b></span>
     <span>Calibration <b id="cal">…</b></span>
     <span>Gripper <b id="grip">…</b></span>
-    <span>Mate <b id="mate">…</b></span>
+    <span>Esper <b id="esper">…</b></span>
     <span>Cameras <b id="cams">…</b></span>
   </div>
 
   <h2>Run the table</h2>
   <div class="grid">
     <a class="card" href="/jog"><b>Jog</b><span>Drive the gantry, the gripper, live camera views, the GRBL console</span></a>
-    <a class="card" href="/scene"><b>3D Scene</b><span>Live 3D of the board, head, cards, Mate and cameras; calibrate, re-anchor</span></a>
+    <a class="card" href="/scene"><b>3D Scene</b><span>Live 3D of the board, head, cards, Esper and cameras; calibrate, re-anchor</span></a>
     <a class="card" href="/vision"><b>Vision</b><span>See what's on the board, find where each thing is for picking (Muse Spark + SAM 3.1), check a pick</span></a>
-    <a class="card" id="talk" href="/talk"><b>Talk</b><span>Chat with the table from any phone: speak or type; the agent answers out loud, Mate with gestures</span></a>
+    <a class="card" id="talk" href="/talk"><b>Talk</b><span>Chat with the table from any phone: speak or type; the agent answers out loud, Esper with gestures</span></a>
   </div>
 
-  <h2>Mate</h2>
+  <h2>Esper</h2>
   <div class="grid">
-    <a class="card" href="http://mate.local/"><b>Mate's control page</b><span>Drive it, the flipper, faces, its camera (on Mate itself)</span></a>
-    <a class="card" href="http://mate.local:81/stream"><b>Mate's camera, live</b><span>What Mate sees (slows its Wi-Fi; close when done)</span></a>
-    <a class="card" href="/guide?doc=mate"><b>Mate guide</b><span>How to drive, calibrate and express with Mate</span></a>
+    <a class="card" href="http://esper.local/"><b>Esper's control page</b><span>Drive it, the flipper, faces, its camera (on Esper itself)</span></a>
+    <a class="card" href="http://esper.local:81/stream"><b>Esper's camera, live</b><span>What Esper sees (slows its Wi-Fi; close when done)</span></a>
+    <a class="card" href="/guide?doc=esper"><b>Esper guide</b><span>How to drive, calibrate and express with Esper</span></a>
   </div>
 
   <h2>Read</h2>
@@ -59,12 +59,12 @@
     <a class="card" href="/guide"><b>Start here</b><span>What's available and how to behave (for agents and people)</span></a>
     <a class="card" href="/guide?doc=table"><b>Table guide</b><span>Gantry, gripper, limits, pick-and-place recipes</span></a>
     <a class="card" href="/api/notes"><b>Build notes</b><span>What's been learned about this table: numbers, what failed</span></a>
-    <a class="card" href="/api/chat"><b>Chat</b><span>The whole conversation: players, the agent and Mate (JSON)</span></a>
+    <a class="card" href="/api/chat"><b>Chat</b><span>The whole conversation: players, the agent and Esper (JSON)</span></a>
   </div>
 
   <h2>Cameras and data</h2>
   <div class="grid">
-    <a class="card" href="/api/stream?cam=1"><b>Cam 1 live</b><span>Angled overview (finds cards, Mate, markers)</span></a>
+    <a class="card" href="/api/stream?cam=1"><b>Cam 1 live</b><span>Angled overview (finds cards, Esper, markers)</span></a>
     <a class="card" href="/api/stream?cam=0"><b>Cam 0 live</b><span>Low side view (watches picks)</span></a>
     <a class="card" href="/api/scene"><b>Scene (JSON)</b><span>Where everything is, in board mm</span></a>
     <a class="card" href="/docs"><b>API reference</b><span>Every hub endpoint, with a try-it page</span></a>
@@ -84,8 +84,8 @@ async function refresh() {
   if (!cal || !cal.calibrated) set('cal', 'not calibrated', 'warn');
   else set('cal', cal.needs_reanchor ? 'needs re-anchor' : 'ok', cal.needs_reanchor ? 'warn' : 'ok');
   set('grip', g ? (g.pump ? 'pump on' : 'idle') : '–', '');
-  const m = scene && scene.mate;
-  set('mate', m ? `seen at ${m.x.toFixed(0)}, ${m.y.toFixed(0)}` : 'not in view', m ? 'ok' : 'warn');
+  const m = scene && scene.esper;
+  set('esper', m ? `seen at ${m.x.toFixed(0)}, ${m.y.toFixed(0)}` : 'not in view', m ? 'ok' : 'warn');
   set('cams', cams ? cams.map(c => `${c.cam} ${c.model}${c.ok ? '' : ' (off)'}`).join(', ') : '–', '');
 }
 refresh(); setInterval(refresh, 3000);

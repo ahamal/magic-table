@@ -1,6 +1,6 @@
 // Round 2 + 3 test: I2C devices, web server and steppers on the ESP32.
 // VL6180X distance, the OLED, PCA9685 servos and both wheels, all over Wi-Fi.
-// Open http://mate.local/ (or the IP shown on the OLED).
+// Open http://esper.local/ (or the IP shown on the OLED).
 //
 // Cores: loop() on core 1 only runs the steppers, so Wi-Fi can't make them
 // stutter. The web server, I2C and OLED run in netTask on core 0.
@@ -16,7 +16,7 @@
 #include <Adafruit_PWMServoDriver.h>
 #include "secrets.h"  // WIFI_SSID, WIFI_PASS (copy secrets.example.h)
 
-const char *HOSTNAME = "mate";
+const char *HOSTNAME = "esper";
 const uint8_t SDA_PIN = 21, SCL_PIN = 22;
 const uint8_t NUM_SERVOS = 3;
 const uint16_t SERVO_MIN_US = 500, SERVO_MAX_US = 2500;
@@ -156,7 +156,7 @@ void drawOled() {
 // ---------------------------------------------------------------- web (core 0)
 
 const char PAGE[] PROGMEM = R"HTML(<!doctype html>
-<html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Mate test</title>
+<html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Esper test</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:420px;margin:16px auto;padding:0 16px;background:#111;color:#eee}
 h1{font-size:18px;color:#aaa;font-weight:500}
@@ -171,7 +171,7 @@ button{padding:8px 12px;margin:2px}
 #stop{background:#c33;color:#fff;border:0;font-weight:700;width:100%;padding:12px}
 small,#res{color:#888}
 </style></head><body>
-<h1>Mate &middot; test</h1>
+<h1>Esper &middot; test</h1>
 <div id=mm>--</div>
 <small>distance (mm) &middot; latency <span id=lat>-</span> ms avg / <span id=max>-</span> max</small>
 
@@ -187,7 +187,7 @@ small,#res{color:#888}
  <button onclick="preset(1024,-1024)">opposite</button>
  <button onclick="preset(1024,0)">s1 only</button>
  <button onclick="preset(0,1024)">s2 only</button>
- <label><input id=edge type=checkbox> edge reflex (only with Mate on the table)</label>
+ <label><input id=edge type=checkbox> edge reflex (only with Esper on the table)</label>
 </div>
 <button id=stop onclick="fetch('/stop',{method:'POST'})">STOP</button>
 <div class=row id=res>-</div>

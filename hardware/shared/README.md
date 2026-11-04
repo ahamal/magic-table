@@ -10,13 +10,13 @@ ArUco markers, kept discreet so players don't notice them.
 |---|---|---|---|
 | Head marker | On the Frame's gantry head | Calibration (pixel → gantry mm). Removed after calibrating. | Only during calibration |
 | Corner markers | Top of the frame corners, 2–3 cm | Safety net if the camera moves | No — faces up, out of sight from seats |
-| Mate marker | Mate's roof | Mate's position, heading, and the gantry no-go zone | Yes — designed as part of Mate's look |
+| Esper marker | Esper's roof | Esper's position, heading, and the gantry no-go zone | Yes — designed as part of Esper's look |
 
 Options for blending in: tone-on-tone colours, a pixel-art border, a logo badge. Test detection under the demo lighting.
 
 ## Network
 
-- Mate's ESP32 is **2.4 GHz only**. Use WPA2 or WPA2/WPA3 mixed.
+- Esper's ESP32 is **2.4 GHz only**. Use WPA2 or WPA2/WPA3 mixed.
 - Demo: a phone hotspot on 2.4 GHz WPA2 is the easiest. Reserve IPs where possible; `.local` names can occasionally fail on busy networks.
 
 ## Power
@@ -26,4 +26,4 @@ Options for blending in: tone-on-tone colours, a pixel-art border, a logo badge.
 
 ## Printed parts
 
-To design: suction cup mount (sprung), peek window / Mate paddle, card and chip trays, stone dispenser, Mate chassis and pan/tilt mount, camera mount for the Frame.
+To design: suction cup mount (sprung), peek window / Esper paddle, card and chip trays, stone dispenser, Esper chassis and pan/tilt mount, camera mount for the Frame.

@@ -1,9 +1,9 @@
-"""Build Mate's ready-made screen animations.
+"""Build Esper's ready-made screen animations.
 
 Each face becomes <name>.bin (frames for POST /screen, 1024 bytes each) and <name>.png
 (a preview strip of a few frames). Run from anywhere:
 
-    python3 software/mate/faces/make.py
+    python3 software/esper/faces/make.py
 
 Needs Pillow (pip install pillow). The frame rate to send with each face is in FACES.
 """
@@ -136,7 +136,7 @@ def portrait():
 
 
 # ---------------------------------------------------------------- reactions
-# Short play-once faces for Mate's gestures (the hub's /api/mate/gesture): they open from the
+# Short play-once faces for Esper's gestures (the hub's /api/esper/gesture): they open from the
 # plain eyes, play, and hold the last frame. All built from the same eye boxes as `eyes`.
 
 def boxes(dx=0, dy=0):
@@ -393,8 +393,8 @@ FACES = {
 def main():
     for name, (build, fps, picks) in FACES.items():
         frames = build()
-        assert len(frames) <= 64, f"{name}: {len(frames)} frames, Mate holds 64"
-        # Pillow's 1-bit tobytes() is rows top to bottom, MSB = leftmost pixel: Mate's format.
+        assert len(frames) <= 64, f"{name}: {len(frames)} frames, Esper holds 64"
+        # Pillow's 1-bit tobytes() is rows top to bottom, MSB = leftmost pixel: Esper's format.
         (HERE / f"{name}.bin").write_bytes(b"".join(f.tobytes() for f in frames))
         sheet = Image.new("1", (len(picks) * (W + 8) - 8, H), 0)
         for i, p in enumerate(picks):
@@ -406,7 +406,7 @@ def main():
     sheet = Image.new("1", (6 * (W + 8) - 8, 4 * (H + 8) - 8), 0)
     for i, build in enumerate(REACTIONS):
         frames = build()
-        assert len(frames) <= 64, f"{build.__name__}: {len(frames)} frames, Mate holds 64"
+        assert len(frames) <= 64, f"{build.__name__}: {len(frames)} frames, Esper holds 64"
         (HERE / "reactions" / f"{build.__name__}.bin").write_bytes(b"".join(f.tobytes() for f in frames))
         sheet.paste(frames[-1], ((i % 6) * (W + 8), (i // 6) * (H + 8)))
     sheet.resize((sheet.width * 2, sheet.height * 2)).convert("L").save(HERE / "reactions.png")
