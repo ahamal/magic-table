@@ -2,7 +2,7 @@
 
 Hackathon: Oct 26 – Nov 4, 2026. **Submissions due Nov 4, 9:00 PM ET.**
 
-> **Status, Nov 2 evening:** the checklist below is from the start and is out of date. Working now: the crane picks, places and stacks cards; Esper drives, goes home and flips cards; the hub's voice, chat and live transcription; Esper's gestures; vision (see, find, check, with the robot filtered out); the 3D scene and calibration. Left: run a full poker hand with Claude driving and fix what it shows; record the backup video; a Muse Spark agent loop on the same API; rehearse; submit. Dropped: Ghost, Go/chess.
+> **Status, Nov 3 evening:** the checklist below is from the start and is out of date. Working now: the crane picks, places and stacks cards and chips; Esper drives, goes home, turns, flips and peeks at cards; vision (free scene, SAM 3.1 find, Muse Spark reading, the robot filtered out); calibration and the 3D scene; the talk page with live transcription, the voice and Esper's gestures; the MCP server and the live Muse Spark agent. Left: a full poker hand run by Muse alone; record the demo video; submit. Dropped: Ghost, Go/chess.
 
 ## Build steps
 

@@ -3,7 +3,7 @@
 ## Principles
 
 1. **The body is game-agnostic.** Nothing below the agent knows what game is being played. No "card", "deck", "flipper" or "peek" in the body — only cameras, positions, raw actuators, sensors, and named spots/actuators with no meaning attached.
-2. **Ghost and real have identical I/O.** Same calls, same response shapes, same image format. The agent can't tell which one it's driving.
+2. **Ghost and real have identical I/O** (the ghost wasn't built; the rule still shapes the API). Same calls, same response shapes, same image format. The agent can't tell which one it's driving.
 3. **No abstraction in the body.** Raw stepper steps, raw servo angles, raw sensor readings. Turning "go forward 10 cm" into steps is calibration, and calibration is the agent's job.
 4. **Everything clever lives in the agent.** Image understanding (labeler), rules, strategy, memory, body model, macros (deal = many picks), self-checking, token budget.
 5. **The agent can be an AI or a human.** Same API. Humans use a web page; the AI uses MCP tools that wrap the same endpoints.
@@ -64,6 +64,8 @@ Every action returns the same shape: `{ ok, error?, took_ms, ... }`. Errors are 
 Esper is its own system with its own API. Raw by design: `step {s1, s2}`, `servo {angle}`, `screen` (raw 128×64 bitmaps, looping animations), `capture`, `stop`. Full spec: [`software/esper/README.md`](../software/esper/README.md#api).
 
 ## Ghost (simulation)
+
+> **Not built** (dropped Nov 2 for time); the design below is kept for later.
 
 - Driven by a **scene file** (data, not code): generic shapes (box, dome, cylinder) with front and back images, stacks, actuator types (e.g. `invert`).
 - **Physics-lite:** stacking, the cup picks the top object only if it lands on it, actuators act on whatever is in their area.

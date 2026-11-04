@@ -1,4 +1,6 @@
-# Ghost (simulated body)
+# Ghost (simulated body) — not built
+
+> **Planned, not built.** It was dropped on Nov 2 to spend the time on the real table; this is the design as it stood. Nothing here runs.
 
 A simulated table with **exactly the same API and outputs** as the hub. Step 3.
 
