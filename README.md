@@ -110,6 +110,7 @@ the-magic-table/
 ## Docs
 
 - [`docs/log.md`](docs/log.md): dated build log, what happened and what we learned
+- [`docs/notes-on-this-build.md`](docs/notes-on-this-build.md): the hub's notes, measured numbers and lessons the agents read before moving anything
 - [`docs/decisions.md`](docs/decisions.md): what was decided and why
 - [`docs/architecture.md`](docs/architecture.md): layers, body interface, network
 - [`docs/plan.md`](docs/plan.md), [`docs/open-questions.md`](docs/open-questions.md), [`docs/brief.md`](docs/brief.md) (the original brief)
