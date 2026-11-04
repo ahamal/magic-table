@@ -94,6 +94,7 @@ Speech out is Piper, a local voice on the Pi (Meta's Model API has no text-to-sp
 the-magic-table/
 ├── agent/                 the guides the agent reads: start, table, Esper, poker; Esper's gestures
 ├── docs/                  brief, architecture, decisions, plan, build log, demo shooting script
+├── media/                 the demo video, clips, photos and screenshots (shot list in its README)
 ├── hardware/
 │   ├── frame/             the crane: parts, wiring, GRBL settings, ArUco markers and head plate
 │   ├── esper/             chassis and wheels (printable parts)
