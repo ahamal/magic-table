@@ -147,8 +147,8 @@
 </header>
 
 <div id="resetbar" class="resetbar" hidden>
-  <span><b>GRBL was reset: it doesn't know where the head is.</b> This page still drives GRBL directly; agents and the hub's moves wait until the position is restored.</span>
-  <button id="reanchor">Head hasn't moved: restore <span id="savedpos" class="mono"></span></button>
+  <span><b>GRBL was reset.</b> Jogs and the hub's moves wait until you unlock. Unlock keeps the position GRBL shows now.</span>
+  <button id="unlockpos" title="$X, then trust the position GRBL shows now">Unlock</button>
 </div>
 
 <main>
@@ -255,9 +255,11 @@ const api = (path, body) => fetch('/api/' + path, {
   body: body ? JSON.stringify(body) : undefined,
 }).then(r => r.json()).catch(e => ({ reply: 'error:' + e.message }));
 const send = line => api('send', { line });
-$('reanchor').onclick = async () => {
-  const r = await api('calibration/reanchor');
-  log(r.ok ? `position restored: ${[r.x, r.y, r.z].map(v => v.toFixed(1)).join(', ')}` : 'restore failed: ' + (r.error || r.reply), r.ok ? '' : 'err');
+$('unlockpos').onclick = async () => {
+  await send('$X');
+  const r = await api('calibration/trust');
+  if (r.ok) $('resetbar').hidden = true;
+  log(r.ok ? 'unlocked: the hub now trusts the position GRBL shows' : 'unlock failed: ' + (r.error || r.reply || r.detail), r.ok ? '' : 'err');
 };
 const rt = name => api('realtime/' + name);
 const feed = () => +$('feed').value;
@@ -437,9 +439,6 @@ $('gozero').onclick = $('padzero').onclick = () => send(`G90 G1 X0 Y0 F${feed().
 function boardFrom(s) {
   if (!s || !s.calibrated) return;
   $('resetbar').hidden = !s.needs_reanchor;
-  const p = s.saved_position;
-  $('savedpos').textContent = p ? `(${p.map(v => Math.round(v)).join(', ')})` : '';
-  $('reanchor').disabled = !p;
   const esper = s.esper ? { x: s.esper.x, y: s.esper.y, heading: s.esper.heading } : null;
   const same = JSON.stringify(s.bounds) === JSON.stringify(board.bounds) && Object.keys(s.board || {}).length === Object.keys(board.markers).length
     && (!esper === !board.esper) && (!esper || Math.hypot(esper.x - board.esper.x, esper.y - board.esper.y) < 3);

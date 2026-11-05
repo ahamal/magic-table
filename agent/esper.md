@@ -8,12 +8,12 @@ Esper is a small wooden robot on the board: two wheels, a flipper arm, a face sc
 |---|---|
 | `GET /info` | Limits, screen size, camera. Once at start. |
 | `GET /status` | `busy`, the last move (`last.d1/d2`, `result`), flipper angle (`servo_now`), screen, `boots`. |
-| `POST /step?s1=&s2=&speed=800&accel=1000` | Move both wheels (half-steps, ±4096 max per call). Returns at once; poll `/status` until `busy` is false. Use full speed and acceleration (`speed=800&accel=1000`): slower is sluggish. |
+| `POST /step?s1=&s2=&speed=500&accel=400` | Move both wheels (half-steps, ±4096 max per call). Returns at once; poll `/status` until `busy` is false. Use full speed and acceleration (`speed=800&accel=1000`): slower is sluggish. |
 | `POST /stop` | Stop the wheels now. |
 | `POST /servo?angle=&speed=` | The flipper (degrees). |
 | `POST /screen` | Show frames on the face (128×64, 1 bit/pixel, 1024 bytes a frame, up to 64 frames, `X-FPS`, `X-Repeat`). |
 | `GET /capture` | A 640×480 JPEG from Esper's camera, ~1 s. |
-| **`POST hub/api/esper/move {servo, servo_speed, turn, drive, wheel_speed}`** | **Use this for recipes (the flip, the peek).** One step: the flipper to `servo`° at `servo_speed` (required, capped at 360), starting at once and running while Esper turns `turn`° and drives `drive` mm (+ forward, ≤ 200) at `wheel_speed` (half-steps/s, 800 full, the peek creeps at 200). Returns when both are done. Unlike `/step`, the hub counts it into where it thinks Esper is. No camera check of the way. |
+| **`POST hub/api/esper/move {servo, servo_speed, turn, drive, wheel_speed}`** | **Use this for recipes (the flip, the peek).** One step: the flipper to `servo`° at `servo_speed` (required, capped at 360), starting at once and running while Esper turns `turn`° and drives `drive` mm (+ forward, ≤ 200) at `wheel_speed` (half-steps/s, 500 at most: faster, or acceleration over 400, isn't reliable (Nov 4); the peek creeps at 200). Returns when both are done. Unlike `/step`, the hub counts it into where it thinks Esper is. No camera check of the way. |
 
 ## Driving
 
@@ -48,6 +48,17 @@ Esper is a small wooden robot on the board: two wheels, a flipper arm, a face sc
 | Game | `thinking`, `your_turn`, `ready`, `peek`, `fold`, `all_in`, `bluff` |
 | Helping | `on_it` (asked to do something), `counting` (taking a close look) |
 | Recovering | `woke_up` (back from a blackout: x x eyes, a wobble, then blinking awake) |
+| New (Nov 4) | `hi` (a quick wave), `cheer` (sparkles, a twisting wave: a win, a big reveal), `giggle` (a laughing wiggle), `curious` (one big eye, a '?': leaning in to look), `suspense` (eyes widen and tremble: right before a reveal) |
+
+**Faces on their own:** `POST hub/api/esper/face {"name": "suspense"}` (MCP tool `esper_face`) puts a face on Esper's screen at once and holds it, with no move and no chat line; `{"name": "eyes"}` goes back to normal. **Set a face BEFORE anything slow, so Esper looks alive instead of frozen:** `curious` before a peek, `suspense` before a flip, `thinking` while waiting on the players. The hub already does it for you during `see` (thinking) and `find` (focused), and the runner shows `thinking` while Muse thinks. Faces: the 24 reactions plus `curious`, `cheer`, `focused`, `suspense`.
+
+**Esper at the poker table** (one gesture or face per moment, never a stream of them):
+- **Start:** `hi` or `cheer` to greet the players.
+- **Dealing:** `ready`, then `your_turn` toward the player who acts.
+- **Peeking at its own cards:** face `curious` before the lift; after the read, `smug` for a good hand, `nervous` for a bad one, or `bluff` to keep a poker face. Never show the cards' value in anything else.
+- **Before a flip (flop, turn, river):** face `suspense`, then flip; after: `shocked` (big card), `love` (helps Esper), `sulk` (doesn't), `laugh`/`giggle` (funny).
+- **Betting:** `thinking` while deciding, `all_in`, `fold`, `bluff`; `suspicious` at a big raise.
+- **The end:** `celebrate` or `cheer` when Esper's side wins, `sulk` and then `bow` when it loses, `bye` at the end.
 
 - **One-offs:** no `name`, and your own `{emoji, text, face, steps}` (same format as gestures.json). Faces are the 24 reactions in [software/esper/faces/reactions/](../software/esper/faces/reactions.png).
 - Every gesture **ends where it started** (moves are a few cm, turns come back), with the flipper back at rest (20°) and the eyes back. Give Esper ~5 cm of room around it, and never gesture with a card on Esper or the cup low over it.
@@ -100,7 +111,7 @@ Tested Nov 2 on a stack of 4 red chips: from home (~300 mm) Muse said "about 3";
 - **Flipping cards over** (tested: 14 flips, all flat, either way over; ~4 s plus the place):
   1. Esper square to the card, and the flipper **lowered to rest (20°) first**: a card placed while the hand is up just gets pushed (and run over). The card's long side along Esper's heading.
   2. The crane places the card just in front of Esper's face so its near edge rests on the flipper's bent part (it lies on the table there). This build: card centre ~114 mm ahead of Esper's marker, centred left-right (the notes have the latest).
-  3. **At the same time:** flipper to 65° (`speed=60`) and drive forward ~95 mm (wheels at full speed): `POST hub/api/esper/move {servo: 65, servo_speed: 60, drive: 95}`. The near edge lifts, the card stands up, then tips over. ~4 s. It lands flipped ~10 cm further on, turned 3–5° clockwise (from above). Curving Esper during the push doesn't change that.
+  3. **At the same time:** flipper to 65° (`speed=60`) and drive forward ~95 mm (wheels at 500, the reliable top): `POST hub/api/esper/move {servo: 65, servo_speed: 60, drive: 95}`. The near edge lifts, the card stands up, then tips over. ~4 s. It lands flipped ~10 cm further on, turned 3–5° clockwise (from above). Curving Esper during the push doesn't change that.
   4. Back up ~50 mm **before** lowering the flipper (or it comes down on the card), then flipper to 20°.
   5. Look where it landed before picking it. The small turn adds up if you flip the same card again and again (Esper squares to it each time): re-square it once it's ~20° off.
 - Keep Esper's turning centre at least ~2 cm inside the cup's board bounds, or a card that drifts on its top can end up out of reach.

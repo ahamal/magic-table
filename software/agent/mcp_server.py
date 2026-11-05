@@ -349,7 +349,7 @@ def _t_mmove(hub, a):
     if a.get("drive") is not None:
         body["drive"] = _num(a["drive"], "drive", -200, 200)
     if a.get("wheel_speed") is not None:
-        body["wheel_speed"] = _num(a["wheel_speed"], "wheel_speed", 50, 800)
+        body["wheel_speed"] = _num(a["wheel_speed"], "wheel_speed", 50, 500)
     if not any(k in body for k in ("servo", "turn", "drive")):
         raise ValueError("give servo (+ servo_speed), turn or drive")
     return _text(hub.post("/api/esper/move", body))
@@ -383,6 +383,11 @@ def _t_say(hub, a):
 def _t_chat(hub, a):
     wait = min(max(float(a.get("wait", 0) or 0), 0), 60)
     return _text(hub.get("/api/chat", {"after": int(a.get("after", 0)), "wait": wait, "by": a.get("by")}))
+
+
+@tool("esper_face", "Put a face on Esper's screen NOW and hold it (no move, no chat line) until the next face or gesture; 'eyes' is back to normal. Set it BEFORE anything slow so Esper looks alive: 'suspense' before a flip, 'curious' before a peek, 'thinking' while players decide. Faces: the reaction faces (happy, sad, shocked, love, laughing, smug, nervous, thinking, suspicious, wink, ...) plus curious, cheer, focused, suspense.", _schema({"name": {"type": "string"}}, ["name"]))
+def _t_mface(hub, a):
+    return _text(hub.post("/api/esper/face", {"name": str(a["name"])}))
 
 
 @tool("chat_post", "Add a typed message to the chat under by, your own name (not spoken; use say for speech). by must not be 'player' (that's the people at the table) or 'esper' (Esper talks with gestures).", _schema({"text": {"type": "string"}, "by": {"type": "string"}}, ["text"]))

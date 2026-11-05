@@ -1,72 +1,864 @@
 {
   "_about": "Esper's gestures, run by POST /api/esper/gesture {name, to?}. Each: emoji + text for the chat, a face (software/esper/faces/reactions/), and steps run in order: servo [angle, speed] (doesn't wait), drive mm, turn deg (anticlockwise +), wait s. Every gesture ends where it started, flipper back at 20. Edit freely; the hub reads this file on every call.",
-  "yes":          {"emoji": "✅", "text": "nods", "face": "yes",
-                   "steps": [{"drive": 10}, {"drive": -10}, {"drive": 10}, {"drive": -10}]},
-  "no":           {"emoji": "❌", "text": "shakes its head", "face": "no",
-                   "steps": [{"turn": 12}, {"turn": -24}, {"turn": 24}, {"turn": -12}]},
-  "thumbs_up":    {"emoji": "👍", "text": "thumbs up", "face": "thumbs_up",
-                   "steps": [{"servo": [65, 240]}, {"wait": 1.8}]},
-  "thumbs_down":  {"emoji": "👎", "text": "thumbs down", "face": "thumbs_down",
-                   "steps": [{"drive": -20}, {"wait": 1.5}, {"drive": 20}]},
-  "shrug":        {"emoji": "🤷", "text": "shrugs", "face": "confused",
-                   "steps": [{"servo": [45, 240]}, {"wait": 0.3}, {"servo": [20, 240]}, {"wait": 0.3},
-                             {"servo": [45, 240]}, {"wait": 0.3}, {"servo": [20, 240]}, {"wait": 0.6}]},
-  "maybe":        {"emoji": "🤔", "text": "isn't sure", "face": "thinking",
-                   "steps": [{"servo": [40, 60]}, {"turn": 8}, {"wait": 0.4}, {"turn": -16}, {"wait": 0.4}, {"turn": 8}]},
-  "celebrate":    {"emoji": "🎉", "text": "celebrates", "face": "happy",
-                   "steps": [{"servo": [90, 300]}, {"turn": 30}, {"turn": -60}, {"turn": 60}, {"turn": -30}]},
-  "laugh":        {"emoji": "😂", "text": "laughs", "face": "laughing",
-                   "steps": [{"servo": [40, 300]}, {"turn": 6}, {"servo": [25, 300]}, {"turn": -12},
-                             {"servo": [40, 300]}, {"turn": 12}, {"servo": [25, 300]}, {"turn": -6}]},
-  "shocked":      {"emoji": "😱", "text": "is shocked", "face": "shocked",
-                   "steps": [{"servo": [80, 360]}, {"drive": -30}, {"wait": 1.2}, {"drive": 30}]},
-  "sulk":         {"emoji": "😞", "text": "sulks", "face": "sad",
-                   "steps": [{"drive": -40}, {"wait": 2}, {"drive": 40}]},
-  "nervous":      {"emoji": "😰", "text": "is nervous", "face": "nervous",
-                   "steps": [{"turn": 4}, {"turn": -8}, {"turn": 8}, {"turn": -8}, {"turn": 8}, {"turn": -4}]},
-  "smug":         {"emoji": "😏", "text": "looks smug", "face": "smug",
-                   "steps": [{"servo": [45, 120]}, {"turn": 30}, {"wait": 1.5}, {"turn": -30}]},
-  "love":         {"emoji": "😍", "text": "is smitten", "face": "love",
-                   "steps": [{"drive": 25}, {"wait": 1.5}, {"drive": -25}]},
-  "bored":        {"emoji": "😴", "text": "is bored", "face": "sleepy",
-                   "steps": [{"wait": 2.5}]},
-  "angry":        {"emoji": "😤", "text": "fumes", "face": "angry",
-                   "steps": [{"servo": [70, 240]}, {"drive": 30}, {"wait": 0.8}, {"drive": -30}]},
-  "hello":        {"emoji": "👋", "text": "waves", "face": "happy",
-                   "steps": [{"servo": [80, 240]}, {"wait": 0.3}, {"servo": [110, 240]}, {"wait": 0.15}, {"servo": [65, 240]},
-                             {"wait": 0.2}, {"servo": [110, 240]}, {"wait": 0.2}, {"servo": [65, 240]}, {"wait": 0.2},
-                             {"servo": [110, 240]}, {"wait": 0.3}]},
-  "bye":          {"emoji": "👋", "text": "waves goodbye", "face": "wink",
-                   "steps": [{"servo": [80, 240]}, {"wait": 0.3}, {"servo": [110, 240]}, {"wait": 0.15}, {"servo": [65, 240]},
-                             {"wait": 0.2}, {"servo": [110, 240]}, {"wait": 0.3}]},
-  "point":        {"emoji": "👉", "text": "points", "face": "alert",
-                   "steps": [{"servo": [65, 240]}, {"wait": 1.8}]},
-  "bow":          {"emoji": "🙇", "text": "bows", "face": "humble",
-                   "steps": [{"drive": 12}, {"wait": 0.8}, {"drive": -12}]},
-  "suspicious":   {"emoji": "🧐", "text": "is suspicious", "to": "eyes {to}", "face": "suspicious",
-                   "steps": [{"turn": 25}, {"wait": 0.8}, {"turn": -50}, {"wait": 0.8}, {"turn": 25}]},
-  "thinking":     {"emoji": "💭", "text": "is thinking", "face": "thinking",
-                   "steps": [{"turn": 6}, {"wait": 0.6}, {"turn": -12}, {"wait": 0.6}, {"turn": 6}]},
-  "your_turn":    {"emoji": "⏳", "text": "nudges", "to": "nudges {to}: your turn", "face": "alert",
-                   "steps": [{"servo": [65, 240]}, {"wait": 0.3}, {"servo": [50, 240]}, {"wait": 0.2}, {"servo": [65, 240]}, {"wait": 1}]},
-  "ready":        {"emoji": "💪", "text": "is ready", "face": "determined",
-                   "steps": [{"servo": [65, 240]}, {"wait": 1.2}]},
-  "peek":         {"emoji": "👀", "text": "peeks at the cards", "face": "sneaky",
-                   "steps": [{"drive": 30}, {"wait": 1.2}, {"drive": -30}]},
-  "on_it":        {"emoji": "🫡", "text": "is on it", "face": "determined",
-                   "steps": [{"drive": 12}, {"wait": 0.3}, {"drive": -12}, {"wait": 0.3}, {"drive": 12}, {"drive": -12}]},
-  "woke_up":      {"emoji": "😵", "text": "comes to", "face": "dizzy",
-                   "steps": [{"wait": 0.8}, {"turn": 5}, {"turn": -10}, {"turn": 5}, {"wait": 0.6}, {"drive": 8}, {"drive": -8}]},
-  "counting":     {"emoji": "🔎", "text": "takes a close look", "face": "alert",
-                   "steps": [{"turn": 4}, {"wait": 0.7}, {"turn": -8}, {"wait": 0.7}, {"turn": 4}]},
-  "fold":         {"emoji": "🏳️", "text": "folds", "face": "sad",
-                   "steps": [{"turn": 100}, {"wait": 1.5}, {"turn": -100}]},
-  "all_in":       {"emoji": "🔥", "text": "goes all in", "face": "determined",
-                   "steps": [{"servo": [90, 300]}, {"drive": 12}, {"drive": -12}, {"drive": 12}, {"drive": -12}]},
-  "bluff":        {"emoji": "😐", "text": "keeps a poker face", "face": "blank",
-                   "steps": [{"wait": 2.5}]},
-  "eye_roll":     {"emoji": "🙄", "text": "rolls its eyes", "face": "eyeroll",
-                   "steps": [{"turn": -20}, {"wait": 1}, {"turn": 20}]},
-  "wink":         {"emoji": "😉", "text": "winks", "face": "wink",
-                   "steps": [{"wait": 0.5}]}
+  "yes": {
+    "emoji": "✅",
+    "text": "nods",
+    "face": "yes",
+    "steps": [
+      {
+        "drive": 10
+      },
+      {
+        "drive": -10
+      },
+      {
+        "drive": 10
+      },
+      {
+        "drive": -10
+      }
+    ]
+  },
+  "no": {
+    "emoji": "❌",
+    "text": "shakes its head",
+    "face": "no",
+    "steps": [
+      {
+        "turn": 12
+      },
+      {
+        "turn": -24
+      },
+      {
+        "turn": 24
+      },
+      {
+        "turn": -12
+      }
+    ]
+  },
+  "thumbs_up": {
+    "emoji": "👍",
+    "text": "thumbs up",
+    "face": "thumbs_up",
+    "steps": [
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 1.8
+      }
+    ]
+  },
+  "thumbs_down": {
+    "emoji": "👎",
+    "text": "thumbs down",
+    "face": "thumbs_down",
+    "steps": [
+      {
+        "drive": -20
+      },
+      {
+        "wait": 1.5
+      },
+      {
+        "drive": 20
+      }
+    ]
+  },
+  "shrug": {
+    "emoji": "🤷",
+    "text": "shrugs",
+    "face": "confused",
+    "steps": [
+      {
+        "servo": [
+          45,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      },
+      {
+        "servo": [
+          20,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      },
+      {
+        "servo": [
+          45,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      },
+      {
+        "servo": [
+          20,
+          240
+        ]
+      },
+      {
+        "wait": 0.6
+      }
+    ]
+  },
+  "maybe": {
+    "emoji": "🤔",
+    "text": "isn't sure",
+    "face": "thinking",
+    "steps": [
+      {
+        "servo": [
+          40,
+          60
+        ]
+      },
+      {
+        "turn": 8
+      },
+      {
+        "wait": 0.4
+      },
+      {
+        "turn": -16
+      },
+      {
+        "wait": 0.4
+      },
+      {
+        "turn": 8
+      }
+    ]
+  },
+  "celebrate": {
+    "emoji": "🎉",
+    "text": "celebrates",
+    "face": "happy",
+    "steps": [
+      {
+        "servo": [
+          90,
+          300
+        ]
+      },
+      {
+        "turn": 30
+      },
+      {
+        "turn": -60
+      },
+      {
+        "turn": 60
+      },
+      {
+        "turn": -30
+      }
+    ]
+  },
+  "laugh": {
+    "emoji": "😂",
+    "text": "laughs",
+    "face": "laughing",
+    "steps": [
+      {
+        "servo": [
+          40,
+          300
+        ]
+      },
+      {
+        "turn": 6
+      },
+      {
+        "servo": [
+          25,
+          300
+        ]
+      },
+      {
+        "turn": -12
+      },
+      {
+        "servo": [
+          40,
+          300
+        ]
+      },
+      {
+        "turn": 12
+      },
+      {
+        "servo": [
+          25,
+          300
+        ]
+      },
+      {
+        "turn": -6
+      }
+    ]
+  },
+  "shocked": {
+    "emoji": "😱",
+    "text": "is shocked",
+    "face": "shocked",
+    "steps": [
+      {
+        "servo": [
+          80,
+          360
+        ]
+      },
+      {
+        "drive": -30
+      },
+      {
+        "wait": 1.2
+      },
+      {
+        "drive": 30
+      }
+    ]
+  },
+  "sulk": {
+    "emoji": "😞",
+    "text": "sulks",
+    "face": "sad",
+    "steps": [
+      {
+        "drive": -40
+      },
+      {
+        "wait": 2
+      },
+      {
+        "drive": 40
+      }
+    ]
+  },
+  "nervous": {
+    "emoji": "😰",
+    "text": "is nervous",
+    "face": "nervous",
+    "steps": [
+      {
+        "turn": 4
+      },
+      {
+        "turn": -8
+      },
+      {
+        "turn": 8
+      },
+      {
+        "turn": -8
+      },
+      {
+        "turn": 8
+      },
+      {
+        "turn": -4
+      }
+    ]
+  },
+  "smug": {
+    "emoji": "😏",
+    "text": "looks smug",
+    "face": "smug",
+    "steps": [
+      {
+        "servo": [
+          45,
+          120
+        ]
+      },
+      {
+        "turn": 30
+      },
+      {
+        "wait": 1.5
+      },
+      {
+        "turn": -30
+      }
+    ]
+  },
+  "love": {
+    "emoji": "😍",
+    "text": "is smitten",
+    "face": "love",
+    "steps": [
+      {
+        "drive": 25
+      },
+      {
+        "wait": 1.5
+      },
+      {
+        "drive": -25
+      }
+    ]
+  },
+  "bored": {
+    "emoji": "😴",
+    "text": "is bored",
+    "face": "sleepy",
+    "steps": [
+      {
+        "wait": 2.5
+      }
+    ]
+  },
+  "angry": {
+    "emoji": "😤",
+    "text": "fumes",
+    "face": "angry",
+    "steps": [
+      {
+        "servo": [
+          70,
+          240
+        ]
+      },
+      {
+        "drive": 30
+      },
+      {
+        "wait": 0.8
+      },
+      {
+        "drive": -30
+      }
+    ]
+  },
+  "hello": {
+    "emoji": "👋",
+    "text": "waves",
+    "face": "happy",
+    "steps": [
+      {
+        "servo": [
+          80,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      },
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "wait": 0.15
+      },
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 0.2
+      },
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "wait": 0.2
+      },
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 0.2
+      },
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      }
+    ]
+  },
+  "bye": {
+    "emoji": "👋",
+    "text": "waves goodbye",
+    "face": "wink",
+    "steps": [
+      {
+        "servo": [
+          80,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      },
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "wait": 0.15
+      },
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 0.2
+      },
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      }
+    ]
+  },
+  "point": {
+    "emoji": "👉",
+    "text": "points",
+    "face": "alert",
+    "steps": [
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 1.8
+      }
+    ]
+  },
+  "bow": {
+    "emoji": "🙇",
+    "text": "bows",
+    "face": "humble",
+    "steps": [
+      {
+        "drive": 12
+      },
+      {
+        "wait": 0.8
+      },
+      {
+        "drive": -12
+      }
+    ]
+  },
+  "suspicious": {
+    "emoji": "🧐",
+    "text": "is suspicious",
+    "to": "eyes {to}",
+    "face": "suspicious",
+    "steps": [
+      {
+        "turn": 25
+      },
+      {
+        "wait": 0.8
+      },
+      {
+        "turn": -50
+      },
+      {
+        "wait": 0.8
+      },
+      {
+        "turn": 25
+      }
+    ]
+  },
+  "thinking": {
+    "emoji": "💭",
+    "text": "is thinking",
+    "face": "thinking",
+    "steps": [
+      {
+        "turn": 6
+      },
+      {
+        "wait": 0.6
+      },
+      {
+        "turn": -12
+      },
+      {
+        "wait": 0.6
+      },
+      {
+        "turn": 6
+      }
+    ]
+  },
+  "your_turn": {
+    "emoji": "⏳",
+    "text": "nudges",
+    "to": "nudges {to}: your turn",
+    "face": "alert",
+    "steps": [
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      },
+      {
+        "servo": [
+          50,
+          240
+        ]
+      },
+      {
+        "wait": 0.2
+      },
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 1
+      }
+    ]
+  },
+  "ready": {
+    "emoji": "💪",
+    "text": "is ready",
+    "face": "determined",
+    "steps": [
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 1.2
+      }
+    ]
+  },
+  "peek": {
+    "emoji": "👀",
+    "text": "peeks at the cards",
+    "face": "sneaky",
+    "steps": [
+      {
+        "drive": 30
+      },
+      {
+        "wait": 1.2
+      },
+      {
+        "drive": -30
+      }
+    ]
+  },
+  "on_it": {
+    "emoji": "🫡",
+    "text": "is on it",
+    "face": "determined",
+    "steps": [
+      {
+        "drive": 12
+      },
+      {
+        "wait": 0.3
+      },
+      {
+        "drive": -12
+      },
+      {
+        "wait": 0.3
+      },
+      {
+        "drive": 12
+      },
+      {
+        "drive": -12
+      }
+    ]
+  },
+  "woke_up": {
+    "emoji": "😵",
+    "text": "comes to",
+    "face": "dizzy",
+    "steps": [
+      {
+        "wait": 0.8
+      },
+      {
+        "turn": 5
+      },
+      {
+        "turn": -10
+      },
+      {
+        "turn": 5
+      },
+      {
+        "wait": 0.6
+      },
+      {
+        "drive": 8
+      },
+      {
+        "drive": -8
+      }
+    ]
+  },
+  "counting": {
+    "emoji": "🔎",
+    "text": "takes a close look",
+    "face": "alert",
+    "steps": [
+      {
+        "turn": 4
+      },
+      {
+        "wait": 0.7
+      },
+      {
+        "turn": -8
+      },
+      {
+        "wait": 0.7
+      },
+      {
+        "turn": 4
+      }
+    ]
+  },
+  "fold": {
+    "emoji": "🏳️",
+    "text": "folds",
+    "face": "sad",
+    "steps": [
+      {
+        "turn": 100
+      },
+      {
+        "wait": 1.5
+      },
+      {
+        "turn": -100
+      }
+    ]
+  },
+  "all_in": {
+    "emoji": "🔥",
+    "text": "goes all in",
+    "face": "determined",
+    "steps": [
+      {
+        "servo": [
+          90,
+          300
+        ]
+      },
+      {
+        "drive": 12
+      },
+      {
+        "drive": -12
+      },
+      {
+        "drive": 12
+      },
+      {
+        "drive": -12
+      }
+    ]
+  },
+  "bluff": {
+    "emoji": "😐",
+    "text": "keeps a poker face",
+    "face": "blank",
+    "steps": [
+      {
+        "wait": 2.5
+      }
+    ]
+  },
+  "eye_roll": {
+    "emoji": "🙄",
+    "text": "rolls its eyes",
+    "face": "eyeroll",
+    "steps": [
+      {
+        "turn": -20
+      },
+      {
+        "wait": 1
+      },
+      {
+        "turn": 20
+      }
+    ]
+  },
+  "wink": {
+    "emoji": "😉",
+    "text": "winks",
+    "face": "wink",
+    "steps": [
+      {
+        "wait": 0.5
+      }
+    ]
+  },
+  "curious": {
+    "emoji": "🤔",
+    "text": "is curious",
+    "face": "curious",
+    "steps": [
+      {
+        "drive": 15
+      },
+      {
+        "wait": 1.2
+      },
+      {
+        "drive": -15
+      }
+    ]
+  },
+  "cheer": {
+    "emoji": "🙌",
+    "text": "cheers",
+    "face": "cheer",
+    "steps": [
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "turn": 15
+      },
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "turn": -30
+      },
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "turn": 15
+      }
+    ]
+  },
+  "giggle": {
+    "emoji": "🤭",
+    "text": "giggles",
+    "face": "laughing",
+    "steps": [
+      {
+        "turn": 8
+      },
+      {
+        "turn": -16
+      },
+      {
+        "turn": 16
+      },
+      {
+        "turn": -8
+      }
+    ]
+  },
+  "suspense": {
+    "emoji": "😬",
+    "text": "holds its breath",
+    "face": "suspense",
+    "steps": [
+      {
+        "drive": -8
+      },
+      {
+        "wait": 1.5
+      },
+      {
+        "drive": 8
+      }
+    ]
+  },
+  "hi": {
+    "emoji": "👋",
+    "text": "says hi",
+    "face": "happy",
+    "steps": [
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "wait": 0.25
+      },
+      {
+        "servo": [
+          65,
+          240
+        ]
+      },
+      {
+        "wait": 0.2
+      },
+      {
+        "servo": [
+          110,
+          240
+        ]
+      },
+      {
+        "wait": 0.3
+      }
+    ]
+  }
 }

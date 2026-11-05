@@ -5,6 +5,7 @@ Run on the Pi:  python serve.py   (HTTP and HTTPS both on :8000; see serve.py)
 """
 
 import asyncio
+import threading
 import contextlib
 import json
 import math
@@ -173,8 +174,10 @@ async def move(body: Move):
         hy = w[1] if body.y is None else body.y
         if not vision.cup_in_bounds(hx, hy):
             return {"line": "", "reply": "error:that puts the cup outside the board bounds"}
-    if vision:
-        lines, why = vision.plan_move(body.x, body.y, body.z)
+    if vision and vision.scene.get("esper"):
+        # plan from where the head will really be: let queued moves finish first (WPos lags them)
+        await asyncio.to_thread(grbl.send, "G4 P0", 60)
+        lines, why = vision.plan_move(body.x, body.y, body.z, body.feed)
         if why:
             return {"line": "", "reply": f"error:{why}"}
         if lines:   # around Esper: up to travel height, across, back down
@@ -291,6 +294,12 @@ async def _meta(coro):
         raise HTTPException(502, f"couldn't reach Meta: {e}")
 
 
+async def _see_or_ask(jpg, ask, effort):
+    if ask:
+        return {"answer": await _meta(eyes.ask(jpg, ask, effort))}
+    return {"things": await _meta(eyes.see(jpg, effort))}
+
+
 @app.get("/api/see")
 async def see(cam: str = "1", ask: str | None = None, effort: str = "minimal", by: str = "agent"):
     """What's on the board (Muse Spark, one fresh picture): {things: [{name, count}]}, names that
@@ -300,10 +309,11 @@ async def see(cam: str = "1", ask: str | None = None, effort: str = "minimal", b
         raise HTTPException(400, f"effort is one of {', '.join(eyes.EFFORTS)}")
     jpg, _ = await _picture(cam)
     t0 = time.time()
-    if ask:
-        res = {"answer": await _meta(eyes.ask(jpg, ask, effort))}
-    else:
-        res = {"things": await _meta(eyes.see(jpg, effort))}
+    esper_face("thinking")             # Esper "thinks" while Muse looks (a few seconds)
+    try:
+        res = await _see_or_ask(jpg, ask, effort)
+    finally:
+        esper_face("eyes")
     return _eyes_done("see", {"cam": cam, "ask": ask, **res, "took_ms": round((time.time() - t0) * 1000)},
                       {cam: jpg}, by)
 
@@ -330,6 +340,15 @@ def _robot_boxes():
 @app.get("/api/find")
 async def find(what: str, cam: str = "1", ask: str | None = None, effort: str = "minimal", height: bool = False,
                diameter: float | None = None, by: str = "agent"):
+    esper_face("focused")              # Esper squints and scans while SAM (and Muse) work
+    try:
+        return await _find(what, cam, ask, effort, height, diameter, by)
+    finally:
+        esper_face("eyes")
+
+
+async def _find(what: str, cam: str = "1", ask: str | None = None, effort: str = "minimal", height: bool = False,
+                diameter: float | None = None, by: str = "agent"):
     """Where things are, for picking (SAM 3.1, one fresh picture from `cam`: 1 by default, 0, or
     "esper"). what: one or more names, comma-separated (from /api/see, or your own); fallbacks
     after "|" are tried in order when a name finds nothing: what=earbuds case|white object
@@ -539,6 +558,14 @@ async def reanchor(camera: bool = False):
     return await asyncio.to_thread(vision.reanchor, camera)
 
 
+@app.post("/api/calibration/trust")
+async def trust():
+    """After a GRBL reset: take GRBL's current work position as right and lift the hold on moves,
+    without changing any coordinates. For a person at the jog page; not an agent tool."""
+    vision.needs_reanchor = False
+    return {"ok": True}
+
+
 @app.get("/api/scene")
 async def scene(fresh: bool = False):
     """Where everything is, in gantry coordinates: head, Esper, cards (face-up ones named: card,
@@ -736,7 +763,7 @@ class EsperMove(BaseModel):
     servo_speed: float | None = None   # required with servo: gentle (the peek lifts at 30); capped at 360
     turn: float | None = None          # degrees anticlockwise, in place
     drive: float | None = None         # mm, + forward
-    wheel_speed: float = 800           # half-steps/s: 800 is full speed, the peek creeps at 200
+    wheel_speed: float = 500           # half-steps/s: 500 is the reliable top (Nov 4), the peek creeps at 200
 
 
 @app.post("/api/esper/move")
@@ -754,8 +781,8 @@ async def esper_move_api(body: EsperMove):
         raise HTTPException(400, "drive at most 200 mm a call")
     if body.turn is not None and abs(body.turn) > 360:
         raise HTTPException(400, "turn at most 360 degrees a call")
-    if not 50 <= body.wheel_speed <= 800:
-        raise HTTPException(400, "wheel_speed is 50 to 800")
+    if not 50 <= body.wheel_speed <= 500:
+        raise HTTPException(400, "wheel_speed is 50 to 500 (faster is unreliable)")
     return await asyncio.to_thread(esper.move, body.servo, body.servo_speed, body.turn, body.drive,
                                    round(body.wheel_speed))
 
@@ -828,6 +855,36 @@ async def esper_home_set(body: EsperHome):
 
 
 FACES = HERE / "faces"     # software/esper/faces, deployed next to the hub (eyes.bin, reactions/)
+
+
+def esper_face(name="eyes", loop=True):
+    """Put a face on Esper's screen at once, in the background; loop=True holds it until the
+    next face. "eyes" is Esper's normal look. Never raises: a face is nice, not needed."""
+    if not esper:
+        return
+    path = FACES / "eyes.bin" if name == "eyes" else FACES / "reactions" / f"{name}.bin"
+    def go():
+        try:
+            esper.screen(path.read_bytes(), 12 if name == "eyes" else 10, 0 if (loop or name == "eyes") else 1)
+        except (OSError, ValueError):
+            pass
+    threading.Thread(target=go, daemon=True).start()
+
+
+class EsperFace(BaseModel):
+    name: str = "eyes"   # a reaction face (GET /api/esper/gestures lists the faces in use), or "eyes"
+    loop: bool = True    # true: keep replaying it until the next face (no drop back to the eyes); false: play once
+
+
+@app.post("/api/esper/face")
+def esper_face_api(body: EsperFace):
+    """Just a face on Esper's screen, now, with no move and no chat line: set it BEFORE anything
+    slow (a Muse call, a find, a peek) so Esper looks busy instead of frozen. "eyes" goes back to
+    normal. Gestures still end on the eyes."""
+    if body.name != "eyes" and not (FACES / "reactions" / f"{body.name}.bin").exists():
+        raise HTTPException(400, f"no face {body.name!r}; have {sorted(p.stem for p in (FACES / 'reactions').glob('*.bin'))}")
+    esper_face(body.name, body.loop)
+    return {"ok": True}
 
 
 def gestures():

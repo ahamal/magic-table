@@ -34,6 +34,8 @@ Requires openai package (already in hub requirements.txt).
 import argparse
 import json
 import os
+import ssl
+import urllib.request
 import subprocess
 import sys
 
@@ -83,6 +85,19 @@ def content_text(content):
     return "\n".join(c.get("text", "") for c in content if c.get("type") == "text")
 
 
+def _face(name):
+    """Esper's face while Muse thinks (hub /api/esper/face); never in the way."""
+    try:
+        req = urllib.request.Request(HUB_FACE_URL[0] + "/api/esper/face", json.dumps({"name": name}).encode(),
+                                     {"content-type": "application/json"})
+        urllib.request.urlopen(req, timeout=3, context=ssl._create_unverified_context()).read()
+    except Exception:
+        pass
+
+
+HUB_FACE_URL = ["http://127.0.0.1:8000"]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Muse Spark loop over Magic Table MCP")
     ap.add_argument("--instruction", help="the task (with --live: the first one; default: a short greeting)")
@@ -113,6 +128,7 @@ def main(argv=None):
         return 2
     mcp_path = args.mcp or os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_server.py")
     os.environ["MAGIC_TABLE_HUB_URL"] = args.hub_url
+    HUB_FACE_URL[0] = args.hub_url.rstrip("/")
     client = MCPClient([sys.executable, mcp_path])
     try:
         if args.clear_chat:
@@ -165,7 +181,9 @@ def main(argv=None):
             del tasks[:-KEEP_TASKS]
             for turn in range(args.max_turns):
                 convo = [{"role": "system", "content": system}] + [i for t in tasks for i in t]
+                _face("thinking")   # Esper "thinks" while Muse does
                 resp = api.responses.create(model=args.model, reasoning={"effort": args.effort}, tools=fn_tools, input=convo)
+                _face("eyes")
                 calls = [o for o in resp.output if getattr(o, "type", None) == "function_call"]
                 if resp.output_text:
                     print(f"[turn {turn}] {resp.output_text}", flush=True)

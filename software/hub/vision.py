@@ -38,6 +38,9 @@ BOARD_IDS, HEAD_ID, ESPER_ID = (0, 1, 2, 3), 10, 20
 # Esper ones also give their height, by finding where the camera would see them at that
 # size. The head plate stands upright, so its size says nothing about height.
 SIZE = {"board": 30.0, "head": 25.0, "esper": 30.0}
+X_MARGIN = SIZE["board"]   # the cup may go out over the left and right board markers, not past them (the user, Nov 4)
+LEFT_MARGIN = 20.0         # ...and 20 mm inside the left markers: past there the head runs off its travel (belts came off, Nov 4)
+BACK_MARGIN = 50.0         # ...but stays 50 mm short of the back markers: past ~Y 190 the cameras are no longer accurate (the user, Nov 4)
 # The cup tip is this far below the head marker's centre, in the cameras' frame. A ruler says 77
 # (Nov 2), but with 77 the board came out ~7% too big against a tape measure, so something else
 # is off too (likely the gantry's steps/mm). 57 is what the board, the cup offset and the picks
@@ -540,9 +543,15 @@ class Vision:
                 POS_FILE.write_text(json.dumps(self.last_pos))
         return {"ok": True, "moved_by": [round(cx, 1), round(cy, 1)]}
 
+    def _bounds(self):
+        """The cup's limits: the measured board bounds (inside the markers), widened in X out to
+        the left and right markers' outer edges."""
+        b = (self.cal or {}).get("bounds")
+        return [b[0] + LEFT_MARGIN, b[1] + X_MARGIN, b[2], b[3] - BACK_MARGIN] if b else None
+
     def cup_in_bounds(self, hx, hy):
         """Is the cup inside the board bounds when the head is at (hx, hy)? True if none are set."""
-        b = (self.cal or {}).get("bounds")
+        b = self._bounds()
         if not b:
             return True
         cx, cy = hx + TIP_OFFSET[0], hy + TIP_OFFSET[1]
@@ -551,7 +560,7 @@ class Vision:
 
     def clip_jog(self, dx, dy):
         """Shorten an X/Y jog so the cup stops at the board bounds. Returns (dx, dy)."""
-        b = (self.cal or {}).get("bounds")
+        b = self._bounds()
         if not b or (not dx and not dy) or self.needs_reanchor:
             return dx, dy
         w = self._wpos()
@@ -591,7 +600,7 @@ class Vision:
     # (enough to put a card on it and pick one off), and moves that cross Esper below travel
     # height go up first (no reason to bump it on purpose).
 
-    def plan_move(self, x, y, z):
+    def plan_move(self, x, y, z, feed=None):
         """Lines for an absolute move to (x, y, z), any of them None = stay. A path that crosses
         Esper below travel height goes up to travel height first, then across, then down; ending
         over Esper lower than its top minus ESPER_SQUEEZE is refused. Returns (lines, None) or
@@ -604,14 +613,15 @@ class Vision:
         floor = ESPER_TOP - ESPER_SQUEEZE
         if self.over_esper(tx, ty, tx, ty) and tz < floor:
             return None, f"that would press into Esper (lowest over Esper: Z {floor:.1f})"
+        last = f"G90 G1 Z{tz:.3f} F{feed:.0f}" if feed else f"G90 G0 Z{tz:.3f}"   # the asked speed for the last leg
         if abs(tx - w[0]) < 0.01 and abs(ty - w[1]) < 0.01:      # straight up or down over Esper
-            return [f"G90 G0 Z{tz:.3f}"], None
+            return [last], None
         lines = []
         if w[2] < travel - 0.5:
             lines.append(f"G90 G0 Z{travel:.3f}")
         lines.append(f"G90 G0 X{tx:.3f} Y{ty:.3f}")
         if abs(tz - max(w[2], travel)) > 0.01:
-            lines.append(f"G90 G0 Z{tz:.3f}")
+            lines.append(last)
         return lines, None
 
     def head_for_tip(self, x, y):

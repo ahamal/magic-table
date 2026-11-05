@@ -4,7 +4,7 @@ Muse Spark running the table, through the same hub API people use. The guides it
 
 | File | What |
 |---|---|
-| [`mcp_server.py`](mcp_server.py) | MCP server over stdio wrapping the hub (29 tools): look (free scene, `see`, `find`, cards), move the cup, grip, drive Esper and her flipper, gestures, speech, the chat, notes, and `batch` for a whole recipe in one call. No raw G-code, no homing, no direct Esper calls: every move goes through the hub's limits. |
+| [`mcp_server.py`](mcp_server.py) | MCP server over stdio wrapping the hub (30 tools): look (free scene, `see`, `find`, cards), move the cup, grip, drive Esper and her flipper, gestures and faces, speech, the chat, notes, and `batch` for a whole recipe in one call. No raw G-code, no homing, no direct Esper calls: every move goes through the hub's limits. |
 | [`agent_runner.py`](agent_runner.py) | Muse Spark (`muse-spark-1.3`) in a loop over that server. `--instruction "..."` for one task; `--live` to stay at the table and act on what players say on the talk page, until Ctrl-C. |
 | [`test_mcp.py`](test_mcp.py) | Checks the server against a fake hub: the tools, the refusals, batching, the move order. |
 | [`MCP_README.md`](MCP_README.md) | Deploying, running, and the design notes (what's left out on purpose, vision tiers, the chat). |
