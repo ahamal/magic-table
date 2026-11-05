@@ -9,7 +9,7 @@ name if you can, then tick the box (or ask Claude to check them, trim them, and 
 
 ## video/ — the demo
 
-- [ ] `demo.mp4` or a YouTube link: the 3-minute video ([shooting script](../docs/desk-duo-shooting-script.md)). **Required for the submission.**
+- [x] [YouTube link](https://youtu.be/PkLwDHRM7E8): the 3-minute video ([shooting script](../docs/desk-duo-shooting-script.md)). **Required for the submission.**
 - [ ] `demo-thumbnail.jpg`: one frame for the README and the submission page (both robots and cards in frame)
 
 ## clips/ — short loops for the README (5–15 s each, no sound needed, MP4 or GIF)

@@ -4,7 +4,7 @@
 
 Entry for the Meta Global AI Developer Hackathon (indie developer track, theme "Push the Frontier"). Submissions due **Nov 4, 2026, 9:00 PM ET**.
 
-**Demo video:** *(link to come)*
+**Demo video:** [https://youtu.be/PkLwDHRM7E8](https://youtu.be/PkLwDHRM7E8)
 
 > **Agents (and people) driving the table: start at [agent/](agent/README.md).** Everything that's available (gantry, cameras, Esper, speaker, talk page, notes) and how to use it. The hub serves it at `http://raspberrypi.local:8000/guide`, and as plain text at `/api/guide`.
 
