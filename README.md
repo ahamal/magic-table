@@ -6,6 +6,10 @@ Entry for the Meta Global AI Developer Hackathon (indie developer track, theme "
 
 **Demo video:** [https://youtu.be/PkLwDHRM7E8](https://youtu.be/PkLwDHRM7E8)
 
+| Peek | Stack | Reveal | Frame |
+|---|---|---|---|
+| ![Esper peeking at a card](media/photos/peek.png) | ![The crane stacking](media/photos/stack.png) | ![Esper revealing a card](media/photos/reveal.png) | ![The frame](media/photos/frame.png) |
+
 > **Agents (and people) driving the table: start at [agent/](agent/README.md).** Everything that's available (gantry, cameras, Esper, speaker, talk page, notes) and how to use it. The hub serves it at `http://raspberrypi.local:8000/guide`, and as plain text at `/api/guide`.
 
 ## The idea: more than the sum of its parts
